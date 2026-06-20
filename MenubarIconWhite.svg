@@ -1,0 +1,11 @@
+<svg width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
+  <g transform="translate(8, 8) rotate(-10) translate(-8, -8)">
+    <rect x="2.8" y="7.2" width="10.24" height="6.08" rx="0.8" fill="rgba(255,255,255,0.12)" stroke="#fff" stroke-width="0.2" opacity="0.3"/>
+  </g>
+  <g transform="translate(8, 8) rotate(-5) translate(-8, -8)">
+    <rect x="2.4" y="6.08" width="10.24" height="6.08" rx="0.8" fill="rgba(255,255,255,0.16)" stroke="#fff" stroke-width="0.2" opacity="0.5"/>
+  </g>
+  <rect x="2" y="4.96" width="10.24" height="6.08" rx="0.8" fill="#fff" stroke="#fff" stroke-width="0.2"/>
+  <path d="M 4.8 8.32 L 5.76 9.28 L 8 7.04" fill="none" stroke="#1c1c1c" stroke-width="0.44" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M 5.04 9.04 L 5.92 9.92 L 8.16 7.68" fill="none" stroke="#fff" stroke-width="0.36" stroke-linecap="round" stroke-linejoin="round" opacity="0.5"/>
+</svg>
