@@ -299,7 +299,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private static var githubURL: String? {
-        nil
+        "https://github.com/aderx/RequirementTracker"
     }
 
     private static func makeAppIcon() -> NSImage {
