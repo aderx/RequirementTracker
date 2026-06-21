@@ -435,19 +435,12 @@ struct RequirementRowView: View {
             TimelineEntry(title: style.title, date: requirement.activityDate, color: style.color, icon: style.icon)
         ]
 
-        if requirement.isMerged {
+        if requirement.isTested || requirement.isMerged {
             entries.append(TimelineEntry(title: "已测试", date: requirement.updatedAt, color: DesignColor.tested, icon: .check))
-            entries.append(TimelineEntry(title: "开发完成", date: requirement.completedAt ?? requirement.updatedAt, color: DesignColor.devDone, icon: .check))
-        } else if requirement.isTested {
-            entries.append(TimelineEntry(title: "开发完成", date: requirement.completedAt ?? requirement.updatedAt, color: DesignColor.devDone, icon: .check))
         }
 
-        if requirement.stage == .stopped {
-            entries.append(TimelineEntry(title: "已停止", date: requirement.updatedAt, color: DesignColor.stopped, icon: .xmark))
-        }
-
-        if requirement.stage == .paused {
-            entries.append(TimelineEntry(title: "已暂停", date: requirement.updatedAt, color: DesignColor.paused, icon: .pause))
+        if requirement.isDone || requirement.isTested || requirement.isMerged {
+            entries.append(TimelineEntry(title: "开发完成", date: requirement.completedAt ?? requirement.updatedAt, color: DesignColor.devDone, icon: .check))
         }
 
         if requirement.stage == .active || requirement.stage == .paused || requirement.stage == .stopped || requirement.isDone {

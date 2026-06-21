@@ -800,10 +800,11 @@ struct RequirementOverviewView: View {
             )
         ]
 
-        if requirement.isMerged {
+        if requirement.isTested || requirement.isMerged {
             entries.append(OverviewTimelineEntry(status: .tested, date: requirement.updatedAt))
-            entries.append(OverviewTimelineEntry(status: .done, date: requirement.completedAt ?? requirement.updatedAt))
-        } else if requirement.isTested {
+        }
+
+        if requirement.isDone || requirement.isTested || requirement.isMerged {
             entries.append(OverviewTimelineEntry(status: .done, date: requirement.completedAt ?? requirement.updatedAt))
         }
 
