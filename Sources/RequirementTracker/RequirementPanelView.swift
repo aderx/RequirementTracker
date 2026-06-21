@@ -528,24 +528,45 @@ private struct CalendarDay: Identifiable {
 }
 
 private struct ScrollIndicatorHider: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSView {
-        let view = NSView()
-        hideIndicators(from: view)
+    func makeNSView(context: Context) -> HiderAttachmentView {
+        let view = HiderAttachmentView()
+        view.scheduleHidingPasses()
         return view
     }
 
-    func updateNSView(_ view: NSView, context: Context) {
-        hideIndicators(from: view)
+    func updateNSView(_ view: HiderAttachmentView, context: Context) {
+        view.scheduleHidingPasses()
+    }
+}
+
+private final class HiderAttachmentView: NSView {
+    override func viewDidMoveToSuperview() {
+        super.viewDidMoveToSuperview()
+        scheduleHidingPasses()
     }
 
-    private func hideIndicators(from view: NSView) {
-        DispatchQueue.main.async {
-            var current: NSView? = view
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        scheduleHidingPasses()
+    }
 
-            while let candidate = current {
-                hideScrollIndicators(in: candidate)
-                current = candidate.superview
+    func scheduleHidingPasses() {
+        for delay in [0.0, 0.05, 0.2, 0.6] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                self?.hideIndicators()
             }
+        }
+    }
+
+    private func hideIndicators() {
+        var current: NSView? = self
+        while let candidate = current {
+            hideScrollIndicators(in: candidate)
+            current = candidate.superview
+        }
+
+        if let contentView = window?.contentView {
+            hideScrollIndicators(in: contentView)
         }
     }
 
