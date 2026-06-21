@@ -15,7 +15,10 @@ let package = Package(
         .target(name: "RequirementCore"),
         .executableTarget(
             name: "RequirementTracker",
-            dependencies: ["RequirementCore"]
+            dependencies: ["RequirementCore"],
+            swiftSettings: [
+                .define("DEVELOPMENT", .when(configuration: .debug))
+            ]
         ),
         .executableTarget(
             name: "RequirementCoreChecks",

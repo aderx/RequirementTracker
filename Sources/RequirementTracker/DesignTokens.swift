@@ -28,32 +28,28 @@ extension Color {
 }
 
 private struct PointingHandCursorModifier: ViewModifier {
-    @State private var isCursorPushed = false
-
     func body(content: Content) -> some View {
         content
-            .background(PointingHandCursorArea())
+            .overlay(
+                PointingHandCursorArea()
+                    .allowsHitTesting(false)
+            )
             .onHover { isHovering in
-                if isHovering, !isCursorPushed {
-                    NSCursor.pointingHand.push()
-                    isCursorPushed = true
-                } else if !isHovering, isCursorPushed {
-                    NSCursor.pop()
-                    isCursorPushed = false
-                }
-            }
-            .onDisappear {
-                if isCursorPushed {
-                    NSCursor.pop()
-                    isCursorPushed = false
+                if isHovering {
+                    NSCursor.pointingHand.set()
                 }
             }
     }
 }
 
 extension View {
-    func pointingHandCursor() -> some View {
-        modifier(PointingHandCursorModifier())
+    @ViewBuilder
+    func pointingHandCursor(_ isEnabled: Bool = true) -> some View {
+        if isEnabled {
+            modifier(PointingHandCursorModifier())
+        } else {
+            self
+        }
     }
 }
 
@@ -68,14 +64,39 @@ private struct PointingHandCursorArea: NSViewRepresentable {
 }
 
 private final class CursorRectView: NSView {
+    private var trackingAreaRef: NSTrackingArea?
+
     override var isFlipped: Bool { true }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
         nil
     }
 
+    override func updateTrackingAreas() {
+        if let trackingAreaRef {
+            removeTrackingArea(trackingAreaRef)
+        }
+
+        let area = NSTrackingArea(
+            rect: bounds,
+            options: [.activeAlways, .inVisibleRect, .mouseEnteredAndExited, .mouseMoved, .cursorUpdate],
+            owner: self
+        )
+        addTrackingArea(area)
+        trackingAreaRef = area
+        super.updateTrackingAreas()
+    }
+
     override func resetCursorRects() {
         addCursorRect(bounds, cursor: .pointingHand)
+    }
+
+    override func cursorUpdate(with event: NSEvent) {
+        NSCursor.pointingHand.set()
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        NSCursor.pointingHand.set()
     }
 
     override func mouseMoved(with event: NSEvent) {

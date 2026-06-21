@@ -13,6 +13,8 @@ enum RequirementPanelMetrics {
 
 struct RequirementPanelView: View {
     @EnvironmentObject private var store: RequirementStore
+    var onOpenOverview: (() -> Void)?
+    var onShowAbout: (() -> Void)?
     var onCalendarVisibilityChange: ((Bool) -> Void)?
 
     @State private var statusFilter: RequirementStatusFilter = .incomplete
@@ -351,21 +353,23 @@ struct RequirementPanelView: View {
     private var settingsMenuContents: [NativeMenuContent] {
         [
             .item(
+                NativeMenuItemDescriptor(title: "总览", systemImage: "square.grid.2x2") {
+                    onOpenOverview?()
+                }
+            ),
+            .item(
                 NativeMenuItemDescriptor(title: "导出数据", systemImage: "square.and.arrow.down") {
                     store.openDataFolder()
                 }
             ),
-            .item(
-                NativeMenuItemDescriptor(
-                    title: "清除已完成",
-                    systemImage: "trash",
-                    isEnabled: false,
-                    isDestructive: true
-                ) {}
-            ),
             .separator(),
             .item(
-                NativeMenuItemDescriptor(title: "退出", systemImage: "power") {
+                NativeMenuItemDescriptor(title: "关于", systemImage: "info.circle") {
+                    onShowAbout?()
+                }
+            ),
+            .item(
+                NativeMenuItemDescriptor(title: "退出", systemImage: "power", isDestructive: true) {
                     NSApplication.shared.terminate(nil)
                 }
             )

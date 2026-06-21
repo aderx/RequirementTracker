@@ -20,6 +20,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var localMouseMonitor: Any?
     private var globalMouseMonitor: Any?
     private var resignActiveObserver: NSObjectProtocol?
+    private var overviewWindowController: NSWindowController?
+    private var aboutWindowController: NSWindowController?
     private let panelWidth = RequirementPanelMetrics.width
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -33,16 +35,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             button.image = Self.makeStatusIcon()
             button.imageScaling = .scaleProportionallyDown
             button.imagePosition = .imageOnly
-            button.toolTip = "需求记录"
+            button.toolTip = Self.statusItemTooltip
             button.target = self
             button.action = #selector(togglePopover(_:))
         }
 
-        let content = RequirementPanelView { [weak self] isCalendarVisible in
-            Task { @MainActor in
-                self?.setPanelHeight(isCalendarVisible: isCalendarVisible)
+        let content = RequirementPanelView(
+            onOpenOverview: { [weak self] in
+                self?.openOverview()
+            },
+            onShowAbout: { [weak self] in
+                self?.openAbout()
+            },
+            onCalendarVisibilityChange: { [weak self] isCalendarVisible in
+                Task { @MainActor in
+                    self?.setPanelHeight(isCalendarVisible: isCalendarVisible)
+                }
             }
-        }
+        )
         .environmentObject(store)
 
         let hostingController = NSHostingController(rootView: content)
@@ -173,15 +183,123 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         closePopover()
     }
 
+    private func openOverview() {
+        closePopover()
+
+        if let window = overviewWindowController?.window {
+            NSApplication.shared.activate(ignoringOtherApps: true)
+            window.makeKeyAndOrderFront(nil)
+            return
+        }
+
+        let content = RequirementOverviewView()
+            .environmentObject(store)
+        let hostingController = NSHostingController(rootView: content)
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 960, height: 680),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "需求总览"
+        window.titlebarAppearsTransparent = true
+        window.isMovableByWindowBackground = false
+        window.isReleasedWhenClosed = false
+        window.minSize = NSSize(width: 780, height: 560)
+        window.contentViewController = hostingController
+        window.center()
+
+        let controller = NSWindowController(window: window)
+        overviewWindowController = controller
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        controller.showWindow(nil)
+    }
+
+    private func openAbout() {
+        closePopover()
+
+        if let window = aboutWindowController?.window {
+            NSApplication.shared.activate(ignoringOtherApps: true)
+            centerOnMainScreen(window)
+            window.makeKeyAndOrderFront(nil)
+            return
+        }
+
+        let content = RequirementAboutView(
+            appIcon: Self.makeAppIcon(),
+            appName: Self.appDisplayName,
+            version: Self.appVersion,
+            githubURL: Self.githubURL
+        )
+        let hostingController = NSHostingController(rootView: content)
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 420, height: 272),
+            styleMask: [.titled, .closable, .fullSizeContentView],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "关于"
+        window.titlebarAppearsTransparent = true
+        window.isReleasedWhenClosed = false
+        window.contentViewController = hostingController
+        centerOnMainScreen(window)
+
+        let controller = NSWindowController(window: window)
+        aboutWindowController = controller
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        controller.showWindow(nil)
+    }
+
+    private func centerOnMainScreen(_ window: NSWindow) {
+        let screenFrame = NSScreen.main?.visibleFrame ?? NSScreen.screens.first?.visibleFrame ?? .zero
+        guard screenFrame != .zero else {
+            window.center()
+            return
+        }
+
+        window.setFrameOrigin(
+            NSPoint(
+                x: screenFrame.midX - window.frame.width / 2,
+                y: screenFrame.midY - window.frame.height / 2
+            )
+        )
+    }
+
     private static func makeStatusIcon() -> NSImage {
         let size = NSSize(width: 22, height: 22)
         let image = NSImage(size: size)
         image.lockFocus()
         drawStatusIcon(in: NSRect(origin: .zero, size: size))
+        #if DEVELOPMENT
+        drawDevelopmentStatusBadge(in: NSRect(origin: .zero, size: size))
+        #endif
         image.unlockFocus()
         image.isTemplate = false
-        image.accessibilityDescription = "需求记录"
+        image.accessibilityDescription = statusItemTooltip
         return image
+    }
+
+    private static var statusItemTooltip: String {
+        #if DEVELOPMENT
+        return "需求记录 Dev"
+        #else
+        return "需求记录"
+        #endif
+    }
+
+    private static var appDisplayName: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
+            ?? Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String
+            ?? "需求记录"
+    }
+
+    private static var appVersion: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+            ?? "1.0"
+    }
+
+    private static var githubURL: String? {
+        nil
     }
 
     private static func makeAppIcon() -> NSImage {
@@ -224,6 +342,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
 
         context.restoreGState()
+    }
+
+    private static func drawDevelopmentStatusBadge(in rect: NSRect) {
+        let badgeRect = NSRect(
+            x: rect.maxX - 8.6,
+            y: rect.maxY - 8.9,
+            width: 7.6,
+            height: 7.6
+        )
+        let badgePath = NSBezierPath(roundedRect: badgeRect, xRadius: 2.2, yRadius: 2.2)
+
+        NSColor(calibratedRed: 1, green: 149 / 255, blue: 0, alpha: 1).setFill()
+        badgePath.fill()
+
+        NSColor.white.withAlphaComponent(0.92).setStroke()
+        badgePath.lineWidth = 0.7
+        badgePath.stroke()
+
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 5.4, weight: .bold),
+            .foregroundColor: NSColor.white
+        ]
+        let marker = NSString(string: "D")
+        let markerSize = marker.size(withAttributes: attributes)
+        marker.draw(
+            at: NSPoint(
+                x: badgeRect.midX - markerSize.width / 2,
+                y: badgeRect.midY - markerSize.height / 2 - 0.3
+            ),
+            withAttributes: attributes
+        )
     }
 
     private static func drawAppIcon(in rect: NSRect) {

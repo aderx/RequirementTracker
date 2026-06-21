@@ -84,11 +84,35 @@ struct NativeIconMenuButton: NSViewRepresentable {
         case .more:
             moreImage()
         case .settings:
-            NSImage(
-                systemSymbolName: "gearshape",
-                accessibilityDescription: "设置"
-            )?.withSymbolConfiguration(.init(pointSize: 13.5, weight: .semibold))
+            settingsImage()
         }
+    }
+
+    private static func settingsImage() -> NSImage {
+        let image = NSImage(size: NSSize(width: 14, height: 14))
+        image.lockFocus()
+
+        let stroke = NSBezierPath()
+        stroke.lineWidth = 1.65
+        stroke.lineCapStyle = .round
+
+        for y in [3.5, 7, 10.5] {
+            stroke.move(to: NSPoint(x: 2, y: y))
+            stroke.line(to: NSPoint(x: 12, y: y))
+        }
+
+        NSColor.black.setStroke()
+        stroke.stroke()
+
+        NSColor.black.setFill()
+        NSBezierPath(ovalIn: NSRect(x: 4.1, y: 2.05, width: 2.9, height: 2.9)).fill()
+        NSBezierPath(ovalIn: NSRect(x: 8.3, y: 5.55, width: 2.9, height: 2.9)).fill()
+        NSBezierPath(ovalIn: NSRect(x: 5.4, y: 9.05, width: 2.9, height: 2.9)).fill()
+
+        image.unlockFocus()
+        image.isTemplate = true
+        image.accessibilityDescription = "设置"
+        return image
     }
 
     private static func moreImage() -> NSImage {
@@ -127,7 +151,11 @@ struct NativeIconMenuButton: NSViewRepresentable {
                     item.isEnabled = descriptor.isEnabled
 
                     if let systemImage = descriptor.systemImage {
-                        item.image = NSImage(systemSymbolName: systemImage, accessibilityDescription: descriptor.title)
+                        item.image = menuImage(
+                            systemImage: systemImage,
+                            title: descriptor.title,
+                            isDestructive: descriptor.isDestructive
+                        )
                     }
 
                     if descriptor.isDestructive {
@@ -146,6 +174,28 @@ struct NativeIconMenuButton: NSViewRepresentable {
             menu.update()
             let point = menuOrigin(for: sender, menuSize: menu.size)
             menu.popUp(positioning: nil, at: point, in: sender)
+        }
+
+        private func menuImage(systemImage: String, title: String, isDestructive: Bool) -> NSImage? {
+            guard let image = NSImage(systemSymbolName: systemImage, accessibilityDescription: title) else {
+                return nil
+            }
+
+            let pointSize: CGFloat = isDestructive ? 13 : 15
+            let configuredImage = image.withSymbolConfiguration(
+                NSImage.SymbolConfiguration(pointSize: pointSize, weight: .regular)
+            ) ?? image
+
+            if isDestructive {
+                return configuredImage.tinted(
+                    with: .systemRed,
+                    canvasSize: NSSize(width: 15, height: 15),
+                    symbolSize: NSSize(width: 11, height: 11)
+                )
+            }
+
+            configuredImage.size = NSSize(width: 15, height: 15)
+            return configuredImage
         }
 
         private func menuOrigin(for sender: NSButton, menuSize: NSSize) -> NSPoint {
@@ -194,6 +244,31 @@ struct NativeIconMenuButton: NSViewRepresentable {
 
             descriptor.action()
         }
+    }
+}
+
+private extension NSImage {
+    func tinted(
+        with color: NSColor,
+        canvasSize: NSSize? = nil,
+        symbolSize: NSSize? = nil
+    ) -> NSImage {
+        let canvasSize = canvasSize ?? size
+        let symbolSize = symbolSize ?? canvasSize
+        let image = NSImage(size: canvasSize)
+        image.lockFocus()
+        let rect = NSRect(
+            x: (canvasSize.width - symbolSize.width) / 2,
+            y: (canvasSize.height - symbolSize.height) / 2,
+            width: symbolSize.width,
+            height: symbolSize.height
+        )
+        draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1)
+        color.setFill()
+        rect.fill(using: .sourceAtop)
+        image.unlockFocus()
+        image.isTemplate = false
+        return image
     }
 }
 
