@@ -25,7 +25,7 @@ public enum RequirementStatusFilter: String, CaseIterable, Identifiable, Sendabl
     }
 
     public static var allCases: [RequirementStatusFilter] {
-        [.incomplete, .pending, .active, .paused, .completed]
+        [.incomplete, .active, .pending, .paused, .completed]
     }
 }
 

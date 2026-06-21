@@ -89,6 +89,11 @@ expect(
     "Existing !number should be preserved"
 )
 
+expect(
+    RequirementStatusFilter.allCases.map(\.title) == ["未完成", "开发中", "待开发", "异常", "已完成"],
+    "Status tabs should show active development before pending work"
+)
+
 let base = makeDate(year: 2026, month: 6, day: 19)
 let active = requirement("ZSTAC-3", stage: .active, createdAt: base)
 let pending = requirement("ZSTAC-2", stage: .pending, createdAt: base.addingTimeInterval(10))

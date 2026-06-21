@@ -212,9 +212,14 @@ struct RequirementRowView: View {
         .frame(width: 18, height: 18)
     }
 
-    private var canPauseOrStop: Bool {
+    private var canPause: Bool {
         !requirement.isMerged
             && requirement.stage != .paused
+            && requirement.stage != .stopped
+    }
+
+    private var canStop: Bool {
+        !requirement.isMerged
             && requirement.stage != .stopped
     }
 
@@ -238,22 +243,28 @@ struct RequirementRowView: View {
             )
         ]
 
-        if canPauseOrStop {
+        if canPause || canStop {
             contents.append(.separator())
-            contents.append(
-                .item(
-                    NativeMenuItemDescriptor(title: "暂停开发", systemImage: "pause") {
-                        beginReasonEditing(.paused)
-                    }
+
+            if canPause {
+                contents.append(
+                    .item(
+                        NativeMenuItemDescriptor(title: "暂停开发", systemImage: "pause") {
+                            beginReasonEditing(.paused)
+                        }
+                    )
                 )
-            )
-            contents.append(
-                .item(
-                    NativeMenuItemDescriptor(title: "停止需求", systemImage: "xmark.circle") {
-                        beginReasonEditing(.stopped)
-                    }
+            }
+
+            if canStop {
+                contents.append(
+                    .item(
+                        NativeMenuItemDescriptor(title: "停止需求", systemImage: "xmark.circle") {
+                            beginReasonEditing(.stopped)
+                        }
+                    )
                 )
-            )
+            }
         }
 
         if requirement.stage == .paused || requirement.stage == .stopped {
