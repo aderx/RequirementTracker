@@ -9,7 +9,8 @@ public enum GhosttyAutomationScript {
         knownWindowID: String? = nil,
         applicationPath: String = defaultApplicationPath
     ) -> String {
-        let input = command.hasSuffix("\n") ? command : command + "\n"
+        let shellInput = shellCommand(projectDirectory: projectDirectory, command: command)
+        let input = shellInput.hasSuffix("\n") ? shellInput : shellInput + "\n"
         let knownWindowValue = knownWindowID?.isEmpty == false ? jsStringLiteral(knownWindowID ?? "") : "null"
 
         return """
@@ -50,6 +51,14 @@ public enum GhosttyAutomationScript {
         """
     }
 
+    public static func shellCommand(
+        projectDirectory: String,
+        command: String
+    ) -> String {
+        let trimmedCommand = command.trimmingCharacters(in: .whitespacesAndNewlines)
+        return "cd \(shellSingleQuoted(projectDirectory))\n\(trimmedCommand)"
+    }
+
     public static func jsStringLiteral(_ value: String) -> String {
         var result = "\""
 
@@ -76,5 +85,9 @@ public enum GhosttyAutomationScript {
 
         result += "\""
         return result
+    }
+
+    private static func shellSingleQuoted(_ value: String) -> String {
+        "'\(value.replacingOccurrences(of: "'", with: "'\\''"))'"
     }
 }

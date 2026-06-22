@@ -67,6 +67,11 @@ final class GhosttyScriptLauncher: ObservableObject {
         projectDirectory: String,
         command: String
     ) async throws {
+        let shellCommand = GhosttyAutomationScript.shellCommand(
+            projectDirectory: projectDirectory,
+            command: command
+        )
+
         try await Task.detached(priority: .userInitiated) {
             let process = Process()
             process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
@@ -74,12 +79,11 @@ final class GhosttyScriptLauncher: ObservableObject {
                 "-na",
                 "/Applications/Ghostty.app",
                 "--args",
-                "--working-directory",
-                projectDirectory,
+                "--working-directory=\(projectDirectory)",
                 "-e",
                 "/bin/zsh",
                 "-lc",
-                command
+                shellCommand
             ]
 
             let errorPipe = Pipe()

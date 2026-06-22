@@ -245,14 +245,6 @@ struct RequirementPanelView: View {
                 .font(.system(size: 10.5))
                 .foregroundStyle(Color.black.opacity(0.38))
 
-            if let notice = store.lastNotice {
-                Text(notice)
-                    .font(.system(size: 10.5))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .transition(.opacity)
-            }
-
             Spacer()
 
             settingsMenu

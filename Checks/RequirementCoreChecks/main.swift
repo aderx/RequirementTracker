@@ -268,12 +268,19 @@ expect(
     "Ghostty JXA should set the project working directory"
 )
 expect(
-    launchScript.contains("initialInput: \"echo \\\"hello\\\"\\npnpm dev\\n\""),
-    "Ghostty JXA should escape multiline shell input"
+    launchScript.contains("initialInput: \"cd '/Users/dev/zstack-ui-next'\\necho \\\"hello\\\"\\npnpm dev\\n\""),
+    "Ghostty JXA should enter the project directory before running multiline shell input"
 )
 expect(
     launchScript.contains("newTab") && launchScript.contains("newWindow"),
     "Ghostty JXA should support existing project windows and new windows"
+)
+expect(
+    GhosttyAutomationScript.shellCommand(
+        projectDirectory: "/Users/dev/project with spaces",
+        command: "pnpm dev"
+    ) == "cd '/Users/dev/project with spaces'\npnpm dev",
+    "Ghostty fallback shell command should cd into project directories, including paths with spaces"
 )
 
 print("RequirementCoreChecks passed")
