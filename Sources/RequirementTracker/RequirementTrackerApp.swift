@@ -15,6 +15,8 @@ struct RequirementTrackerApp: App {
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let store = RequirementStore()
+    private let settingsStore = RequirementSettingsStore()
+    private let scriptLauncher = GhosttyScriptLauncher()
     private var statusItem: NSStatusItem?
     private var popover: NSPopover?
     private var localMouseMonitor: Any?
@@ -58,6 +60,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         )
         .environmentObject(store)
+        .environmentObject(settingsStore)
+        .environmentObject(scriptLauncher)
 
         let hostingController = NSHostingController(rootView: content)
         hostingController.view.frame = NSRect(
@@ -229,9 +233,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        let hostingController = NSHostingController(rootView: RequirementSettingsView())
+        let hostingController = NSHostingController(
+            rootView: RequirementSettingsView()
+                .environmentObject(settingsStore)
+        )
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 460, height: 300),
+            contentRect: NSRect(x: 0, y: 0, width: 760, height: 520),
             styleMask: [.titled, .closable, .fullSizeContentView],
             backing: .buffered,
             defer: false
@@ -239,6 +246,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.title = "设置"
         window.titlebarAppearsTransparent = true
         window.isReleasedWhenClosed = false
+        window.minSize = NSSize(width: 680, height: 460)
         window.contentViewController = hostingController
         centerOnMainScreen(window)
 

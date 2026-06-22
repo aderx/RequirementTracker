@@ -24,14 +24,37 @@ struct NativeMenuItemDescriptor: Identifiable {
     }
 }
 
+struct NativeSubmenuDescriptor: Identifiable {
+    let id = UUID()
+    let title: String
+    let systemImage: String?
+    let contents: [NativeMenuContent]
+    let isEnabled: Bool
+
+    init(
+        title: String,
+        systemImage: String? = nil,
+        contents: [NativeMenuContent],
+        isEnabled: Bool = true
+    ) {
+        self.title = title
+        self.systemImage = systemImage
+        self.contents = contents
+        self.isEnabled = isEnabled
+    }
+}
+
 enum NativeMenuContent: Identifiable {
     case item(NativeMenuItemDescriptor)
+    case submenu(NativeSubmenuDescriptor)
     case separator(UUID = UUID())
 
     var id: UUID {
         switch self {
         case let .item(item):
             item.id
+        case let .submenu(submenu):
+            submenu.id
         case let .separator(id):
             id
         }
@@ -41,6 +64,7 @@ enum NativeMenuContent: Identifiable {
 enum NativeIconMenuKind {
     case more
     case settings
+    case symbol(String)
 }
 
 struct NativeIconMenuButton: NSViewRepresentable {
@@ -85,7 +109,18 @@ struct NativeIconMenuButton: NSViewRepresentable {
             moreImage()
         case .settings:
             settingsImage()
+        case let .symbol(name):
+            symbolImage(name)
         }
+    }
+
+    private static func symbolImage(_ name: String) -> NSImage? {
+        let image = NSImage(systemSymbolName: name, accessibilityDescription: name)
+        let configuredImage = image?.withSymbolConfiguration(
+            NSImage.SymbolConfiguration(pointSize: 13, weight: .semibold)
+        ) ?? image
+        configuredImage?.isTemplate = true
+        return configuredImage
     }
 
     private static func settingsImage() -> NSImage {
@@ -139,32 +174,32 @@ struct NativeIconMenuButton: NSViewRepresentable {
 
         @objc
         func showMenu(_ sender: NSButton) {
+            let menu = makeMenu(from: contents)
+            let point = menuOrigin(for: sender, menuSize: menu.size)
+            menu.popUp(positioning: nil, at: point, in: sender)
+        }
+
+        private func makeMenu(from contents: [NativeMenuContent]) -> NSMenu {
             let menu = NSMenu()
             menu.autoenablesItems = false
 
             for content in contents {
                 switch content {
                 case let .item(descriptor):
-                    let item = NSMenuItem(title: descriptor.title, action: #selector(performItem(_:)), keyEquivalent: "")
-                    item.target = self
-                    item.representedObject = descriptor.id
-                    item.isEnabled = descriptor.isEnabled
+                    menu.addItem(menuItem(from: descriptor))
+                case let .submenu(descriptor):
+                    let item = NSMenuItem(title: descriptor.title, action: nil, keyEquivalent: "")
+                    item.isEnabled = descriptor.isEnabled && !descriptor.contents.isEmpty
 
                     if let systemImage = descriptor.systemImage {
                         item.image = menuImage(
                             systemImage: systemImage,
                             title: descriptor.title,
-                            isDestructive: descriptor.isDestructive
+                            isDestructive: false
                         )
                     }
 
-                    if descriptor.isDestructive {
-                        item.attributedTitle = NSAttributedString(
-                            string: descriptor.title,
-                            attributes: [.foregroundColor: NSColor.systemRed]
-                        )
-                    }
-
+                    item.submenu = makeMenu(from: descriptor.contents)
                     menu.addItem(item)
                 case .separator:
                     menu.addItem(.separator())
@@ -172,8 +207,31 @@ struct NativeIconMenuButton: NSViewRepresentable {
             }
 
             menu.update()
-            let point = menuOrigin(for: sender, menuSize: menu.size)
-            menu.popUp(positioning: nil, at: point, in: sender)
+            return menu
+        }
+
+        private func menuItem(from descriptor: NativeMenuItemDescriptor) -> NSMenuItem {
+            let item = NSMenuItem(title: descriptor.title, action: #selector(performItem(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = descriptor.id
+            item.isEnabled = descriptor.isEnabled
+
+            if let systemImage = descriptor.systemImage {
+                item.image = menuImage(
+                    systemImage: systemImage,
+                    title: descriptor.title,
+                    isDestructive: descriptor.isDestructive
+                )
+            }
+
+            if descriptor.isDestructive {
+                item.attributedTitle = NSAttributedString(
+                    string: descriptor.title,
+                    attributes: [.foregroundColor: NSColor.systemRed]
+                )
+            }
+
+            return item
         }
 
         private func menuImage(systemImage: String, title: String, isDestructive: Bool) -> NSImage? {
@@ -237,7 +295,7 @@ struct NativeIconMenuButton: NSViewRepresentable {
         private func performItem(_ sender: NSMenuItem) {
             guard
                 let id = sender.representedObject as? UUID,
-                let descriptor = contents.compactMap(\.itemDescriptor).first(where: { $0.id == id })
+                let descriptor = contents.flatMap(\.itemDescriptors).first(where: { $0.id == id })
             else {
                 return
             }
@@ -273,12 +331,16 @@ private extension NSImage {
 }
 
 private extension NativeMenuContent {
-    var itemDescriptor: NativeMenuItemDescriptor? {
+    var itemDescriptors: [NativeMenuItemDescriptor] {
         if case let .item(descriptor) = self {
-            return descriptor
+            return [descriptor]
         }
 
-        return nil
+        if case let .submenu(descriptor) = self {
+            return descriptor.contents.flatMap(\.itemDescriptors)
+        }
+
+        return []
     }
 }
 

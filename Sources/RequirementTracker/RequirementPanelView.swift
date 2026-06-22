@@ -13,6 +13,8 @@ enum RequirementPanelMetrics {
 
 struct RequirementPanelView: View {
     @EnvironmentObject private var store: RequirementStore
+    @EnvironmentObject private var settingsStore: RequirementSettingsStore
+    @EnvironmentObject private var scriptLauncher: GhosttyScriptLauncher
     var onOpenOverview: (() -> Void)?
     var onShowAbout: (() -> Void)?
     var onOpenSettings: (() -> Void)?
@@ -117,18 +119,37 @@ struct RequirementPanelView: View {
                         .strokeBorder(Color.black.opacity(0.13), lineWidth: 0.5)
                 )
             } else {
+                if !scriptMenuContents.isEmpty {
+                    NativeIconMenuButton(
+                        kind: .symbol("terminal"),
+                        contents: scriptMenuContents,
+                        size: CGSize(width: 24, height: 22),
+                        tintAlpha: 0.78,
+                        help: "启动脚本"
+                    )
+                    .frame(width: 24, height: 22)
+                }
+
+                if !quickLinkMenuContents.isEmpty {
+                    NativeIconMenuButton(
+                        kind: .symbol("link"),
+                        contents: quickLinkMenuContents,
+                        size: CGSize(width: 24, height: 22),
+                        tintAlpha: 0.78,
+                        help: "快速打开链接"
+                    )
+                    .frame(width: 24, height: 22)
+                }
+
                 Button {
                     withAnimation(.snappy(duration: 0.18)) {
                         isAdding = true
                         showsCalendar = false
                     }
                 } label: {
-                    HStack(spacing: 5) {
-                        Image(systemName: "plus")
-                            .font(.system(size: 11, weight: .semibold))
-                        Text("添加")
-                    }
-                    .frame(minWidth: 44)
+                    Image(systemName: "plus")
+                        .font(.system(size: 11.5, weight: .semibold))
+                        .frame(width: 24)
                     .frame(height: 22)
                     .contentShape(Rectangle())
                 }
@@ -391,6 +412,34 @@ struct RequirementPanelView: View {
         ]
     }
 
+    private var scriptMenuContents: [NativeMenuContent] {
+        settingsStore.validScriptProjects.map { project in
+            .submenu(
+                NativeSubmenuDescriptor(
+                    title: project.name,
+                    systemImage: "folder",
+                    contents: project.validScripts.map { script in
+                        .item(
+                            NativeMenuItemDescriptor(title: script.name, systemImage: "terminal") {
+                                launchScript(project: project, script: script)
+                            }
+                        )
+                    }
+                )
+            )
+        }
+    }
+
+    private var quickLinkMenuContents: [NativeMenuContent] {
+        settingsStore.validQuickLinks.map { link in
+            .item(
+                NativeMenuItemDescriptor(title: link.name, systemImage: "link") {
+                    openQuickLink(link)
+                }
+            )
+        }
+    }
+
     private func commitAdding() {
         let addedCount = store.addFromBulkInput(bulkInput)
         guard addedCount > 0 else {
@@ -408,6 +457,30 @@ struct RequirementPanelView: View {
             isAdding = false
             bulkInput = ""
         }
+    }
+
+    private func launchScript(
+        project: RequirementScriptProject,
+        script: RequirementScriptCommand
+    ) {
+        Task {
+            do {
+                try await scriptLauncher.launch(project: project, script: script)
+                store.lastNotice = "已启动 \(script.name)"
+            } catch {
+                store.lastNotice = error.localizedDescription
+            }
+        }
+    }
+
+    private func openQuickLink(_ link: RequirementQuickLink) {
+        guard let url = URL(string: link.url) else {
+            store.lastNotice = "链接格式无效"
+            return
+        }
+
+        NSWorkspace.shared.open(url)
+        store.lastNotice = "已打开 \(link.name)"
     }
 
     private var hasActiveDateFilter: Bool {

@@ -219,4 +219,61 @@ expect(
     "Completed-this-week count should use completed date"
 )
 
+let validProject = RequirementScriptProject(
+    name: " UI Next ",
+    directoryPath: " /Users/dev/zstack-ui-next ",
+    scripts: [
+        RequirementScriptCommand(name: " Dev ", script: "pnpm dev"),
+        RequirementScriptCommand(name: " Empty ", script: "   ")
+    ]
+)
+let invalidProject = RequirementScriptProject(
+    name: " Empty Scripts ",
+    directoryPath: "/tmp/demo",
+    scripts: [
+        RequirementScriptCommand(name: "Noop", script: "")
+    ]
+)
+let toolConfiguration = RequirementToolConfiguration(
+    scriptProjects: [validProject, invalidProject],
+    quickLinks: [
+        RequirementQuickLink(name: " Jira ", url: " https://jira.zstack.io "),
+        RequirementQuickLink(name: " Broken ", url: "notaurl")
+    ]
+)
+expect(
+    toolConfiguration.validScriptProjects.map(\.name) == ["UI Next"],
+    "Tool configuration should expose only projects with valid directories and scripts"
+)
+expect(
+    toolConfiguration.validScriptProjects.first?.validScripts.map(\.name) == ["Dev"],
+    "Tool configuration should trim and expose only valid scripts"
+)
+expect(
+    toolConfiguration.validQuickLinks.map(\.name) == ["Jira"],
+    "Tool configuration should expose only valid links"
+)
+
+let launchScript = GhosttyAutomationScript.jxa(
+    projectDirectory: "/Users/dev/zstack-ui-next",
+    command: "echo \"hello\"\npnpm dev",
+    knownWindowID: "project-window-1"
+)
+expect(
+    launchScript.contains("Application(\"/Applications/Ghostty.app\")"),
+    "Ghostty JXA should target the bundled Ghostty app path"
+)
+expect(
+    launchScript.contains("initialWorkingDirectory: \"/Users/dev/zstack-ui-next\""),
+    "Ghostty JXA should set the project working directory"
+)
+expect(
+    launchScript.contains("initialInput: \"echo \\\"hello\\\"\\npnpm dev\\n\""),
+    "Ghostty JXA should escape multiline shell input"
+)
+expect(
+    launchScript.contains("newTab") && launchScript.contains("newWindow"),
+    "Ghostty JXA should support existing project windows and new windows"
+)
+
 print("RequirementCoreChecks passed")
