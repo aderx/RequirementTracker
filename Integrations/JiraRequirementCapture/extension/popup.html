@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Jira Requirement Capture</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="header">
+      <div>
+        <h1>Jira 需求</h1>
+        <p id="statusText">等待提取</p>
+      </div>
+      <button id="extractButton" class="icon-button" type="button" title="重新提取">↻</button>
+    </header>
+
+    <section class="fields" aria-label="提取结果">
+      <div class="field-row">
+        <span class="label">需求号</span>
+        <span id="issueKeyValue" class="value empty">未识别</span>
+      </div>
+      <div class="field-row field-row-block">
+        <span class="label">标题</span>
+        <span id="titleValue" class="value empty">未识别</span>
+      </div>
+      <div class="field-row">
+        <span class="label">类型</span>
+        <span id="typeValue" class="value empty">未识别</span>
+      </div>
+      <div class="field-row">
+        <span class="label">优先级</span>
+        <span id="priorityValue" class="value empty">未识别</span>
+      </div>
+      <div class="field-row">
+        <span class="label">目标版本</span>
+        <span id="targetVersionValue" class="value empty">未识别</span>
+      </div>
+    </section>
+
+    <section class="actions" aria-label="操作">
+      <button id="saveButton" class="primary-button" type="button" disabled>写入 JSON</button>
+      <button id="copyButton" class="secondary-button" type="button" disabled>复制 JSON</button>
+    </section>
+
+    <section class="json-panel" aria-label="JSON 预览">
+      <textarea id="jsonPreview" readonly spellcheck="false" placeholder="提取结果会显示在这里"></textarea>
+    </section>
+
+    <footer class="footer">
+      <span id="hostStatus">Native Host 未连接</span>
+    </footer>
+  </main>
+
+  <script src="popup.js"></script>
+</body>
+</html>

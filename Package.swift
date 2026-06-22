@@ -9,7 +9,8 @@ let package = Package(
     ],
     products: [
         .library(name: "RequirementCore", targets: ["RequirementCore"]),
-        .executable(name: "RequirementTracker", targets: ["RequirementTracker"])
+        .executable(name: "RequirementTracker", targets: ["RequirementTracker"]),
+        .executable(name: "JiraRequirementNativeHost", targets: ["JiraRequirementNativeHost"])
     ],
     targets: [
         .target(name: "RequirementCore"),
@@ -20,6 +21,7 @@ let package = Package(
                 .define("DEVELOPMENT", .when(configuration: .debug))
             ]
         ),
+        .executableTarget(name: "JiraRequirementNativeHost"),
         .executableTarget(
             name: "RequirementCoreChecks",
             dependencies: ["RequirementCore"],
