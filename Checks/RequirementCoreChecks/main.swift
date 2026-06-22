@@ -132,6 +132,10 @@ expect(
     "Display formatter should include time when hour/minute are present"
 )
 expect(
+    RequirementDateDisplayFormatter.dayDisplayText(for: preciseDate, calendar: calendar) == "2026年6月19日",
+    "Day display formatter should never include time"
+)
+expect(
     RequirementDateDisplayFormatter.displayText(for: referenceDate, calendar: calendar) == "2026年6月19日",
     "Display formatter should show day only for midnight dates"
 )

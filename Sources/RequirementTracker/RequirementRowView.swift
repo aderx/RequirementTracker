@@ -13,6 +13,7 @@ struct RequirementRowView: View {
     @State private var draftMR = ""
     @State private var draftReason = ""
     @State private var advancesAfterMRSave = false
+    @State private var requiresMRBeforeSave = false
 
     let requirement: Requirement
     let isExpanded: Bool
@@ -282,20 +283,6 @@ struct RequirementRowView: View {
             )
         }
 
-        contents.append(.separator())
-        contents.append(
-            .item(
-                NativeMenuItemDescriptor(
-                    title: "删除",
-                    systemImage: "trash",
-                    isEnabled: !requirement.isMerged,
-                    isDestructive: true
-                ) {
-                    store.delete(id: requirement.id)
-                }
-            )
-        )
-
         return contents
     }
 
@@ -336,7 +323,14 @@ struct RequirementRowView: View {
     }
 
     private var mrEditor: some View {
-        editPanel(title: "MR 地址", placeholder: "粘贴 MR / 合并请求链接...", text: $draftMR) {
+        let canSave = !requiresMRBeforeSave || !draftMR.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+
+        return editPanel(
+            title: "MR 地址",
+            placeholder: "粘贴 MR / 合并请求链接...",
+            text: $draftMR,
+            canSave: canSave
+        ) {
             store.update(id: requirement.id) { requirement in
                 requirement.mrURL = draftMR
             }
@@ -429,7 +423,7 @@ struct RequirementRowView: View {
                 }
                 .buttonStyle(InlineSaveButtonStyle())
                 .disabled(!canSave)
-                .pointingHandCursor()
+                .pointingHandCursor(canSave)
             }
         }
         .padding(8)
@@ -464,25 +458,29 @@ struct RequirementRowView: View {
         draftNote = requirement.note
         draftMR = requirement.mrURL ?? ""
         advancesAfterMRSave = false
+        requiresMRBeforeSave = false
         editorMode = mode
     }
 
-    private func beginMREditing(advanceAfterSave: Bool) {
+    private func beginMREditing(advanceAfterSave: Bool, requiresValue: Bool = false) {
         draftNote = requirement.note
         draftMR = requirement.mrURL ?? ""
         advancesAfterMRSave = advanceAfterSave
+        requiresMRBeforeSave = requiresValue
         editorMode = .mr
     }
 
     private func beginReasonEditing(_ stage: RequirementStage) {
         draftReason = requirement.pauseReason
         advancesAfterMRSave = false
+        requiresMRBeforeSave = false
         editorMode = .pauseReason(stage)
     }
 
     private func closeEditor() {
         editorMode = nil
         advancesAfterMRSave = false
+        requiresMRBeforeSave = false
     }
 
     private var reasonEditingStage: RequirementStage? {
@@ -499,6 +497,11 @@ struct RequirementRowView: View {
             return
         }
 
+        if shouldPromptMRBeforeMerging {
+            beginMREditing(advanceAfterSave: true, requiresValue: true)
+            return
+        }
+
         store.advance(id: requirement.id)
     }
 
@@ -508,6 +511,12 @@ struct RequirementRowView: View {
             && (requirement.isDone || requirement.stage == .completed)
             && requirement.stage != .paused
             && requirement.stage != .stopped
+    }
+
+    private var shouldPromptMRBeforeMerging: Bool {
+        !requirement.isMerged
+            && requirement.isTested
+            && !requirement.hasMergeRequestURL
     }
 
     @ViewBuilder
@@ -555,7 +564,7 @@ struct RequirementRowView: View {
 
     private func relativeDateText(_ date: Date) -> String {
         let calendar = Calendar.current
-        let formattedDate = RequirementDateDisplayFormatter.displayText(for: date, calendar: calendar)
+        let formattedDate = RequirementDateDisplayFormatter.dayDisplayText(for: date, calendar: calendar)
 
         if calendar.isDateInToday(date) {
             return "\(formattedDate)（今天）"
@@ -929,7 +938,7 @@ private struct RequirementDisplayStyle {
             color = DesignColor.merged
             icon = .check
             advanceAction = nil
-            showsTerminalCheck = true
+            showsTerminalCheck = false
             return
         }
 

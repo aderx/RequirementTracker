@@ -74,6 +74,15 @@ public struct RequirementDateRange: Equatable, Sendable {
 }
 
 public enum RequirementDateDisplayFormatter {
+    public static func dayDisplayText(for date: Date, calendar: Calendar = .current) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_CN")
+        formatter.calendar = calendar
+        formatter.timeZone = calendar.timeZone
+        formatter.dateFormat = "yyyy年M月d日"
+        return formatter.string(from: date)
+    }
+
     public static func displayText(for date: Date, calendar: Calendar = .current) -> String {
         let components = calendar.dateComponents([.hour, .minute, .second, .nanosecond], from: date)
         let hasTime = (components.hour ?? 0) != 0
