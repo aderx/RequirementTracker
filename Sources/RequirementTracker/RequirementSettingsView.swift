@@ -51,6 +51,7 @@ struct RequirementSettingsView: View {
                         RoundedRectangle(cornerRadius: 8, style: .continuous)
                             .fill(selectedTab == tab ? Color.white.opacity(0.82) : Color.clear)
                     )
+                    .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 }
                 .buttonStyle(.plain)
                 .pointingHandCursor()
@@ -95,10 +96,6 @@ struct RequirementSettingsView: View {
         HStack(spacing: 0) {
             projectList
                 .frame(width: 230)
-
-            Rectangle()
-                .fill(Color.black.opacity(0.08))
-                .frame(width: 0.7)
 
             scriptDetail
         }
@@ -193,19 +190,8 @@ struct RequirementSettingsView: View {
     private var scriptDetail: some View {
         if let project = selectedProject {
             VStack(alignment: .leading, spacing: 12) {
-                HStack(spacing: 10) {
-                    TextField("项目名称", text: projectNameBinding(projectID: project.id))
-                        .textFieldStyle(.roundedBorder)
-
-                    Button(role: .destructive) {
-                        settingsStore.deleteScriptProject(id: project.id)
-                    } label: {
-                        Image(systemName: "trash")
-                    }
-                    .buttonStyle(.borderless)
-                    .help("删除项目")
-                    .pointingHandCursor()
-                }
+                TextField("项目名称", text: projectNameBinding(projectID: project.id))
+                    .textFieldStyle(.roundedBorder)
 
                 Text(project.directoryPath)
                     .font(.system(size: 11))
@@ -254,9 +240,7 @@ struct RequirementSettingsView: View {
                 .pointingHandCursor()
             }
 
-            TextEditor(text: scriptBodyBinding(projectID: projectID, scriptID: script.id))
-                .font(.system(size: 12, design: .monospaced))
-                .scrollContentBackground(.hidden)
+            SettingsMultilineEditor(text: scriptBodyBinding(projectID: projectID, scriptID: script.id))
                 .frame(minHeight: 74)
                 .padding(6)
                 .background(Color.white.opacity(0.84), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
@@ -454,6 +438,69 @@ private enum RequirementSettingsTab: String, CaseIterable, Identifiable {
             "terminal"
         case .quickLinks:
             "link"
+        }
+    }
+}
+
+private struct SettingsMultilineEditor: NSViewRepresentable {
+    @Binding var text: String
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(text: $text)
+    }
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let scrollView = NSScrollView()
+        scrollView.drawsBackground = false
+        scrollView.hasVerticalScroller = false
+        scrollView.hasHorizontalScroller = false
+        scrollView.autohidesScrollers = true
+        scrollView.borderType = .noBorder
+
+        let textView = NSTextView()
+        textView.isRichText = false
+        textView.isAutomaticQuoteSubstitutionEnabled = false
+        textView.isAutomaticDashSubstitutionEnabled = false
+        textView.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
+        textView.textColor = .labelColor
+        textView.backgroundColor = .clear
+        textView.drawsBackground = false
+        textView.textContainerInset = NSSize(width: 0, height: 0)
+        textView.textContainer?.widthTracksTextView = true
+        textView.textContainer?.containerSize = NSSize(width: scrollView.contentSize.width, height: CGFloat.greatestFiniteMagnitude)
+        textView.minSize = .zero
+        textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        textView.isVerticallyResizable = true
+        textView.isHorizontallyResizable = false
+        textView.delegate = context.coordinator
+
+        scrollView.documentView = textView
+        return scrollView
+    }
+
+    func updateNSView(_ scrollView: NSScrollView, context: Context) {
+        guard let textView = scrollView.documentView as? NSTextView else {
+            return
+        }
+
+        if textView.string != text {
+            textView.string = text
+        }
+    }
+
+    final class Coordinator: NSObject, NSTextViewDelegate {
+        @Binding var text: String
+
+        init(text: Binding<String>) {
+            _text = text
+        }
+
+        func textDidChange(_ notification: Notification) {
+            guard let textView = notification.object as? NSTextView else {
+                return
+            }
+
+            text = textView.string
         }
     }
 }

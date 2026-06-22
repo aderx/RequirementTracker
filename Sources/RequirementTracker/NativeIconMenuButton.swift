@@ -117,7 +117,7 @@ struct NativeIconMenuButton: NSViewRepresentable {
     private static func symbolImage(_ name: String) -> NSImage? {
         let image = NSImage(systemSymbolName: name, accessibilityDescription: name)
         let configuredImage = image?.withSymbolConfiguration(
-            NSImage.SymbolConfiguration(pointSize: 13, weight: .semibold)
+            NSImage.SymbolConfiguration(pointSize: 11.5, weight: .semibold)
         ) ?? image
         configuredImage?.isTemplate = true
         return configuredImage

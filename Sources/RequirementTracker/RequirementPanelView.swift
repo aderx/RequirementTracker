@@ -91,7 +91,7 @@ struct RequirementPanelView: View {
     }
 
     private var header: some View {
-        HStack(spacing: 7) {
+        HStack(spacing: 5) {
             Text("需求记录")
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(DesignColor.textPrimary)
@@ -123,22 +123,22 @@ struct RequirementPanelView: View {
                     NativeIconMenuButton(
                         kind: .symbol("terminal"),
                         contents: scriptMenuContents,
-                        size: CGSize(width: 24, height: 22),
+                        size: CGSize(width: 22, height: 22),
                         tintAlpha: 0.78,
                         help: "启动脚本"
                     )
-                    .frame(width: 24, height: 22)
+                    .frame(width: 22, height: 22)
                 }
 
                 if !quickLinkMenuContents.isEmpty {
                     NativeIconMenuButton(
                         kind: .symbol("link"),
                         contents: quickLinkMenuContents,
-                        size: CGSize(width: 24, height: 22),
+                        size: CGSize(width: 22, height: 22),
                         tintAlpha: 0.78,
                         help: "快速打开链接"
                     )
-                    .frame(width: 24, height: 22)
+                    .frame(width: 22, height: 22)
                 }
 
                 Button {
@@ -149,9 +149,9 @@ struct RequirementPanelView: View {
                 } label: {
                     Image(systemName: "plus")
                         .font(.system(size: 11.5, weight: .semibold))
-                        .frame(width: 24)
-                    .frame(height: 22)
-                    .contentShape(Rectangle())
+                        .frame(width: 22)
+                        .frame(height: 22)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(HeaderAddButtonStyle())
                 .help("添加需求")
