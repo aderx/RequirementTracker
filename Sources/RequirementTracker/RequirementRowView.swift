@@ -179,7 +179,7 @@ struct RequirementRowView: View {
                 Button {
                     performAdvanceAction()
                 } label: {
-                    HStack(spacing: 2) {
+                    HStack(spacing: 5) {
                         Image(systemName: action.systemImage)
                             .font(.system(size: 8, weight: .semibold))
                         Text(action.title)
@@ -290,7 +290,7 @@ struct RequirementRowView: View {
         VStack(alignment: .leading, spacing: 5) {
             ForEach(timelineEntries) { entry in
                 HStack(spacing: 12) {
-                    TimelineDot(color: entry.color, icon: entry.icon)
+                    TimelineDot(color: entry.color, systemImage: entry.systemImage)
                         .frame(width: 9)
 
                     Text(entry.title)
@@ -431,27 +431,7 @@ struct RequirementRowView: View {
     }
 
     private var timelineEntries: [TimelineEntry] {
-        var entries: [TimelineEntry] = [
-            TimelineEntry(title: style.title, date: requirement.activityDate, color: style.color, icon: style.icon)
-        ]
-
-        if requirement.isTested || requirement.isMerged {
-            entries.append(TimelineEntry(title: "已测试", date: requirement.updatedAt, color: DesignColor.tested, icon: .check))
-        }
-
-        if requirement.isDone || requirement.isTested || requirement.isMerged {
-            entries.append(TimelineEntry(title: "开发完成", date: requirement.completedAt ?? requirement.updatedAt, color: DesignColor.devDone, icon: .check))
-        }
-
-        if requirement.stage == .active || requirement.stage == .paused || requirement.stage == .stopped || requirement.isDone {
-            entries.append(TimelineEntry(title: "开发中", date: requirement.createdAt, color: DesignColor.doing, icon: .filledCircle))
-        }
-
-        if requirement.stage != .pending {
-            entries.append(TimelineEntry(title: "待开发", date: requirement.createdAt, color: DesignColor.todo, icon: .emptyCircle))
-        }
-
-        return entries.removingAdjacentDuplicates()
+        requirement.statusHistory.map { timelineEntry(for: $0) }
     }
 
     private func beginEditing(_ mode: RowEditorMode) {
@@ -580,6 +560,17 @@ struct RequirementRowView: View {
     private func timelineDateText(_ date: Date) -> String {
         RequirementDateDisplayFormatter.shortDisplayText(for: date)
     }
+
+    private func timelineEntry(for event: RequirementStatusEvent) -> TimelineEntry {
+        let presentation = TimelineStatusPresentation(status: event.status)
+        return TimelineEntry(
+            id: event.id,
+            title: presentation.title,
+            date: event.date,
+            color: presentation.color,
+            systemImage: presentation.systemImage
+        )
+    }
 }
 
 private enum RowEditorMode: Equatable {
@@ -589,42 +580,60 @@ private enum RowEditorMode: Equatable {
 }
 
 private struct TimelineEntry: Identifiable {
-    let id = UUID()
+    let id: UUID
     let title: String
     let date: Date
     let color: Color
-    let icon: RequirementStatusGlyph
+    let systemImage: String
 }
 
 private struct TimelineDot: View {
     let color: Color
-    let icon: RequirementStatusGlyph
+    let systemImage: String
 
     var body: some View {
-        switch icon {
-        case .emptyCircle:
-            Circle()
-                .stroke(color, lineWidth: 1.3)
-                .frame(width: 8, height: 8)
-        case .filledCircle:
-            Circle()
-                .fill(color)
-                .frame(width: 8, height: 8)
-        case .check:
-            Image(systemName: "checkmark")
-                .font(.system(size: 8, weight: .bold))
-                .foregroundStyle(color)
-                .frame(width: 8, height: 8)
-        case .pause:
-            Image(systemName: "pause.fill")
-                .font(.system(size: 7, weight: .bold))
-                .foregroundStyle(color)
-                .frame(width: 8, height: 8)
-        case .xmark:
-            Image(systemName: "xmark")
-                .font(.system(size: 7, weight: .bold))
-                .foregroundStyle(color)
-                .frame(width: 8, height: 8)
+        Image(systemName: systemImage)
+            .font(.system(size: 9, weight: .bold))
+            .foregroundStyle(color)
+            .frame(width: 12, height: 10)
+    }
+}
+
+private struct TimelineStatusPresentation {
+    let title: String
+    let color: Color
+    let systemImage: String
+
+    init(status: RequirementTimelineStatus) {
+        switch status {
+        case .pending:
+            title = "待开发"
+            color = DesignColor.todo
+            systemImage = "circle"
+        case .active:
+            title = "开发中"
+            color = DesignColor.doing
+            systemImage = "play.fill"
+        case .done:
+            title = "开发完成"
+            color = DesignColor.devDone
+            systemImage = "flag.checkered"
+        case .tested:
+            title = "已测试"
+            color = DesignColor.tested
+            systemImage = "checkmark.seal"
+        case .merged:
+            title = "已合并"
+            color = DesignColor.merged
+            systemImage = "arrow.triangle.merge"
+        case .paused:
+            title = "已暂停"
+            color = DesignColor.paused
+            systemImage = "pause.fill"
+        case .stopped:
+            title = "已停止"
+            color = DesignColor.stopped
+            systemImage = "xmark"
         }
     }
 }

@@ -159,8 +159,6 @@ struct RequirementOverviewView: View {
         VStack(spacing: 0) {
             statsGrid
 
-            overviewDateFilterBar
-
             searchBar
 
             ScrollView {
@@ -243,32 +241,24 @@ struct RequirementOverviewView: View {
         }
     }
 
-    private var overviewDateFilterBar: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "calendar")
-                .font(.system(size: 10.5, weight: .semibold))
-                .foregroundStyle(Color.black.opacity(0.38))
-
-            ForEach(RequirementDateFilter.allCases) { filter in
-                Button(filter.overviewTitle) {
-                    selectedDateFilter = filter
-                }
-                .buttonStyle(
-                    OverviewDateFilterButtonStyle(
-                        isSelected: selectedDateFilter == filter
-                    )
-                )
-                .pointingHandCursor()
-            }
-
-            Spacer()
-        }
-        .padding(.horizontal, 14)
-        .padding(.top, 10)
-    }
-
     private var searchBar: some View {
         HStack(spacing: 8) {
+            Menu {
+                ForEach(RequirementDateFilter.allCases) { filter in
+                    Button {
+                        selectedDateFilter = filter
+                    } label: {
+                        Label(filter.overviewTitle, systemImage: selectedDateFilter == filter ? "checkmark" : "calendar")
+                    }
+                }
+            } label: {
+                Image(systemName: "calendar")
+                    .font(.system(size: 12, weight: .semibold))
+            }
+            .buttonStyle(OverviewIconButtonStyle(isSelected: selectedDateFilter != .all))
+            .help(selectedDateFilter == .all ? "选择时间范围" : "时间范围：\(selectedDateFilter.overviewTitle)")
+            .pointingHandCursor()
+
             HStack(spacing: 6) {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 11, weight: .medium))
@@ -279,6 +269,7 @@ struct RequirementOverviewView: View {
                     .textFieldStyle(.plain)
             }
             .padding(.horizontal, 9)
+            .frame(maxWidth: .infinity)
             .frame(height: 28)
             .background(Color.white.opacity(0.72), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
             .overlay(
@@ -289,13 +280,10 @@ struct RequirementOverviewView: View {
             Button {
                 searchText = ""
             } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: "arrow.counterclockwise")
-                        .font(.system(size: 10, weight: .bold))
-                    Text("重置")
-                }
+                Image(systemName: "arrow.counterclockwise")
+                    .font(.system(size: 11, weight: .bold))
             }
-            .buttonStyle(OverviewSearchResetButtonStyle())
+            .buttonStyle(OverviewIconButtonStyle(isSelected: false))
             .disabled(searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             .opacity(searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.45 : 1)
             .pointingHandCursor(!searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -445,7 +433,7 @@ struct RequirementOverviewView: View {
                                 Button {
                                     editingDraft?.status = option
                                 } label: {
-                                    HStack(spacing: 4) {
+                                    HStack(spacing: 6) {
                                         Image(systemName: option.systemImage)
                                             .font(.system(size: 10, weight: .semibold))
                                         Text(option.title)
@@ -871,30 +859,13 @@ struct RequirementOverviewView: View {
     }
 
     private func overviewTimelineEntries(for requirement: Requirement) -> [OverviewTimelineEntry] {
-        var entries: [OverviewTimelineEntry] = [
+        requirement.statusHistory.map {
             OverviewTimelineEntry(
-                status: OverviewStatusOption(requirement: requirement),
-                date: requirement.activityDate
+                id: $0.id,
+                status: OverviewStatusOption(status: $0.status),
+                date: $0.date
             )
-        ]
-
-        if requirement.isTested || requirement.isMerged {
-            entries.append(OverviewTimelineEntry(status: .tested, date: requirement.updatedAt))
         }
-
-        if requirement.isDone || requirement.isTested || requirement.isMerged {
-            entries.append(OverviewTimelineEntry(status: .done, date: requirement.completedAt ?? requirement.updatedAt))
-        }
-
-        if requirement.stage == .active || requirement.isDone {
-            entries.append(OverviewTimelineEntry(status: .active, date: requirement.createdAt))
-        }
-
-        if requirement.stage != .pending {
-            entries.append(OverviewTimelineEntry(status: .pending, date: requirement.createdAt))
-        }
-
-        return entries.removingAdjacentDuplicateStatuses()
     }
 
     private func normalized(_ text: String) -> String {
@@ -1020,6 +991,25 @@ private enum OverviewStatusOption: String, CaseIterable, Identifiable {
             self = .active
         } else {
             self = .pending
+        }
+    }
+
+    init(status: RequirementTimelineStatus) {
+        switch status {
+        case .pending:
+            self = .pending
+        case .active:
+            self = .active
+        case .done:
+            self = .done
+        case .tested:
+            self = .tested
+        case .merged:
+            self = .merged
+        case .paused:
+            self = .paused
+        case .stopped:
+            self = .stopped
         }
     }
 
@@ -1154,7 +1144,7 @@ private struct OverviewChange: Identifiable {
 }
 
 private struct OverviewTimelineEntry: Identifiable {
-    let id = UUID()
+    let id: UUID
     let status: OverviewStatusOption
     let date: Date
 }
@@ -1345,14 +1335,14 @@ private struct OverviewStatTile: View {
     }
 }
 
-private struct OverviewDateFilterButtonStyle: ButtonStyle {
+private struct OverviewIconButtonStyle: ButtonStyle {
     let isSelected: Bool
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 10.5, weight: isSelected ? .semibold : .medium))
+            .font(.system(size: 11, weight: .semibold))
             .foregroundStyle(isSelected ? DesignColor.doing : Color.black.opacity(0.56))
-            .padding(.horizontal, 8)
+            .frame(width: 34)
             .frame(height: 24)
             .background(
                 (isSelected ? DesignColor.doing.opacity(0.10) : Color.black.opacity(configuration.isPressed ? 0.07 : 0.035)),

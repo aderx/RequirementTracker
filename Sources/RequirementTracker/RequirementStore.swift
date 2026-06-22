@@ -55,8 +55,13 @@ final class RequirementStore: ObservableObject {
         }
 
         let now = Date()
+        let previousStatus = requirements[index].currentTimelineStatus
         transform(&requirements[index])
         normalizeRequirement(at: index, now: now)
+        let nextStatus = requirements[index].currentTimelineStatus
+        if nextStatus != previousStatus {
+            requirements[index].recordStatus(nextStatus, at: now)
+        }
         requirements[index].updatedAt = now
     }
 

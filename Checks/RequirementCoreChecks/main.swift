@@ -170,6 +170,18 @@ expect(!mergeCandidate.hasMergeRequestURL, "Blank MR should not satisfy merge re
 mergeCandidate.mrURL = " http://gitlab.zstack.io/demo/-/merge_requests/1 "
 expect(mergeCandidate.hasMergeRequestURL, "Non-blank MR should satisfy merge requirement")
 
+var historyRequirement = requirement(
+    "ZSTAC-12",
+    stage: .pending,
+    createdAt: referenceDate
+)
+historyRequirement.recordStatus(.done, at: referenceDate.addingTimeInterval(60))
+historyRequirement.recordStatus(.tested, at: referenceDate.addingTimeInterval(120))
+expect(
+    historyRequirement.statusHistory.map(\.status) == [.pending, .done, .tested],
+    "Status history should append new statuses after old statuses"
+)
+
 let thisWeek = requirement(
     "ZSTAC-1",
     stage: .completed,
