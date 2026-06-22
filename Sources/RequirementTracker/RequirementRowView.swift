@@ -12,6 +12,7 @@ struct RequirementRowView: View {
     @State private var draftNote = ""
     @State private var draftMR = ""
     @State private var draftReason = ""
+    @State private var advancesAfterMRSave = false
 
     let requirement: Requirement
     let isExpanded: Bool
@@ -175,7 +176,7 @@ struct RequirementRowView: View {
 
             if let action = style.advanceAction {
                 Button {
-                    store.advance(id: requirement.id)
+                    performAdvanceAction()
                 } label: {
                     HStack(spacing: 2) {
                         Image(systemName: action.systemImage)
@@ -238,7 +239,7 @@ struct RequirementRowView: View {
                     title: requirement.mrURL?.isEmpty == false ? "编辑 MR" : "添加 MR",
                     systemImage: "link"
                 ) {
-                    beginEditing(.mr)
+                    beginMREditing(advanceAfterSave: false)
                 }
             )
         ]
@@ -339,6 +340,11 @@ struct RequirementRowView: View {
             store.update(id: requirement.id) { requirement in
                 requirement.mrURL = draftMR
             }
+
+            if advancesAfterMRSave {
+                store.advance(id: requirement.id)
+            }
+
             closeEditor()
         }
         .padding(.top, 1)
@@ -457,16 +463,26 @@ struct RequirementRowView: View {
     private func beginEditing(_ mode: RowEditorMode) {
         draftNote = requirement.note
         draftMR = requirement.mrURL ?? ""
+        advancesAfterMRSave = false
         editorMode = mode
+    }
+
+    private func beginMREditing(advanceAfterSave: Bool) {
+        draftNote = requirement.note
+        draftMR = requirement.mrURL ?? ""
+        advancesAfterMRSave = advanceAfterSave
+        editorMode = .mr
     }
 
     private func beginReasonEditing(_ stage: RequirementStage) {
         draftReason = requirement.pauseReason
+        advancesAfterMRSave = false
         editorMode = .pauseReason(stage)
     }
 
     private func closeEditor() {
         editorMode = nil
+        advancesAfterMRSave = false
     }
 
     private var reasonEditingStage: RequirementStage? {
@@ -475,6 +491,23 @@ struct RequirementRowView: View {
         }
 
         return nil
+    }
+
+    private func performAdvanceAction() {
+        if shouldPromptMRBeforeTesting {
+            beginMREditing(advanceAfterSave: true)
+            return
+        }
+
+        store.advance(id: requirement.id)
+    }
+
+    private var shouldPromptMRBeforeTesting: Bool {
+        !requirement.isMerged
+            && !requirement.isTested
+            && (requirement.isDone || requirement.stage == .completed)
+            && requirement.stage != .paused
+            && requirement.stage != .stopped
     }
 
     @ViewBuilder
@@ -522,7 +555,7 @@ struct RequirementRowView: View {
 
     private func relativeDateText(_ date: Date) -> String {
         let calendar = Calendar.current
-        let formattedDate = formattedDateText(date)
+        let formattedDate = RequirementDateDisplayFormatter.displayText(for: date, calendar: calendar)
 
         if calendar.isDateInToday(date) {
             return "\(formattedDate)（今天）"
@@ -535,18 +568,8 @@ struct RequirementRowView: View {
         return formattedDate
     }
 
-    private func formattedDateText(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "zh_CN")
-        formatter.dateFormat = "yyyy年M月d日"
-        return formatter.string(from: date)
-    }
-
     private func timelineDateText(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "zh_CN")
-        formatter.dateFormat = "M月d日"
-        return formatter.string(from: date)
+        RequirementDateDisplayFormatter.shortDisplayText(for: date)
     }
 }
 
@@ -896,7 +919,7 @@ private struct RequirementDisplayStyle {
             title = "已暂停"
             color = DesignColor.paused
             icon = .pause
-            advanceAction = RequirementAdvanceAction(title: "继续", color: DesignColor.paused, systemImage: "arrow.counterclockwise")
+            advanceAction = RequirementAdvanceAction(title: "继续", color: DesignColor.paused, systemImage: "arrow.clockwise")
             showsTerminalCheck = false
             return
         }
@@ -914,7 +937,7 @@ private struct RequirementDisplayStyle {
             title = "已测试"
             color = DesignColor.tested
             icon = .check
-            advanceAction = RequirementAdvanceAction(title: "合并", color: DesignColor.merged, systemImage: "arrow.right")
+            advanceAction = RequirementAdvanceAction(title: "合并", color: DesignColor.merged, systemImage: "arrow.triangle.merge")
             showsTerminalCheck = false
             return
         }
@@ -923,7 +946,7 @@ private struct RequirementDisplayStyle {
             title = "开发完成"
             color = DesignColor.devDone
             icon = .check
-            advanceAction = RequirementAdvanceAction(title: "测试", color: DesignColor.tested, systemImage: "arrow.right")
+            advanceAction = RequirementAdvanceAction(title: "测试", color: DesignColor.tested, systemImage: "checkmark.seal")
             showsTerminalCheck = false
             return
         }
@@ -933,19 +956,19 @@ private struct RequirementDisplayStyle {
             title = "待开发"
             color = DesignColor.todo
             icon = .emptyCircle
-            advanceAction = RequirementAdvanceAction(title: "开始", color: DesignColor.doing, systemImage: "arrow.right")
+            advanceAction = RequirementAdvanceAction(title: "开始", color: DesignColor.doing, systemImage: "play.fill")
             showsTerminalCheck = false
         case .active:
             title = "开发中"
             color = DesignColor.doing
             icon = .filledCircle
-            advanceAction = RequirementAdvanceAction(title: "完成", color: DesignColor.devDone, systemImage: "arrow.right")
+            advanceAction = RequirementAdvanceAction(title: "完成", color: DesignColor.devDone, systemImage: "flag.checkered")
             showsTerminalCheck = false
         case .paused:
             title = "已暂停"
             color = DesignColor.paused
             icon = .pause
-            advanceAction = RequirementAdvanceAction(title: "继续", color: DesignColor.paused, systemImage: "arrow.counterclockwise")
+            advanceAction = RequirementAdvanceAction(title: "继续", color: DesignColor.paused, systemImage: "arrow.clockwise")
             showsTerminalCheck = false
         case .stopped:
             title = "已停止"
@@ -957,7 +980,7 @@ private struct RequirementDisplayStyle {
             title = "开发完成"
             color = DesignColor.devDone
             icon = .check
-            advanceAction = RequirementAdvanceAction(title: "测试", color: DesignColor.tested, systemImage: "arrow.right")
+            advanceAction = RequirementAdvanceAction(title: "测试", color: DesignColor.tested, systemImage: "checkmark.seal")
             showsTerminalCheck = false
         }
     }

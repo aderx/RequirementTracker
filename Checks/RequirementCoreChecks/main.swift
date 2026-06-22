@@ -33,7 +33,7 @@ func requirement(
     )
 }
 
-func makeDate(year: Int, month: Int, day: Int) -> Date {
+func makeDate(year: Int, month: Int, day: Int, hour: Int = 0, minute: Int = 0) -> Date {
     var calendar = Calendar(identifier: .gregorian)
     calendar.timeZone = TimeZone(secondsFromGMT: 0)!
 
@@ -42,7 +42,9 @@ func makeDate(year: Int, month: Int, day: Int) -> Date {
             timeZone: calendar.timeZone,
             year: year,
             month: month,
-            day: day
+            day: day,
+            hour: hour,
+            minute: minute
         )
     )!
 }
@@ -123,6 +125,47 @@ var calendar = Calendar(identifier: .gregorian)
 calendar.timeZone = TimeZone(secondsFromGMT: 0)!
 
 let referenceDate = makeDate(year: 2026, month: 6, day: 19)
+
+let preciseDate = makeDate(year: 2026, month: 6, day: 19, hour: 15, minute: 42)
+expect(
+    RequirementDateDisplayFormatter.displayText(for: preciseDate, calendar: calendar) == "2026年6月19日 15:42",
+    "Display formatter should include time when hour/minute are present"
+)
+expect(
+    RequirementDateDisplayFormatter.displayText(for: referenceDate, calendar: calendar) == "2026年6月19日",
+    "Display formatter should show day only for midnight dates"
+)
+
+let range = RequirementDateRange(
+    start: referenceDate,
+    end: referenceDate.addingTimeInterval(86_400)
+)
+let inRange = requirement(
+    "ZSTAC-9",
+    stage: .pending,
+    createdAt: referenceDate.addingTimeInterval(60)
+)
+let outOfRange = requirement(
+    "ZSTAC-10",
+    stage: .pending,
+    createdAt: referenceDate.addingTimeInterval(172_800)
+)
+expect(
+    RequirementQuery.sorted([inRange, outOfRange], dateRange: range, calendar: calendar).map(\.jiraKey) == ["ZSTAC-9"],
+    "Custom range filtering should keep only requirements whose activity date is inside the range"
+)
+
+var mergeCandidate = requirement(
+    "ZSTAC-11",
+    stage: .completed,
+    isDone: true,
+    isTested: true,
+    createdAt: referenceDate
+)
+expect(!mergeCandidate.hasMergeRequestURL, "Blank MR should not satisfy merge requirement")
+mergeCandidate.mrURL = " http://gitlab.zstack.io/demo/-/merge_requests/1 "
+expect(mergeCandidate.hasMergeRequestURL, "Non-blank MR should satisfy merge requirement")
+
 let thisWeek = requirement(
     "ZSTAC-1",
     stage: .completed,

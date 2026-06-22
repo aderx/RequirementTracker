@@ -140,6 +140,10 @@ public struct Requirement: Identifiable, Codable, Equatable, Sendable {
         completedAt ?? updatedAt
     }
 
+    public var hasMergeRequestURL: Bool {
+        !(mrURL ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
     public var combinedCopyText: String {
         let jira = jiraURL.trimmingCharacters(in: .whitespacesAndNewlines)
         let mr = mrURL?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""

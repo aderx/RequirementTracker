@@ -22,6 +22,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var resignActiveObserver: NSObjectProtocol?
     private var overviewWindowController: NSWindowController?
     private var aboutWindowController: NSWindowController?
+    private var settingsWindowController: NSWindowController?
     private let panelWidth = RequirementPanelMetrics.width
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -46,6 +47,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             },
             onShowAbout: { [weak self] in
                 self?.openAbout()
+            },
+            onOpenSettings: { [weak self] in
+                self?.openSettings()
             },
             onCalendarVisibilityChange: { [weak self] isCalendarVisible in
                 Task { @MainActor in
@@ -211,6 +215,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let controller = NSWindowController(window: window)
         overviewWindowController = controller
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        controller.showWindow(nil)
+    }
+
+    private func openSettings() {
+        closePopover()
+
+        if let window = settingsWindowController?.window {
+            NSApplication.shared.activate(ignoringOtherApps: true)
+            centerOnMainScreen(window)
+            window.makeKeyAndOrderFront(nil)
+            return
+        }
+
+        let hostingController = NSHostingController(rootView: RequirementSettingsView())
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 460, height: 300),
+            styleMask: [.titled, .closable, .fullSizeContentView],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "设置"
+        window.titlebarAppearsTransparent = true
+        window.isReleasedWhenClosed = false
+        window.contentViewController = hostingController
+        centerOnMainScreen(window)
+
+        let controller = NSWindowController(window: window)
+        settingsWindowController = controller
         NSApplication.shared.activate(ignoringOtherApps: true)
         controller.showWindow(nil)
     }

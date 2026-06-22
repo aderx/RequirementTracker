@@ -9,6 +9,7 @@ struct RequirementOverviewView: View {
 
     @State private var selectedID: Requirement.ID?
     @State private var selectedFilter: OverviewStatusFilter = .all
+    @State private var selectedDateFilter: RequirementDateFilter = .all
     @State private var searchText = ""
     @State private var editingDraft: OverviewDraft?
     @State private var isShowingConfirmation = false
@@ -29,7 +30,7 @@ struct RequirementOverviewView: View {
     }
 
     private var statusFilteredRequirements: [Requirement] {
-        sortedRequirements.filter { selectedFilter.matches($0) }
+        dateScopedRequirements.filter { selectedFilter.matches($0) }
     }
 
     private var visibleRequirements: [Requirement] {
@@ -51,6 +52,10 @@ struct RequirementOverviewView: View {
 
             return queryParts.allSatisfy { searchableText.contains($0.foldedForSearch) }
         }
+    }
+
+    private var dateScopedRequirements: [Requirement] {
+        sortedRequirements.filter(matchesSelectedDateFilter)
     }
 
     private var selectedRequirement: Requirement? {
@@ -87,11 +92,23 @@ struct RequirementOverviewView: View {
             return false
         }
 
+        if draft.status == .merged && draft.mrURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return false
+        }
+
         return !pendingChanges.isEmpty
     }
 
     private var isConfirmingDeletion: Bool {
         pendingChanges.contains { $0.field == .delete }
+    }
+
+    private var mergeDraftRequiresMR: Bool {
+        guard let draft = editingDraft else {
+            return false
+        }
+
+        return draft.status == .merged && draft.mrURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     var body: some View {
@@ -129,6 +146,9 @@ struct RequirementOverviewView: View {
         .onChange(of: selectedFilter) { _ in
             ensureSelection()
         }
+        .onChange(of: selectedDateFilter) { _ in
+            ensureSelection()
+        }
         .onChange(of: searchText) { _ in
             ensureSelection()
         }
@@ -138,6 +158,8 @@ struct RequirementOverviewView: View {
     private var sidebar: some View {
         VStack(spacing: 0) {
             statsGrid
+
+            overviewDateFilterBar
 
             searchBar
 
@@ -172,7 +194,7 @@ struct RequirementOverviewView: View {
     }
 
     private var statsGrid: some View {
-        let stats = OverviewStats(requirements: store.requirements)
+        let stats = OverviewStats(requirements: dateScopedRequirements)
 
         return HStack(spacing: 8) {
             OverviewStatTile(
@@ -219,6 +241,30 @@ struct RequirementOverviewView: View {
                 .fill(Color.black.opacity(0.07))
                 .frame(height: 0.5)
         }
+    }
+
+    private var overviewDateFilterBar: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "calendar")
+                .font(.system(size: 10.5, weight: .semibold))
+                .foregroundStyle(Color.black.opacity(0.38))
+
+            ForEach(RequirementDateFilter.allCases) { filter in
+                Button(filter.overviewTitle) {
+                    selectedDateFilter = filter
+                }
+                .buttonStyle(
+                    OverviewDateFilterButtonStyle(
+                        isSelected: selectedDateFilter == filter
+                    )
+                )
+                .pointingHandCursor()
+            }
+
+            Spacer()
+        }
+        .padding(.horizontal, 14)
+        .padding(.top, 10)
     }
 
     private var searchBar: some View {
@@ -399,9 +445,13 @@ struct RequirementOverviewView: View {
                                 Button {
                                     editingDraft?.status = option
                                 } label: {
-                                    Text(option.title)
-                                        .lineLimit(2)
-                                        .fixedSize(horizontal: false, vertical: true)
+                                    HStack(spacing: 4) {
+                                        Image(systemName: option.systemImage)
+                                            .font(.system(size: 10, weight: .semibold))
+                                        Text(option.title)
+                                            .lineLimit(1)
+                                            .fixedSize(horizontal: true, vertical: false)
+                                    }
                                 }
                                 .buttonStyle(
                                     OverviewStatusOptionButtonStyle(
@@ -427,9 +477,17 @@ struct RequirementOverviewView: View {
                     }
 
                     OverviewEditFieldRow(label: "MR") {
-                        TextField("MR 地址", text: draftStringBinding(\.mrURL))
-                            .font(.system(size: 12, design: .monospaced))
-                            .textFieldStyle(.roundedBorder)
+                        VStack(alignment: .leading, spacing: 6) {
+                            TextField("MR 地址", text: draftStringBinding(\.mrURL))
+                                .font(.system(size: 12, design: .monospaced))
+                                .textFieldStyle(.roundedBorder)
+
+                            if mergeDraftRequiresMR {
+                                Label("转为已合并前需要填写 MR 地址", systemImage: "exclamationmark.triangle.fill")
+                                    .font(.system(size: 10.5, weight: .semibold))
+                                    .foregroundStyle(DesignColor.stopped)
+                            }
+                        }
                     }
 
                     OverviewEditFieldRow(label: "备注", alignment: .top, labelTopPadding: 9) {
@@ -632,6 +690,21 @@ struct RequirementOverviewView: View {
         isShowingConfirmation = false
     }
 
+    private func matchesSelectedDateFilter(_ requirement: Requirement) -> Bool {
+        let calendar = Calendar.current
+
+        switch selectedDateFilter {
+        case .all:
+            return true
+        case .today:
+            return calendar.isDate(requirement.activityDate, inSameDayAs: Date())
+        case .thisWeek:
+            return calendar.isDate(requirement.activityDate, equalTo: Date(), toGranularity: .weekOfYear)
+        case .thisMonth:
+            return calendar.isDate(requirement.activityDate, equalTo: Date(), toGranularity: .month)
+        }
+    }
+
     private func beginEditing(_ requirement: Requirement) {
         editingDraft = OverviewDraft(requirement: requirement)
         isShowingConfirmation = false
@@ -651,6 +724,11 @@ struct RequirementOverviewView: View {
     }
 
     private func commitEditing() {
+        guard !mergeDraftRequiresMR else {
+            isShowingConfirmation = false
+            return
+        }
+
         guard
             let selectedRequirement,
             let draft = editingDraft,
@@ -825,7 +903,7 @@ struct RequirementOverviewView: View {
 
     private func relativeDateText(_ date: Date) -> String {
         let calendar = Calendar.current
-        let formattedDate = formattedDateText(date)
+        let formattedDate = RequirementDateDisplayFormatter.displayText(for: date, calendar: calendar)
 
         if calendar.isDateInToday(date) {
             return "\(formattedDate)（今天）"
@@ -836,13 +914,6 @@ struct RequirementOverviewView: View {
         }
 
         return formattedDate
-    }
-
-    private func formattedDateText(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "zh_CN")
-        formatter.dateFormat = "yyyy年M月d日"
-        return formatter.string(from: date)
     }
 
     private func timelineDateText(_ date: Date) -> String {
@@ -995,9 +1066,13 @@ private enum OverviewStatusOption: String, CaseIterable, Identifiable {
         case .pending:
             "circle"
         case .active:
-            "circle.fill"
-        case .done, .tested, .merged:
-            "checkmark"
+            "play.fill"
+        case .done:
+            "flag.checkered"
+        case .tested:
+            "checkmark.seal"
+        case .merged:
+            "arrow.triangle.merge"
         case .paused:
             "pause.fill"
         case .stopped:
@@ -1219,10 +1294,7 @@ private struct OverviewRequirementListRow: View {
 
     private func summaryDateText(_ date: Date) -> String {
         let calendar = Calendar.current
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "zh_CN")
-        formatter.dateFormat = "yyyy年M月d日"
-        let formattedDate = formatter.string(from: date)
+        let formattedDate = RequirementDateDisplayFormatter.displayText(for: date, calendar: calendar)
 
         if calendar.isDateInToday(date) {
             return "\(formattedDate)（今天）"
@@ -1270,6 +1342,26 @@ private struct OverviewStatTile: View {
         }
         .buttonStyle(.plain)
         .pointingHandCursor()
+    }
+}
+
+private struct OverviewDateFilterButtonStyle: ButtonStyle {
+    let isSelected: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 10.5, weight: isSelected ? .semibold : .medium))
+            .foregroundStyle(isSelected ? DesignColor.doing : Color.black.opacity(0.56))
+            .padding(.horizontal, 8)
+            .frame(height: 24)
+            .background(
+                (isSelected ? DesignColor.doing.opacity(0.10) : Color.black.opacity(configuration.isPressed ? 0.07 : 0.035)),
+                in: RoundedRectangle(cornerRadius: 6, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .strokeBorder(isSelected ? DesignColor.doing.opacity(0.25) : Color.black.opacity(0.10), lineWidth: 0.5)
+            )
     }
 }
 
@@ -1717,6 +1809,21 @@ private struct OverviewStatusOptionButtonStyle: ButtonStyle {
                     .strokeBorder(isSelected ? status.tint : Color.clear, lineWidth: 1.5)
             )
             .pointingHandCursor(isEnabled)
+    }
+}
+
+private extension RequirementDateFilter {
+    var overviewTitle: String {
+        switch self {
+        case .all:
+            "全部"
+        case .today:
+            "今天"
+        case .thisWeek:
+            "本周"
+        case .thisMonth:
+            "本月"
+        }
     }
 }
 

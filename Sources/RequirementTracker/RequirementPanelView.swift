@@ -15,6 +15,7 @@ struct RequirementPanelView: View {
     @EnvironmentObject private var store: RequirementStore
     var onOpenOverview: (() -> Void)?
     var onShowAbout: (() -> Void)?
+    var onOpenSettings: (() -> Void)?
     var onCalendarVisibilityChange: ((Bool) -> Void)?
 
     @State private var statusFilter: RequirementStatusFilter = .incomplete
@@ -196,11 +197,20 @@ struct RequirementPanelView: View {
                             }
                         )
                         .environmentObject(store)
+                        .transition(
+                            .asymmetric(
+                                insertion: .opacity.combined(with: .move(edge: .top)),
+                                removal: .move(edge: .bottom)
+                                    .combined(with: .scale(scale: 0.02, anchor: .top))
+                                    .combined(with: .opacity)
+                            )
+                        )
                     }
                 }
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
+            .animation(.snappy(duration: 0.22), value: visibleRequirements.map(\.id))
         }
         .scrollIndicators(.hidden)
         .background(ScrollIndicatorHider())
@@ -363,6 +373,11 @@ struct RequirementPanelView: View {
                 }
             ),
             .separator(),
+            .item(
+                NativeMenuItemDescriptor(title: "设置", systemImage: "gearshape") {
+                    onOpenSettings?()
+                }
+            ),
             .item(
                 NativeMenuItemDescriptor(title: "关于", systemImage: "info.circle") {
                     onShowAbout?()

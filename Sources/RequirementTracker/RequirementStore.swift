@@ -105,6 +105,11 @@ final class RequirementStore: ObservableObject {
             }
 
             if requirement.isTested {
+                guard requirement.hasMergeRequestURL else {
+                    lastNotice = "请先填写 MR 地址"
+                    return
+                }
+
                 requirement.isMerged = true
                 requirement.isDone = true
                 requirement.stage = .completed
@@ -181,6 +186,11 @@ final class RequirementStore: ObservableObject {
     }
 
     private func normalizeRequirement(at index: Int, now: Date) {
+        if requirements[index].isMerged && !requirements[index].hasMergeRequestURL {
+            requirements[index].isMerged = false
+            lastNotice = "请先填写 MR 地址"
+        }
+
         if requirements[index].isMerged {
             requirements[index].isTested = true
             requirements[index].isDone = true

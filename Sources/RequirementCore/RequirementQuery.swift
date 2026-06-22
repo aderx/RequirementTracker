@@ -51,6 +51,60 @@ public enum RequirementDateFilter: String, CaseIterable, Identifiable, Sendable 
     }
 }
 
+public struct RequirementDateRange: Equatable, Sendable {
+    public var start: Date?
+    public var end: Date?
+
+    public init(start: Date? = nil, end: Date? = nil) {
+        self.start = start
+        self.end = end
+    }
+
+    public func contains(_ date: Date) -> Bool {
+        if let start, date < start {
+            return false
+        }
+
+        if let end, date >= end {
+            return false
+        }
+
+        return true
+    }
+}
+
+public enum RequirementDateDisplayFormatter {
+    public static func displayText(for date: Date, calendar: Calendar = .current) -> String {
+        let components = calendar.dateComponents([.hour, .minute, .second, .nanosecond], from: date)
+        let hasTime = (components.hour ?? 0) != 0
+            || (components.minute ?? 0) != 0
+            || (components.second ?? 0) != 0
+            || (components.nanosecond ?? 0) != 0
+
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_CN")
+        formatter.calendar = calendar
+        formatter.timeZone = calendar.timeZone
+        formatter.dateFormat = hasTime ? "yyyy年M月d日 HH:mm" : "yyyy年M月d日"
+        return formatter.string(from: date)
+    }
+
+    public static func shortDisplayText(for date: Date, calendar: Calendar = .current) -> String {
+        let components = calendar.dateComponents([.hour, .minute, .second, .nanosecond], from: date)
+        let hasTime = (components.hour ?? 0) != 0
+            || (components.minute ?? 0) != 0
+            || (components.second ?? 0) != 0
+            || (components.nanosecond ?? 0) != 0
+
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_CN")
+        formatter.calendar = calendar
+        formatter.timeZone = calendar.timeZone
+        formatter.dateFormat = hasTime ? "M月d日 HH:mm" : "M月d日"
+        return formatter.string(from: date)
+    }
+}
+
 public struct RequirementStats: Equatable, Sendable {
     public var total: Int
     public var active: Int
@@ -112,6 +166,18 @@ public enum RequirementQuery {
             .sorted(by: sortComparator)
     }
 
+    public static func sorted(
+        _ requirements: [Requirement],
+        dateRange: RequirementDateRange,
+        calendar: Calendar = .current
+    ) -> [Requirement] {
+        requirements
+            .filter {
+                matchesDate($0, range: dateRange, calendar: calendar)
+            }
+            .sorted(by: sortComparator)
+    }
+
     public static func stats(
         for requirements: [Requirement],
         dateFilter: RequirementDateFilter,
@@ -120,6 +186,26 @@ public enum RequirementQuery {
     ) -> RequirementStats {
         let scoped = requirements.filter {
             matchesDate($0, filter: dateFilter, calendar: calendar, referenceDate: referenceDate)
+        }
+
+        return RequirementStats(
+            total: scoped.count,
+            active: scoped.filter(isActiveDevelopment).count,
+            pending: scoped.filter { !$0.isMerged && $0.stage == .pending }.count,
+            paused: scoped.filter(isExceptional).count,
+            completed: scoped.filter(\.isMerged).count,
+            tested: scoped.filter(\.isTested).count,
+            merged: scoped.filter(\.isMerged).count
+        )
+    }
+
+    public static func stats(
+        for requirements: [Requirement],
+        dateRange: RequirementDateRange,
+        calendar: Calendar = .current
+    ) -> RequirementStats {
+        let scoped = requirements.filter {
+            matchesDate($0, range: dateRange, calendar: calendar)
         }
 
         return RequirementStats(
@@ -180,6 +266,14 @@ public enum RequirementQuery {
         case .thisMonth:
             calendar.isDate(requirement.activityDate, equalTo: referenceDate, toGranularity: .month)
         }
+    }
+
+    private static func matchesDate(
+        _ requirement: Requirement,
+        range: RequirementDateRange,
+        calendar: Calendar
+    ) -> Bool {
+        range.contains(requirement.activityDate)
     }
 
     private static func sortComparator(lhs: Requirement, rhs: Requirement) -> Bool {
