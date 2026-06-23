@@ -3,14 +3,47 @@ import Foundation
 public enum GhosttyAutomationScript {
     public static let defaultApplicationPath = "/Applications/Ghostty.app"
 
+    public struct AppleEventCodes: Equatable, Sendable {
+        public let eventClass: String
+        public let eventID: String
+        public let configurationParameter: String
+        public let workingDirectoryProperty: String
+        public let initialInputProperty: String
+        public let waitAfterCommandProperty: String
+
+        public init(
+            eventClass: String,
+            eventID: String,
+            configurationParameter: String,
+            workingDirectoryProperty: String,
+            initialInputProperty: String,
+            waitAfterCommandProperty: String
+        ) {
+            self.eventClass = eventClass
+            self.eventID = eventID
+            self.configurationParameter = configurationParameter
+            self.workingDirectoryProperty = workingDirectoryProperty
+            self.initialInputProperty = initialInputProperty
+            self.waitAfterCommandProperty = waitAfterCommandProperty
+        }
+    }
+
+    public static let newTabAppleEventCodes = AppleEventCodes(
+        eventClass: "Ghst",
+        eventID: "NTab",
+        configurationParameter: "GNtS",
+        workingDirectoryProperty: "GScD",
+        initialInputProperty: "GScI",
+        waitAfterCommandProperty: "GScW"
+    )
+
     public static func jxa(
         projectDirectory: String,
         command: String,
         knownWindowID: String? = nil,
         applicationPath: String = defaultApplicationPath
     ) -> String {
-        let shellInput = shellCommand(projectDirectory: projectDirectory, command: command)
-        let input = shellInput.hasSuffix("\n") ? shellInput : shellInput + "\n"
+        let input = launchInput(projectDirectory: projectDirectory, command: command)
         let knownWindowValue = knownWindowID?.isEmpty == false ? jsStringLiteral(knownWindowID ?? "") : "null"
 
         return """
@@ -51,6 +84,14 @@ public enum GhosttyAutomationScript {
         """
     }
 
+    public static func launchInput(
+        projectDirectory: String,
+        command: String
+    ) -> String {
+        let shellInput = shellCommand(projectDirectory: projectDirectory, command: command)
+        return shellInput.hasSuffix("\n") ? shellInput : shellInput + "\n"
+    }
+
     public static func shellCommand(
         projectDirectory: String,
         command: String
@@ -67,7 +108,18 @@ public enum GhosttyAutomationScript {
         [
             "-na",
             applicationPath,
-            "--args",
+            "--args"
+        ] + applicationArguments(
+            projectDirectory: projectDirectory,
+            inputFilePath: inputFilePath
+        )
+    }
+
+    public static func applicationArguments(
+        projectDirectory: String,
+        inputFilePath: String
+    ) -> [String] {
+        [
             "--working-directory=\(projectDirectory)",
             "--input=path:\(inputFilePath)"
         ]

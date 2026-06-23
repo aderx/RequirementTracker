@@ -296,5 +296,27 @@ expect(
     ],
     "Ghostty open fallback should pass startup input by file path, not command-wrapper arguments"
 )
+expect(
+    GhosttyAutomationScript.applicationArguments(
+        projectDirectory: "/Users/dev/project with spaces",
+        inputFilePath: "/tmp/RequirementTracker Scripts/input file.txt"
+    ) == [
+        "--working-directory=/Users/dev/project with spaces",
+        "--input=path:/tmp/RequirementTracker Scripts/input file.txt"
+    ],
+    "Ghostty app launch should pass only application arguments so NSWorkspace can return the launched process"
+)
+
+expect(
+    GhosttyAutomationScript.newTabAppleEventCodes == GhosttyAutomationScript.AppleEventCodes(
+        eventClass: "Ghst",
+        eventID: "NTab",
+        configurationParameter: "GNtS",
+        workingDirectoryProperty: "GScD",
+        initialInputProperty: "GScI",
+        waitAfterCommandProperty: "GScW"
+    ),
+    "Ghostty tab launch should target the app-level new-tab AppleEvent with a surface configuration"
+)
 
 print("RequirementCoreChecks passed")
