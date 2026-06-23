@@ -282,5 +282,19 @@ expect(
     ) == "cd '/Users/dev/project with spaces'\npnpm dev",
     "Ghostty fallback shell command should cd into project directories, including paths with spaces"
 )
+let openArguments = GhosttyAutomationScript.openArguments(
+    projectDirectory: "/Users/dev/project with spaces",
+    command: "pnpm dev"
+)
+expect(
+    openArguments == [
+        "-na",
+        "/Applications/Ghostty.app",
+        "--args",
+        "--working-directory=/Users/dev/project with spaces",
+        "--initial-command=shell:cd '/Users/dev/project with spaces'\npnpm dev"
+    ],
+    "Ghostty open fallback should pass one initial shell command, not split /bin/zsh arguments"
+)
 
 print("RequirementCoreChecks passed")

@@ -769,7 +769,6 @@ private struct HeaderAddButtonStyle: ButtonStyle {
         configuration.label
             .font(.system(size: 11.5, weight: .semibold))
             .foregroundStyle(DesignColor.textPrimary)
-            .padding(.horizontal, 6)
             .frame(height: 22)
             .contentShape(Rectangle())
             .opacity(configuration.isPressed ? 0.55 : 1)

@@ -431,7 +431,7 @@ struct RequirementRowView: View {
     }
 
     private var timelineEntries: [TimelineEntry] {
-        requirement.statusHistory.map { timelineEntry(for: $0) }
+        requirement.statusHistory.reversed().map { timelineEntry(for: $0) }
     }
 
     private func beginEditing(_ mode: RowEditorMode) {

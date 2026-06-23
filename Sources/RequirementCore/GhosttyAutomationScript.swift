@@ -59,6 +59,20 @@ public enum GhosttyAutomationScript {
         return "cd \(shellSingleQuoted(projectDirectory))\n\(trimmedCommand)"
     }
 
+    public static func openArguments(
+        projectDirectory: String,
+        command: String,
+        applicationPath: String = defaultApplicationPath
+    ) -> [String] {
+        [
+            "-na",
+            applicationPath,
+            "--args",
+            "--working-directory=\(projectDirectory)",
+            "--initial-command=shell:\(shellCommand(projectDirectory: projectDirectory, command: command))"
+        ]
+    }
+
     public static func jsStringLiteral(_ value: String) -> String {
         var result = "\""
 
