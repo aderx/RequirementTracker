@@ -284,7 +284,7 @@ expect(
 )
 let openArguments = GhosttyAutomationScript.openArguments(
     projectDirectory: "/Users/dev/project with spaces",
-    command: "pnpm dev"
+    inputFilePath: "/tmp/RequirementTracker Scripts/input file.txt"
 )
 expect(
     openArguments == [
@@ -292,9 +292,9 @@ expect(
         "/Applications/Ghostty.app",
         "--args",
         "--working-directory=/Users/dev/project with spaces",
-        "--initial-command=shell:cd '/Users/dev/project with spaces'\npnpm dev"
+        "--input=path:/tmp/RequirementTracker Scripts/input file.txt"
     ],
-    "Ghostty open fallback should pass one initial shell command, not split /bin/zsh arguments"
+    "Ghostty open fallback should pass startup input by file path, not command-wrapper arguments"
 )
 
 print("RequirementCoreChecks passed")

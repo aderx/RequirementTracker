@@ -17,9 +17,13 @@ final class GhosttyScriptLauncher: ObservableObject {
         projectDirectory: String,
         command: String
     ) async throws {
-        let arguments = GhosttyAutomationScript.openArguments(
+        let inputFileURL = try scriptInputFileURL(
             projectDirectory: projectDirectory,
             command: command
+        )
+        let arguments = GhosttyAutomationScript.openArguments(
+            projectDirectory: projectDirectory,
+            inputFilePath: inputFileURL.path
         )
 
         try await Task.detached(priority: .userInitiated) {
@@ -44,6 +48,27 @@ final class GhosttyScriptLauncher: ObservableObject {
                 )
             }
         }.value
+    }
+
+    private nonisolated func scriptInputFileURL(
+        projectDirectory: String,
+        command: String
+    ) throws -> URL {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("RequirementTracker", isDirectory: true)
+            .appendingPathComponent("GhosttyInput", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true
+        )
+
+        let fileURL = directory.appendingPathComponent("\(UUID().uuidString).txt")
+        let input = GhosttyAutomationScript.shellCommand(
+            projectDirectory: projectDirectory,
+            command: command
+        ) + "\n"
+        try input.write(to: fileURL, atomically: true, encoding: .utf8)
+        return fileURL
     }
 }
 

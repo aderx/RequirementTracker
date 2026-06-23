@@ -61,7 +61,7 @@ public enum GhosttyAutomationScript {
 
     public static func openArguments(
         projectDirectory: String,
-        command: String,
+        inputFilePath: String,
         applicationPath: String = defaultApplicationPath
     ) -> [String] {
         [
@@ -69,7 +69,7 @@ public enum GhosttyAutomationScript {
             applicationPath,
             "--args",
             "--working-directory=\(projectDirectory)",
-            "--initial-command=shell:\(shellCommand(projectDirectory: projectDirectory, command: command))"
+            "--input=path:\(inputFilePath)"
         ]
     }
 

@@ -274,7 +274,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         let hostingController = NSHostingController(rootView: content)
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 420, height: 272),
+            contentRect: NSRect(x: 0, y: 0, width: 360, height: 230),
             styleMask: [.titled, .closable, .fullSizeContentView],
             backing: .buffered,
             defer: false
@@ -335,8 +335,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private static var appVersion: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
-            ?? "1.0"
+        "1.3"
     }
 
     private static var githubURL: String? {

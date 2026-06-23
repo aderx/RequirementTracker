@@ -278,13 +278,14 @@ struct NativeIconMenuButton: NSViewRepresentable {
                 : min(aboveTopY, visibleFrame.maxY)
 
             let candidates = [
-                buttonOnScreen.maxX - menuSize.width,
+                buttonOnScreen.minX,
+                buttonOnScreen.maxX,
                 buttonOnScreen.midX - menuSize.width / 2,
-                buttonOnScreen.minX
+                buttonOnScreen.maxX - menuSize.width
             ]
             let x = candidates.first { candidate in
                 candidate >= visibleFrame.minX && candidate + menuSize.width <= visibleFrame.maxX
-            } ?? min(max(buttonOnScreen.maxX - menuSize.width, visibleFrame.minX), visibleFrame.maxX - menuSize.width)
+            } ?? min(max(buttonOnScreen.minX, visibleFrame.minX), visibleFrame.maxX - menuSize.width)
 
             let screenOrigin = NSPoint(x: x, y: y)
             let originInWindow = window.convertFromScreen(NSRect(origin: screenOrigin, size: .zero)).origin

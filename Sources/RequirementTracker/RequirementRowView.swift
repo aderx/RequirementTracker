@@ -58,12 +58,18 @@ struct RequirementRowView: View {
 
             if isExpanded && editorMode == nil {
                 timelineView
-                    .transition(.opacity.combined(with: .move(edge: .top)))
+                    .transition(
+                        .asymmetric(
+                            insertion: .opacity.combined(with: .move(edge: .top)),
+                            removal: .opacity.combined(with: .scale(scale: 0.96, anchor: .top))
+                        )
+                    )
             }
         }
         .padding(.top, 8)
         .padding(.horizontal, 11)
         .padding(.bottom, 7)
+        .clipped()
         .background(Color(hex: 0xFAFAFA, opacity: isExpanded ? 0.96 : 0.92), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 9, style: .continuous)
