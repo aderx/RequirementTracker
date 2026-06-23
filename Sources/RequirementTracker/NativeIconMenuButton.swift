@@ -93,6 +93,9 @@ struct NativeIconMenuButton: NSViewRepresentable {
     func updateNSView(_ button: IconMenuButton, context: Context) {
         context.coordinator.contents = contents
         button.buttonSize = size
+        if button.frame.size != size {
+            button.setFrameSize(size)
+        }
         button.image = Self.image(for: kind)
         button.contentTintColor = NSColor.labelColor.withAlphaComponent(tintAlpha)
         button.toolTip = help
@@ -347,7 +350,7 @@ private extension NativeMenuContent {
 
 @MainActor
 final class IconMenuButton: NSButton {
-    var buttonSize = CGSize(width: 22, height: 20)
+    var buttonSize = CGSize(width: 22, height: 22)
     var onPress: ((IconMenuButton) -> Void)?
     private var isHovering = false
     private var trackingAreaRef: NSTrackingArea?
@@ -404,8 +407,14 @@ final class IconMenuButton: NSButton {
 
     override func draw(_ dirtyRect: NSRect) {
         if isHovering || isHighlighted {
+            let backgroundRect = NSRect(
+                x: bounds.midX - buttonSize.width / 2,
+                y: bounds.midY - buttonSize.height / 2,
+                width: buttonSize.width,
+                height: buttonSize.height
+            )
             NSColor.black.withAlphaComponent(isHighlighted ? 0.10 : 0.06).setFill()
-            NSBezierPath(roundedRect: bounds, xRadius: 6, yRadius: 6).fill()
+            NSBezierPath(roundedRect: backgroundRect, xRadius: 6, yRadius: 6).fill()
         }
 
         super.draw(dirtyRect)

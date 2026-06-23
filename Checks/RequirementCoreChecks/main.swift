@@ -80,6 +80,59 @@ expect(
     "Bulk parsing should keep one Jira key per line"
 )
 
+let titledRequirementJSON = """
+{
+  "id": "00000000-0000-0000-0000-000000000001",
+  "jiraKey": "ZSTAC-70121",
+  "jiraURL": "http://jira.zstack.io/browse/ZSTAC-70121",
+  "title": "修复浏览器插件写入",
+  "note": "",
+  "pauseReason": "",
+  "stage": "pending",
+  "isDone": false,
+  "isTested": false,
+  "isMerged": false,
+  "createdAt": "2026-06-19T00:00:00Z",
+  "updatedAt": "2026-06-19T00:00:00Z",
+  "statusHistory": []
+}
+""".data(using: .utf8)!
+let legacyRequirementJSON = """
+{
+  "id": "00000000-0000-0000-0000-000000000002",
+  "jiraKey": "ZSTAC-70122",
+  "jiraURL": "http://jira.zstack.io/browse/ZSTAC-70122",
+  "note": "",
+  "pauseReason": "",
+  "stage": "pending",
+  "isDone": false,
+  "isTested": false,
+  "isMerged": false,
+  "createdAt": "2026-06-19T00:00:00Z",
+  "updatedAt": "2026-06-19T00:00:00Z",
+  "statusHistory": []
+}
+""".data(using: .utf8)!
+let requirementDecoder = JSONDecoder()
+requirementDecoder.dateDecodingStrategy = .iso8601
+let decodedTitledRequirement = try requirementDecoder.decode(Requirement.self, from: titledRequirementJSON)
+let decodedLegacyRequirement = try requirementDecoder.decode(Requirement.self, from: legacyRequirementJSON)
+expect(
+    decodedTitledRequirement.title == "修复浏览器插件写入"
+        && decodedLegacyRequirement.title.isEmpty,
+    "Requirement should decode Jira title and default legacy records to blank title"
+)
+let requirementEncoder = JSONEncoder()
+requirementEncoder.dateEncodingStrategy = .iso8601
+let encodedTitledRequirement = String(
+    data: try requirementEncoder.encode(decodedTitledRequirement),
+    encoding: .utf8
+) ?? ""
+expect(
+    encodedTitledRequirement.contains("\"title\":\"修复浏览器插件写入\""),
+    "Requirement should encode Jira title back to JSON"
+)
+
 expect(
     RequirementParser.mrIdentifier(
         from: "http://gitlab.zstack.io/zstackio/zstack-ui-next/-/merge_requests/6247"
@@ -89,6 +142,29 @@ expect(
 expect(
     RequirementParser.mrIdentifier(from: "!6213") == "!6213",
     "Existing !number should be preserved"
+)
+expect(
+    RequirementParser.normalizedURL(
+        "http://jira.zstack.io/browse/ZSTAC-70121?filter=123#comment-1"
+    ) == "http://jira.zstack.io/browse/ZSTAC-70121",
+    "Requirement parser should strip query and fragment from Jira URLs"
+)
+expect(
+    RequirementParser.normalizedURL(
+        "http://gitlab.zstack.io/zstackio/zstack-ui-next/-/merge_requests/6247?diff_id=1#note_2"
+    ) == "http://gitlab.zstack.io/zstackio/zstack-ui-next/-/merge_requests/6247",
+    "Requirement parser should strip query and fragment from MR URLs"
+)
+expect(
+    RequirementParser.jiraURL(
+        from: "http://jira.zstack.io/browse/ZSTAC-70121?filter=123#comment-1",
+        jiraKey: "ZSTAC-70121"
+    ) == "http://jira.zstack.io/browse/ZSTAC-70121",
+    "Jira URL extraction should store sanitized URLs"
+)
+expect(
+    RequirementExternalUpdateNotification.name.rawValue == "com.aderx.requirementtracker.requirementsDidChange",
+    "External writes should share a stable distributed notification name"
 )
 
 expect(
@@ -182,6 +258,21 @@ expect(
     "Status history should append new statuses after old statuses"
 )
 
+let directMergeCandidate = requirement(
+    "ZSTAC-13",
+    stage: .active,
+    createdAt: referenceDate
+)
+let pausedDirectMergeCandidate = requirement(
+    "ZSTAC-14",
+    stage: .paused,
+    createdAt: referenceDate
+)
+expect(
+    directMergeCandidate.canMarkMergedDirectly && !pausedDirectMergeCandidate.canMarkMergedDirectly,
+    "Only non-exceptional unfinished requirements should allow direct completion"
+)
+
 let thisWeek = requirement(
     "ZSTAC-1",
     stage: .completed,
@@ -252,6 +343,65 @@ expect(
 expect(
     toolConfiguration.validQuickLinks.map(\.name) == ["Jira"],
     "Tool configuration should expose only valid links"
+)
+expect(
+    toolConfiguration.baseSettings.panelFilters.selection(for: .completed).dateFilter == .all,
+    "Tool configuration should default each status tab to all dates"
+)
+
+var panelFilterConfiguration = RequirementPanelFilterConfiguration()
+panelFilterConfiguration.setSelection(
+    RequirementPanelDateSelection(dateFilter: .thisWeek),
+    for: .active
+)
+expect(
+    panelFilterConfiguration.selection(for: .active).dateFilter == .thisWeek
+        && panelFilterConfiguration.selection(for: .pending).dateFilter == .all,
+    "Panel filter configuration should keep independent date filters per status tab"
+)
+
+let legacySettingsJSON = """
+{
+  "quickLinks": [],
+  "scriptProjects": []
+}
+""".data(using: .utf8)!
+let legacyConfiguration = try JSONDecoder().decode(RequirementToolConfiguration.self, from: legacySettingsJSON)
+expect(
+    legacyConfiguration.baseSettings.panelFilters.selection(for: .incomplete).dateFilter == .all,
+    "Tool configuration should decode legacy settings without base settings"
+)
+let partialBaseSettingsJSON = """
+{
+  "baseSettings": {},
+  "quickLinks": [],
+  "scriptProjects": []
+}
+""".data(using: .utf8)!
+let partialBaseSettingsConfiguration = try JSONDecoder().decode(
+    RequirementToolConfiguration.self,
+    from: partialBaseSettingsJSON
+)
+expect(
+    partialBaseSettingsConfiguration.baseSettings.panelFilters.selection(for: .active).dateFilter == .all,
+    "Tool configuration should decode base settings without panel filters"
+)
+expect(
+    RequirementPluginSettings().normalized.validMRHosts == ["gitlab.zstack.io"],
+    "Plugin settings should default to the current GitLab host"
+)
+let pluginConfiguration = RequirementToolConfiguration(
+    pluginSettings: RequirementPluginSettings(
+        jiraBaseURL: " http://jira.zstack.io/browse?filter=1#hash ",
+        mrHosts: [" gitlab.zstack.io ", " ", "http://gitlab.example.com/group/project/-/merge_requests/1?x=1"],
+        chromeExtensionID: " abcdef "
+    )
+)
+expect(
+    pluginConfiguration.normalized.pluginSettings.jiraBaseURL == "http://jira.zstack.io/browse/"
+        && pluginConfiguration.normalized.pluginSettings.validMRHosts == ["gitlab.zstack.io", "gitlab.example.com"]
+        && pluginConfiguration.normalized.pluginSettings.chromeExtensionID == "abcdef",
+    "Tool configuration should normalize plugin settings for the extension"
 )
 
 let launchScript = GhosttyAutomationScript.jxa(

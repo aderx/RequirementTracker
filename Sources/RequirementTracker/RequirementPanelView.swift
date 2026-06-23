@@ -21,14 +21,13 @@ struct RequirementPanelView: View {
     var onCalendarVisibilityChange: ((Bool) -> Void)?
 
     @State private var statusFilter: RequirementStatusFilter = .incomplete
-    @State private var dateFilter: RequirementDateFilter = .all
     @State private var isAdding = false
     @State private var bulkInput = ""
     @State private var expandedID: Requirement.ID?
     @State private var showsCalendar = false
     @State private var displayMonth = Date()
-    @State private var selectedDay: Date?
     @State private var isDateFilterHovering = false
+    @State private var isAddButtonHovering = false
 
     private var visibleRequirements: [Requirement] {
         let filtered = RequirementQuery.filteredAndSorted(
@@ -153,8 +152,9 @@ struct RequirementPanelView: View {
                         .frame(height: 22)
                         .contentShape(Rectangle())
                 }
-                .buttonStyle(HeaderAddButtonStyle())
+                .buttonStyle(HeaderAddButtonStyle(isHovered: isAddButtonHovering))
                 .help("添加需求")
+                .onHover { isAddButtonHovering = $0 }
                 .pointingHandCursor()
             }
         }
@@ -201,7 +201,7 @@ struct RequirementPanelView: View {
     }
 
     private var contentList: some View {
-        ScrollView {
+        ScrollView(.vertical, showsIndicators: false) {
             LazyVStack(spacing: 0) {
                 if visibleRequirements.isEmpty {
                     EmptyStateView()
@@ -333,8 +333,7 @@ struct RequirementPanelView: View {
                 ForEach(calendarDays, id: \.id) { day in
                     if let date = day.date {
                         Button {
-                            selectedDay = date
-                            dateFilter = .all
+                            setActiveDateSelection(dateFilter: .all, selectedDay: date)
                             withAnimation(.snappy(duration: 0.14)) {
                                 showsCalendar = false
                             }
@@ -479,6 +478,18 @@ struct RequirementPanelView: View {
         dateFilter != .all || selectedDay != nil
     }
 
+    private var activeDateSelection: RequirementPanelDateSelection {
+        settingsStore.panelDateSelection(for: statusFilter)
+    }
+
+    private var dateFilter: RequirementDateFilter {
+        activeDateSelection.dateFilter
+    }
+
+    private var selectedDay: Date? {
+        activeDateSelection.selectedDay
+    }
+
     private var dateFilterTitle: String {
         if let selectedDay {
             return shortDateTitle(selectedDay)
@@ -528,11 +539,20 @@ struct RequirementPanelView: View {
     }
 
     private func applyQuickDateFilter(_ filter: RequirementDateFilter) {
-        dateFilter = filter
-        selectedDay = nil
+        setActiveDateSelection(dateFilter: filter, selectedDay: nil)
         withAnimation(.snappy(duration: 0.14)) {
             showsCalendar = false
         }
+    }
+
+    private func setActiveDateSelection(
+        dateFilter: RequirementDateFilter,
+        selectedDay: Date?
+    ) {
+        settingsStore.setPanelDateSelection(
+            RequirementPanelDateSelection(dateFilter: dateFilter, selectedDay: selectedDay),
+            for: statusFilter
+        )
     }
 
     private func moveDisplayMonth(by offset: Int) {
@@ -620,6 +640,8 @@ private struct ScrollIndicatorHider: NSViewRepresentable {
 }
 
 private final class HiderAttachmentView: NSView {
+    private var isHidingScheduled = false
+
     override func viewDidMoveToSuperview() {
         super.viewDidMoveToSuperview()
         scheduleHidingPasses()
@@ -630,10 +652,24 @@ private final class HiderAttachmentView: NSView {
         scheduleHidingPasses()
     }
 
+    override func layout() {
+        super.layout()
+        scheduleHidingPasses()
+    }
+
     func scheduleHidingPasses() {
-        for delay in [0.0, 0.05, 0.2, 0.6] {
+        guard !isHidingScheduled else {
+            return
+        }
+
+        isHidingScheduled = true
+        let delays = [0.0, 0.05, 0.2, 0.6, 1.2]
+        for (index, delay) in delays.enumerated() {
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
                 self?.hideIndicators()
+                if index == delays.count - 1 {
+                    self?.isHidingScheduled = false
+                }
             }
         }
     }
@@ -765,13 +801,27 @@ private struct HeaderSegmentButtonStyle: ButtonStyle {
 }
 
 private struct HeaderAddButtonStyle: ButtonStyle {
+    var isHovered = false
+
     func makeBody(configuration: Configuration) -> some View {
+        let backgroundOpacity = if configuration.isPressed {
+            0.10
+        } else if isHovered {
+            0.06
+        } else {
+            0.0
+        }
+
         configuration.label
             .font(.system(size: 11.5, weight: .semibold))
             .foregroundStyle(DesignColor.textPrimary)
-            .frame(height: 22)
+            .frame(width: 22, height: 22)
             .contentShape(Rectangle())
             .opacity(configuration.isPressed ? 0.55 : 1)
+            .background(
+                Color.black.opacity(backgroundOpacity),
+                in: RoundedRectangle(cornerRadius: 6, style: .continuous)
+            )
     }
 }
 

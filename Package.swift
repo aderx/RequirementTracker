@@ -21,7 +21,10 @@ let package = Package(
                 .define("DEVELOPMENT", .when(configuration: .debug))
             ]
         ),
-        .executableTarget(name: "JiraRequirementNativeHost"),
+        .executableTarget(
+            name: "JiraRequirementNativeHost",
+            dependencies: ["RequirementCore"]
+        ),
         .executableTarget(
             name: "RequirementCoreChecks",
             dependencies: ["RequirementCore"],

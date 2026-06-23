@@ -1,7 +1,7 @@
 import Foundation
+import RequirementCore
 
-private let hostName = "com.aderx.requirementtracker.jira_capture"
-private let defaultJiraBaseURL = "http://jira.zstack.io/browse/"
+private let hostName = RequirementPluginSettings.defaultNativeHostName
 
 do {
     let request = try NativeMessage.read()
@@ -17,61 +17,158 @@ do {
 }
 
 private func handle(request: [String: Any]) throws -> [String: Any] {
-    guard stringValue(request["type"]) == "upsertRequirement" else {
+    let writer = RequirementJSONWriter(
+        dataFileURL: RequirementJSONWriter.defaultDataFileURL(),
+        settingsFileURL: RequirementJSONWriter.defaultSettingsFileURL()
+    )
+
+    switch stringValue(request["type"]) {
+    case "getPluginSettings":
+        return try writer.pluginSettingsResponse()
+    case "inspectRequirement":
+        return try writer.inspect(payload: requiredPayload(from: request))
+    case "upsertRequirement", "upsertJiraRequirement":
+        return try writer.upsertJiraRequirement(payload: requiredPayload(from: request))
+    case "attachMergeRequest":
+        return try writer.attachMergeRequest(payload: requiredPayload(from: request))
+    default:
         throw HostError.invalidRequest("不支持的消息类型")
     }
+}
 
+private func requiredPayload(from request: [String: Any]) throws -> [String: Any] {
     guard let payload = request["payload"] as? [String: Any] else {
         throw HostError.invalidRequest("缺少 payload")
     }
 
-    let writer = RequirementJSONWriter(dataFileURL: RequirementJSONWriter.defaultDataFileURL())
-    return try writer.upsert(payload: payload)
+    return payload
 }
 
 private struct RequirementJSONWriter {
     let dataFileURL: URL
+    let settingsFileURL: URL
 
-    func upsert(payload: [String: Any]) throws -> [String: Any] {
-        let issueKey = try requiredString(payload["issueKey"], field: "issueKey").uppercased()
+    func pluginSettingsResponse() throws -> [String: Any] {
+        let settings = try loadToolConfiguration().pluginSettings.normalized
+        return [
+            "ok": true,
+            "host": hostName,
+            "settings": [
+                "jiraBaseURL": settings.jiraBaseURL,
+                "mrHosts": settings.validMRHosts,
+                "chromeExtensionID": settings.chromeExtensionID,
+                "nativeHostName": RequirementPluginSettings.defaultNativeHostName
+            ],
+            "settingsFilePath": settingsFileURL.path
+        ]
+    }
+
+    func inspect(payload: [String: Any]) throws -> [String: Any] {
+        let issueKey = try issueKey(from: payload)
+        let records = try loadRecords()
+        let record = records.first { matchesIssueKey($0, issueKey: issueKey) }
+        let jiraURL = record.flatMap { stringValue($0["jiraURL"]) }
+            ?? jiraURL(from: payload, issueKey: issueKey)
+
+        var response: [String: Any] = [
+            "ok": true,
+            "host": hostName,
+            "exists": record != nil,
+            "issueKey": issueKey,
+            "jiraURL": jiraURL,
+            "dataFilePath": dataFileURL.path
+        ]
+
+        if let mrURL = record.flatMap({ stringValue($0["mrURL"]) }), !mrURL.isEmpty {
+            response["mrURL"] = RequirementParser.normalizedURL(mrURL)
+            response["hasMR"] = true
+        } else {
+            response["hasMR"] = false
+        }
+
+        return response
+    }
+
+    func upsertJiraRequirement(payload: [String: Any]) throws -> [String: Any] {
+        let issueKey = try issueKey(from: payload)
         let now = ISO8601DateFormatter().string(from: Date())
         let capturedAt = stringValue(payload["capturedAt"]) ?? now
-        let jiraURL = stringValue(payload["url"]) ?? "\(defaultJiraBaseURL)\(issueKey)"
+        let normalizedJiraURL = jiraURL(from: payload, issueKey: issueKey)
 
         var records = try loadRecords()
-        let index = records.firstIndex { record in
-            stringValue(record["jiraKey"])?.uppercased() == issueKey
-                || stringValue(record["issueKey"])?.uppercased() == issueKey
-        }
+        let index = records.firstIndex { matchesIssueKey($0, issueKey: issueKey) }
 
         let action: String
         if let index {
             records[index]["jiraKey"] = issueKey
-            records[index]["jiraURL"] = jiraURL
+            records[index]["jiraURL"] = normalizedJiraURL
+            records[index]["updatedAt"] = now
             applyJiraFields(from: payload, to: &records[index], capturedAt: capturedAt)
             action = "updated"
         } else {
-            var record: [String: Any] = [
-                "id": UUID().uuidString,
-                "jiraKey": issueKey,
-                "jiraURL": jiraURL,
-                "note": "",
-                "pauseReason": "",
-                "stage": "pending",
-                "isDone": false,
-                "isTested": false,
-                "isMerged": false,
-                "createdAt": now,
-                "updatedAt": now
-            ]
+            var record = baseRecord(issueKey: issueKey, jiraURL: normalizedJiraURL, now: now)
             applyJiraFields(from: payload, to: &record, capturedAt: capturedAt)
             records.append(record)
             action = "created"
         }
 
-        let backupURL = try backupExistingFileIfNeeded(kind: "before-jira-import")
+        return try persist(records: records, action: action, issueKey: issueKey)
+    }
+
+    func attachMergeRequest(payload: [String: Any]) throws -> [String: Any] {
+        let issueKey = try issueKey(from: payload)
+        let normalizedJiraURL = jiraURL(from: payload, issueKey: issueKey)
+        let normalizedMRURL = RequirementParser.normalizedURL(try requiredString(payload["mrURL"], field: "mrURL"))
+        guard !normalizedMRURL.isEmpty else {
+            throw HostError.invalidRequest("缺少 mrURL")
+        }
+
+        let replaceExisting = boolValue(payload["replaceExisting"]) ?? false
+        let now = ISO8601DateFormatter().string(from: Date())
+        var records = try loadRecords()
+        let index = records.firstIndex { matchesIssueKey($0, issueKey: issueKey) }
+
+        let action: String
+        if let index {
+            let existingMRURL = RequirementParser.normalizedURL(stringValue(records[index]["mrURL"]) ?? "")
+            if !existingMRURL.isEmpty, existingMRURL != normalizedMRURL, !replaceExisting {
+                return [
+                    "ok": true,
+                    "host": hostName,
+                    "action": "needsReplacement",
+                    "issueKey": issueKey,
+                    "jiraURL": normalizedJiraURL,
+                    "mrURL": existingMRURL,
+                    "newMRURL": normalizedMRURL,
+                    "dataFilePath": dataFileURL.path
+                ]
+            }
+
+            records[index]["jiraKey"] = issueKey
+            records[index]["jiraURL"] = normalizedJiraURL
+            records[index]["mrURL"] = normalizedMRURL
+            records[index]["updatedAt"] = now
+            action = existingMRURL.isEmpty ? "attached" : "replaced"
+        } else {
+            var record = baseRecord(issueKey: issueKey, jiraURL: normalizedJiraURL, now: now)
+            record["mrURL"] = normalizedMRURL
+            records.append(record)
+            action = "created"
+        }
+
+        return try persist(records: records, action: action, issueKey: issueKey, mrURL: normalizedMRURL)
+    }
+
+    private func persist(
+        records: [[String: Any]],
+        action: String,
+        issueKey: String,
+        mrURL: String? = nil
+    ) throws -> [String: Any] {
+        let backupURL = try backupExistingFileIfNeeded(kind: "before-browser-import")
         try write(records: records)
-        let snapshotURL = try backupExistingFileIfNeeded(kind: "after-jira-import")
+        let snapshotURL = try backupExistingFileIfNeeded(kind: "after-browser-import")
+        notifyApp(action: action, issueKey: issueKey)
 
         var response: [String: Any] = [
             "ok": true,
@@ -80,6 +177,10 @@ private struct RequirementJSONWriter {
             "issueKey": issueKey,
             "dataFilePath": dataFileURL.path
         ]
+
+        if let mrURL {
+            response["mrURL"] = mrURL
+        }
 
         if let backupURL {
             response["backupPath"] = backupURL.path
@@ -90,6 +191,67 @@ private struct RequirementJSONWriter {
         }
 
         return response
+    }
+
+    private func notifyApp(action: String, issueKey: String) {
+        DistributedNotificationCenter.default().postNotificationName(
+            RequirementExternalUpdateNotification.name,
+            object: hostName,
+            userInfo: [
+                "action": action,
+                "issueKey": issueKey
+            ],
+            deliverImmediately: true
+        )
+    }
+
+    private func baseRecord(issueKey: String, jiraURL: String, now: String) -> [String: Any] {
+        [
+            "id": UUID().uuidString,
+            "jiraKey": issueKey,
+            "jiraURL": jiraURL,
+            "note": "",
+            "pauseReason": "",
+            "stage": "pending",
+            "isDone": false,
+            "isTested": false,
+            "isMerged": false,
+            "createdAt": now,
+            "updatedAt": now
+        ]
+    }
+
+    private func issueKey(from payload: [String: Any]) throws -> String {
+        let candidates = [
+            stringValue(payload["issueKey"]),
+            stringValue(payload["jiraKey"]),
+            stringValue(payload["jiraURL"]),
+            stringValue(payload["url"])
+        ].compactMap { $0 }
+
+        for candidate in candidates {
+            if let key = RequirementParser.jiraKey(from: candidate) {
+                return key
+            }
+        }
+
+        throw HostError.invalidRequest("缺少 Jira 编号")
+    }
+
+    private func jiraURL(from payload: [String: Any], issueKey: String) -> String {
+        let source = stringValue(payload["jiraURL"]) ?? stringValue(payload["url"]) ?? ""
+        if !source.isEmpty, source.lowercased().hasPrefix("http") {
+            return RequirementParser.jiraURL(from: source, jiraKey: issueKey)
+        }
+
+        let baseURL = (try? loadToolConfiguration().pluginSettings.normalized.jiraBaseURL)
+            ?? RequirementParser.defaultJiraBaseURL
+        return baseURL + issueKey
+    }
+
+    private func matchesIssueKey(_ record: [String: Any], issueKey: String) -> Bool {
+        stringValue(record["jiraKey"])?.uppercased() == issueKey
+            || stringValue(record["issueKey"])?.uppercased() == issueKey
     }
 
     private func applyJiraFields(from payload: [String: Any], to record: inout [String: Any], capturedAt: String) {
@@ -111,6 +273,19 @@ private struct RequirementJSONWriter {
         }
 
         record[targetKey] = value
+    }
+
+    private func loadToolConfiguration() throws -> RequirementToolConfiguration {
+        guard FileManager.default.fileExists(atPath: settingsFileURL.path) else {
+            return RequirementToolConfiguration()
+        }
+
+        let data = try Data(contentsOf: settingsFileURL)
+        guard !data.isEmpty else {
+            return RequirementToolConfiguration()
+        }
+
+        return try JSONDecoder().decode(RequirementToolConfiguration.self, from: data).normalized
     }
 
     private func loadRecords() throws -> [[String: Any]] {
@@ -174,14 +349,24 @@ private struct RequirementJSONWriter {
             return URL(fileURLWithPath: overridePath)
         }
 
-        let applicationSupport = FileManager.default.urls(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask
-        ).first ?? FileManager.default.temporaryDirectory
-
+        let applicationSupport = applicationSupportDirectory()
         return applicationSupport
             .appendingPathComponent("RequirementTracker", isDirectory: true)
             .appendingPathComponent("requirements.json")
+    }
+
+    static func defaultSettingsFileURL() -> URL {
+        let applicationSupport = applicationSupportDirectory()
+        return applicationSupport
+            .appendingPathComponent("RequirementTracker", isDirectory: true)
+            .appendingPathComponent("settings.json")
+    }
+
+    private static func applicationSupportDirectory() -> URL {
+        FileManager.default.urls(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask
+        ).first ?? FileManager.default.temporaryDirectory
     }
 
     private static func backupTimestamp() -> String {
@@ -271,4 +456,23 @@ private func stringValue(_ value: Any?) -> String? {
 
     return String(describing: value)
         .trimmingCharacters(in: .whitespacesAndNewlines)
+}
+
+private func boolValue(_ value: Any?) -> Bool? {
+    if let value = value as? Bool {
+        return value
+    }
+
+    if let value = stringValue(value)?.lowercased() {
+        switch value {
+        case "true", "1", "yes":
+            return true
+        case "false", "0", "no":
+            return false
+        default:
+            return nil
+        }
+    }
+
+    return nil
 }

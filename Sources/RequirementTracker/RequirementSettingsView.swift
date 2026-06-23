@@ -6,6 +6,8 @@ struct RequirementSettingsView: View {
     @EnvironmentObject private var settingsStore: RequirementSettingsStore
     @State private var selectedTab: RequirementSettingsTab = .base
     @State private var selectedProjectID: RequirementScriptProject.ID?
+    @State private var pluginAlertMessage = ""
+    @State private var isInstallingNativeHost = false
 
     var body: some View {
         ZStack {
@@ -29,6 +31,20 @@ struct RequirementSettingsView: View {
         .onChange(of: settingsStore.configuration.scriptProjects.map(\.id)) { _ in
             ensureProjectSelection()
         }
+        .alert("插件配置", isPresented: Binding(
+            get: { !pluginAlertMessage.isEmpty },
+            set: { isPresented in
+                if !isPresented {
+                    pluginAlertMessage = ""
+                }
+            }
+        )) {
+            Button("好") {
+                pluginAlertMessage = ""
+            }
+        } message: {
+            Text(pluginAlertMessage)
+        }
     }
 
     private var settingsToolbar: some View {
@@ -46,7 +62,7 @@ struct RequirementSettingsView: View {
                             .font(.system(size: 11.5, weight: selectedTab == tab ? .semibold : .regular))
                     }
                     .foregroundStyle(selectedTab == tab ? DesignColor.doing : Color.black.opacity(0.58))
-                    .frame(width: 82, height: 66)
+                    .frame(width: 82, height: 58)
                     .background(
                         RoundedRectangle(cornerRadius: 8, style: .continuous)
                             .fill(selectedTab == tab ? Color.white.opacity(0.82) : Color.clear)
@@ -58,8 +74,7 @@ struct RequirementSettingsView: View {
             }
         }
         .frame(maxWidth: .infinity)
-        .padding(.top, 14)
-        .padding(.bottom, 10)
+        .frame(height: 88)
     }
 
     @ViewBuilder
@@ -68,7 +83,7 @@ struct RequirementSettingsView: View {
         case .base:
             placeholder(icon: "gearshape", title: "基础设置")
         case .plugin:
-            placeholder(icon: "puzzlepiece.extension", title: "插件配置")
+            pluginConfigurationView
         case .scripts:
             scriptConfigurationView
         case .quickLinks:
@@ -300,6 +315,94 @@ struct RequirementSettingsView: View {
         .padding(22)
     }
 
+    private var pluginConfigurationView: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            pluginSettingCard(title: "Jira 基础地址", subtitle: "用于把 Jira 编号补全为 browse 地址") {
+                TextField("http://jira.zstack.io/browse/", text: pluginJiraBaseURLBinding)
+                    .textFieldStyle(.roundedBorder)
+            }
+
+            pluginSettingCard(title: "MR 域名", subtitle: "插件会在这个域名页面上识别 MR") {
+                TextField("gitlab.zstack.io", text: pluginMRHostBinding)
+                    .textFieldStyle(.roundedBorder)
+            }
+
+            pluginSettingCard(title: "Chrome 扩展 ID", subtitle: "用于安装 Native Messaging Host 授权") {
+                VStack(alignment: .leading, spacing: 10) {
+                    TextField("从 chrome://extensions 复制", text: pluginChromeExtensionIDBinding)
+                        .textFieldStyle(.roundedBorder)
+
+                    HStack(spacing: 8) {
+                        Button {
+                            openPluginDirectory()
+                        } label: {
+                            Label("打开插件目录", systemImage: "folder")
+                        }
+                        .buttonStyle(.bordered)
+                        .pointingHandCursor()
+
+                        Button {
+                            installNativeHost()
+                        } label: {
+                            Label(isInstallingNativeHost ? "安装中..." : "安装 Native Host", systemImage: "tray.and.arrow.down")
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(isInstallingNativeHost || settingsStore.configuration.pluginSettings.chromeExtensionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        .pointingHandCursor(!isInstallingNativeHost)
+                    }
+
+                    HStack(spacing: 8) {
+                        Text("Native Host")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(Color.black.opacity(0.55))
+
+                        Text(RequirementPluginSettings.defaultNativeHostName)
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundStyle(Color.black.opacity(0.62))
+                            .lineLimit(1)
+                    }
+                }
+            }
+
+            Spacer()
+        }
+        .padding(22)
+    }
+
+    private func pluginSettingCard<Content: View>(
+        title: String,
+        subtitle: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            settingField(title: title, subtitle: subtitle, content: content)
+        }
+        .padding(14)
+        .background(Color.white.opacity(0.62), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(Color.black.opacity(0.08), lineWidth: 0.7)
+        )
+    }
+
+    private func settingField<Content: View>(
+        title: String,
+        subtitle: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.system(size: 12.5, weight: .semibold))
+                .foregroundStyle(DesignColor.textPrimary)
+
+            Text(subtitle)
+                .font(.system(size: 11))
+                .foregroundStyle(Color.black.opacity(0.42))
+
+            content()
+        }
+    }
+
     private var selectedProject: RequirementScriptProject? {
         if let selectedProjectID,
            let project = settingsStore.configuration.scriptProjects.first(where: { $0.id == selectedProjectID }) {
@@ -403,6 +506,59 @@ struct RequirementSettingsView: View {
             settingsStore.updateQuickLink(id: linkID) { link in
                 link.url = value
             }
+        }
+    }
+
+    private var pluginJiraBaseURLBinding: Binding<String> {
+        Binding {
+            settingsStore.configuration.pluginSettings.jiraBaseURL
+        } set: { value in
+            settingsStore.updatePluginSettings { settings in
+                settings.jiraBaseURL = value
+            }
+        }
+    }
+
+    private var pluginMRHostBinding: Binding<String> {
+        Binding {
+            settingsStore.configuration.pluginSettings.mrHosts.first ?? ""
+        } set: { value in
+            settingsStore.updatePluginSettings { settings in
+                settings.mrHosts = [value]
+            }
+        }
+    }
+
+    private var pluginChromeExtensionIDBinding: Binding<String> {
+        Binding {
+            settingsStore.configuration.pluginSettings.chromeExtensionID
+        } set: { value in
+            settingsStore.updatePluginSettings { settings in
+                settings.chromeExtensionID = value
+            }
+        }
+    }
+
+    private func openPluginDirectory() {
+        do {
+            try RequirementPluginSupport.openExtensionDirectory()
+        } catch {
+            pluginAlertMessage = error.localizedDescription
+        }
+    }
+
+    private func installNativeHost() {
+        let extensionID = settingsStore.configuration.pluginSettings.chromeExtensionID
+        isInstallingNativeHost = true
+
+        Task {
+            do {
+                _ = try await RequirementPluginSupport.installNativeHost(extensionID: extensionID)
+            } catch {
+                pluginAlertMessage = error.localizedDescription
+            }
+
+            isInstallingNativeHost = false
         }
     }
 }

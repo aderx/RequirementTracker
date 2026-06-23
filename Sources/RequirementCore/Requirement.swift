@@ -86,6 +86,7 @@ public struct Requirement: Identifiable, Codable, Equatable, Sendable {
     public var jiraKey: String
     public var jiraURL: String
     public var mrURL: String?
+    public var title: String
     public var note: String
     public var pauseReason: String
     public var stage: RequirementStage
@@ -102,6 +103,7 @@ public struct Requirement: Identifiable, Codable, Equatable, Sendable {
         jiraKey: String,
         jiraURL: String,
         mrURL: String? = nil,
+        title: String = "",
         note: String = "",
         pauseReason: String = "",
         stage: RequirementStage = .pending,
@@ -117,6 +119,7 @@ public struct Requirement: Identifiable, Codable, Equatable, Sendable {
         self.jiraKey = jiraKey
         self.jiraURL = jiraURL
         self.mrURL = mrURL
+        self.title = title
         self.note = note
         self.pauseReason = pauseReason
         self.stage = stage
@@ -142,6 +145,7 @@ public struct Requirement: Identifiable, Codable, Equatable, Sendable {
         case jiraKey
         case jiraURL
         case mrURL
+        case title
         case note
         case pauseReason
         case stage
@@ -160,6 +164,7 @@ public struct Requirement: Identifiable, Codable, Equatable, Sendable {
         jiraKey = try container.decode(String.self, forKey: .jiraKey)
         jiraURL = try container.decode(String.self, forKey: .jiraURL)
         mrURL = try container.decodeIfPresent(String.self, forKey: .mrURL)
+        title = try container.decodeIfPresent(String.self, forKey: .title) ?? ""
         note = try container.decode(String.self, forKey: .note)
         pauseReason = try container.decode(String.self, forKey: .pauseReason)
         stage = try container.decode(RequirementStage.self, forKey: .stage)
@@ -190,6 +195,7 @@ public struct Requirement: Identifiable, Codable, Equatable, Sendable {
         try container.encode(jiraKey, forKey: .jiraKey)
         try container.encode(jiraURL, forKey: .jiraURL)
         try container.encodeIfPresent(mrURL, forKey: .mrURL)
+        try container.encode(title, forKey: .title)
         try container.encode(note, forKey: .note)
         try container.encode(pauseReason, forKey: .pauseReason)
         try container.encode(stage, forKey: .stage)
@@ -244,6 +250,10 @@ public struct Requirement: Identifiable, Codable, Equatable, Sendable {
 
     public var hasMergeRequestURL: Bool {
         !(mrURL ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    public var canMarkMergedDirectly: Bool {
+        !isMerged && stage != .paused && stage != .stopped
     }
 
     public var combinedCopyText: String {

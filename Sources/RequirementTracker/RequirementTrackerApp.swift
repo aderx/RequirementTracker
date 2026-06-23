@@ -1,4 +1,5 @@
 import AppKit
+import RequirementCore
 import SwiftUI
 
 @main
@@ -91,6 +92,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.closePopover()
             }
         }
+
+        DistributedNotificationCenter.default().addObserver(
+            self,
+            selector: #selector(requirementsDidChangeExternally(_:)),
+            name: RequirementExternalUpdateNotification.name,
+            object: RequirementPluginSettings.defaultNativeHostName
+        )
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -99,6 +107,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let resignActiveObserver {
             NotificationCenter.default.removeObserver(resignActiveObserver)
         }
+
+        DistributedNotificationCenter.default().removeObserver(
+            self,
+            name: RequirementExternalUpdateNotification.name,
+            object: RequirementPluginSettings.defaultNativeHostName
+        )
+    }
+
+    @objc
+    private func requirementsDidChangeExternally(_ notification: Notification) {
+        let issueKey = notification.userInfo?["issueKey"] as? String
+        store.reloadAfterExternalUpdate(issueKey: issueKey)
     }
 
     @objc
@@ -335,7 +355,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private static var appVersion: String {
-        "1.3"
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+            ?? "1.5"
     }
 
     private static var githubURL: String? {

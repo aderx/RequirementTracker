@@ -29,12 +29,21 @@ struct RequirementRowView: View {
 
             if editorMode == .note {
                 noteEditor
+            } else if editorMode == .completionNote {
+                completionNoteEditor
             } else {
-                Text(requirement.note.isEmpty ? "暂无说明" : requirement.note)
+                Text(requirement.title.isEmpty ? "暂无标题" : requirement.title)
                     .font(.system(size: 11))
-                    .foregroundStyle(requirement.note.isEmpty ? Color.black.opacity(0.24) : Color.black.opacity(0.70))
+                    .foregroundStyle(requirement.title.isEmpty ? Color.black.opacity(0.24) : Color.black.opacity(0.74))
                     .lineLimit(2)
                     .frame(minHeight: 15, alignment: .leading)
+
+                if !requirement.note.isEmpty {
+                    Text(requirement.note)
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(Color.black.opacity(0.56))
+                        .lineLimit(2)
+                }
             }
 
             if editorMode == .mr {
@@ -251,6 +260,16 @@ struct RequirementRowView: View {
             )
         ]
 
+        if requirement.canMarkMergedDirectly {
+            contents.append(
+                .item(
+                    NativeMenuItemDescriptor(title: "一键标为已完成", systemImage: "checkmark.seal") {
+                        beginCompletionNoteEditing()
+                    }
+                )
+            )
+        }
+
         if canPause || canStop {
             contents.append(.separator())
 
@@ -328,6 +347,28 @@ struct RequirementRowView: View {
         .padding(.top, 1)
     }
 
+    private var completionNoteEditor: some View {
+        let canSave = !draftNote.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+
+        return editPanel(
+            title: "完成备注",
+            placeholder: "说明无需解决或完成原因...",
+            text: $draftNote,
+            isMultiline: true,
+            canSave: canSave,
+            saveTitle: "完成"
+        ) {
+            let note = draftNote.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !note.isEmpty else {
+                return
+            }
+
+            store.markMerged(id: requirement.id, note: note)
+            closeEditor()
+        }
+        .padding(.top, 1)
+    }
+
     private var mrEditor: some View {
         let canSave = !requiresMRBeforeSave || !draftMR.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
 
@@ -384,6 +425,7 @@ struct RequirementRowView: View {
         text: Binding<String>,
         isMultiline: Bool = false,
         canSave: Bool = true,
+        saveTitle: String = "保存",
         onSave: @escaping () -> Void
     ) -> some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -424,7 +466,7 @@ struct RequirementRowView: View {
                 .buttonStyle(InlineCancelButtonStyle())
                 .pointingHandCursor()
 
-                Button("保存") {
+                Button(saveTitle) {
                     onSave()
                 }
                 .buttonStyle(InlineSaveButtonStyle())
@@ -454,6 +496,14 @@ struct RequirementRowView: View {
         advancesAfterMRSave = advanceAfterSave
         requiresMRBeforeSave = requiresValue
         editorMode = .mr
+    }
+
+    private func beginCompletionNoteEditing() {
+        draftNote = requirement.note
+        draftMR = requirement.mrURL ?? ""
+        advancesAfterMRSave = false
+        requiresMRBeforeSave = false
+        editorMode = .completionNote
     }
 
     private func beginReasonEditing(_ stage: RequirementStage) {
@@ -581,6 +631,7 @@ struct RequirementRowView: View {
 
 private enum RowEditorMode: Equatable {
     case note
+    case completionNote
     case mr
     case pauseReason(RequirementStage)
 }
@@ -724,6 +775,9 @@ private struct RequirementInlineEditor: View {
                 .textFieldStyle(.roundedBorder)
 
             TextField("MR 地址（完成后可选）", text: mrURLBinding)
+                .textFieldStyle(.roundedBorder)
+
+            TextField("需求标题", text: stringBinding(\.title))
                 .textFieldStyle(.roundedBorder)
 
             TextField("需求备注", text: stringBinding(\.note))

@@ -29,7 +29,7 @@ public enum RequirementStatusFilter: String, CaseIterable, Identifiable, Sendabl
     }
 }
 
-public enum RequirementDateFilter: String, CaseIterable, Identifiable, Sendable {
+public enum RequirementDateFilter: String, CaseIterable, Codable, Identifiable, Sendable {
     case all
     case today
     case thisWeek

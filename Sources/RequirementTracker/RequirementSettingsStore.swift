@@ -32,6 +32,21 @@ final class RequirementSettingsStore: ObservableObject {
         configuration.validQuickLinks
     }
 
+    func panelDateSelection(for statusFilter: RequirementStatusFilter) -> RequirementPanelDateSelection {
+        configuration.baseSettings.panelFilters.selection(for: statusFilter)
+    }
+
+    func setPanelDateSelection(
+        _ selection: RequirementPanelDateSelection,
+        for statusFilter: RequirementStatusFilter
+    ) {
+        configuration.baseSettings.panelFilters.setSelection(selection.normalized, for: statusFilter)
+    }
+
+    func updatePluginSettings(_ transform: (inout RequirementPluginSettings) -> Void) {
+        transform(&configuration.pluginSettings)
+    }
+
     @discardableResult
     func addScriptProject(directoryURL: URL) -> RequirementScriptProject.ID? {
         let normalizedPath = directoryURL.path

@@ -6,7 +6,7 @@ import RequirementCore
 final class RequirementStore: ObservableObject {
     @Published var requirements: [Requirement] = [] {
         didSet {
-            guard !isBootstrapping else {
+            guard !isBootstrapping, !isLoadingFromDisk else {
                 return
             }
             save()
@@ -17,10 +17,11 @@ final class RequirementStore: ObservableObject {
     @Published var lastNotice: String?
 
     private var isBootstrapping = true
+    private var isLoadingFromDisk = false
 
     init(dataFileURL: URL? = nil) {
         self.dataFileURL = dataFileURL ?? Self.defaultDataFileURL()
-        let canSaveAfterLoading = load()
+        let canSaveAfterLoading = loadFromDisk()
 
         isBootstrapping = false
 
@@ -49,7 +50,11 @@ final class RequirementStore: ObservableObject {
         return parsed.count
     }
 
-    func update(id: Requirement.ID, _ transform: (inout Requirement) -> Void) {
+    func update(
+        id: Requirement.ID,
+        allowsMergedWithoutMR: Bool = false,
+        _ transform: (inout Requirement) -> Void
+    ) {
         guard let index = requirements.firstIndex(where: { $0.id == id }) else {
             return
         }
@@ -57,7 +62,7 @@ final class RequirementStore: ObservableObject {
         let now = Date()
         let previousStatus = requirements[index].currentTimelineStatus
         transform(&requirements[index])
-        normalizeRequirement(at: index, now: now)
+        normalizeRequirement(at: index, now: now, allowsMergedWithoutMR: allowsMergedWithoutMR)
         let nextStatus = requirements[index].currentTimelineStatus
         if nextStatus != previousStatus {
             requirements[index].recordStatus(nextStatus, at: now)
@@ -135,6 +140,23 @@ final class RequirementStore: ObservableObject {
         }
     }
 
+    func markMerged(id: Requirement.ID, note: String) {
+        let trimmedNote = note.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard
+            !trimmedNote.isEmpty,
+            requirement(id: id)?.canMarkMergedDirectly == true
+        else {
+            return
+        }
+
+        update(id: id, allowsMergedWithoutMR: true) { requirement in
+            requirement.note = trimmedNote
+            requirement.pauseReason = ""
+            requirement.isMerged = true
+        }
+        lastNotice = "已标为已完成"
+    }
+
     func delete(id: Requirement.ID) {
         requirements.removeAll { $0.id == id }
         lastNotice = "已删除需求"
@@ -190,8 +212,14 @@ final class RequirementStore: ObservableObject {
         NSWorkspace.shared.open(url)
     }
 
-    private func normalizeRequirement(at index: Int, now: Date) {
-        if requirements[index].isMerged && !requirements[index].hasMergeRequestURL {
+    private func normalizeRequirement(
+        at index: Int,
+        now: Date,
+        allowsMergedWithoutMR: Bool = false
+    ) {
+        if requirements[index].isMerged
+            && !requirements[index].hasMergeRequestURL
+            && !allowsMergedWithoutMR {
             requirements[index].isMerged = false
             lastNotice = "请先填写 MR 地址"
         }
@@ -232,10 +260,23 @@ final class RequirementStore: ObservableObject {
             requirements[index].jiraKey = key
         }
 
+        requirements[index].title = requirements[index].title.trimmingCharacters(in: .whitespacesAndNewlines)
         requirements[index].mrURL = requirements[index].mrURL?.nilIfBlank
     }
 
-    private func load() -> Bool {
+    func reloadAfterExternalUpdate(issueKey: String?) {
+        guard loadFromDisk() else {
+            return
+        }
+
+        if let issueKey, !issueKey.isEmpty {
+            lastNotice = "已从浏览器更新 \(issueKey)"
+        } else {
+            lastNotice = "已从浏览器更新数据"
+        }
+    }
+
+    private func loadFromDisk() -> Bool {
         guard FileManager.default.fileExists(atPath: dataFileURL.path) else {
             return true
         }
@@ -246,9 +287,12 @@ final class RequirementStore: ObservableObject {
         do {
             let data = try Data(contentsOf: dataFileURL)
             let decoded = try decoder.decode([Requirement].self, from: data)
+            isLoadingFromDisk = true
             requirements = decoded
+            isLoadingFromDisk = false
             return true
         } catch {
+            isLoadingFromDisk = false
             lastNotice = "读取失败：\(error.localizedDescription)"
             return false
         }

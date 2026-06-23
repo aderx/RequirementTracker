@@ -6,28 +6,69 @@
   window.__jiraRequirementCaptureInstalled = true;
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-    if (message?.type !== "EXTRACT_JIRA_REQUIREMENT") {
+    if (message?.type !== "EXTRACT_REQUIREMENT_PAGE") {
       return false;
     }
 
     try {
       sendResponse({
         ok: true,
-        payload: extractJiraRequirement()
+        result: extractRequirementPage(message.settings || {})
       });
     } catch (error) {
       sendResponse({
         ok: false,
-        error: error?.message || "Jira 字段提取失败"
+        error: error?.message || "页面识别失败"
       });
     }
 
     return true;
   });
 
-  function extractJiraRequirement() {
+  function extractRequirementPage(settings) {
+    const pageURL = normalizedURL(location.href);
+    const jiraBaseURL = settings.jiraBaseURL || "http://jira.zstack.io/browse/";
+    const jiraHost = hostFromURL(jiraBaseURL);
+    const mrHosts = Array.isArray(settings.mrHosts) ? settings.mrHosts : ["gitlab.zstack.io"];
+
+    const detailIssueKey = issueKeyFromJiraDetailURL(pageURL);
+    if (detailIssueKey && (!jiraHost || location.hostname === jiraHost)) {
+      return {
+        pageType: "jira",
+        payload: extractJiraRequirement(detailIssueKey, pageURL)
+      };
+    }
+
+    if (jiraHost && location.hostname === jiraHost) {
+      return {
+        pageType: "unsupported",
+        reason: "当前 Jira 页面不是详情页"
+      };
+    }
+
+    if (isMRPage(pageURL, mrHosts)) {
+      const jiraURL = findLinkedJiraURL(jiraBaseURL);
+      return {
+        pageType: "mr",
+        payload: compactPayload({
+          mrURL: pageURL,
+          jiraURL,
+          issueKey: jiraURL ? jiraKeyFromText(jiraURL) : "",
+          capturedAt: new Date().toISOString()
+        })
+      };
+    }
+
+    return {
+      pageType: "unsupported",
+      reason: "当前页面暂不支持"
+    };
+  }
+
+  function extractJiraRequirement(issueKey, pageURL) {
     return compactPayload({
-      issueKey: extractIssueKey(),
+      issueKey,
+      jiraKey: issueKey,
       title: extractTitle(),
       type: extractFieldValue({
         selectors: [
@@ -57,23 +98,43 @@
         ],
         labels: ["修复的版本", "目标版本", "Fix Version/s", "Fix Version", "Target Version"]
       }),
-      url: location.href,
+      jiraURL: pageURL,
+      url: pageURL,
       capturedAt: new Date().toISOString()
     });
   }
 
-  function extractIssueKey() {
-    const fromURL = location.href.match(/\/browse\/([A-Z][A-Z0-9]+-\d+)/i)?.[1];
-    if (fromURL) {
-      return fromURL.toUpperCase();
+  function issueKeyFromJiraDetailURL(value) {
+    return normalizedURL(value).match(/\/browse\/([A-Z][A-Z0-9]+-\d+)(?:\/)?$/i)?.[1]?.toUpperCase() || "";
+  }
+
+  function jiraKeyFromText(value) {
+    return String(value || "").match(/\b[A-Z][A-Z0-9]+-\d+\b/i)?.[0]?.toUpperCase() || "";
+  }
+
+  function isMRPage(pageURL, mrHosts) {
+    const host = location.hostname.toLowerCase();
+    return mrHosts.map((value) => String(value || "").toLowerCase()).includes(host)
+      && /\/-\/merge_requests\/\d+(?:\/)?$/i.test(pageURL);
+  }
+
+  function findLinkedJiraURL(jiraBaseURL) {
+    const jiraHost = hostFromURL(jiraBaseURL);
+    const links = Array.from(document.querySelectorAll("a[href]"));
+    for (const link of links) {
+      const href = link.href || "";
+      const key = jiraKeyFromText(href);
+      if (!key) {
+        continue;
+      }
+
+      const normalized = normalizedURL(href);
+      if (jiraHost && hostFromURL(normalized) === jiraHost && /\/browse\//i.test(normalized)) {
+        return normalized;
+      }
     }
 
-    const fromTitle = document.title.match(/\b[A-Z][A-Z0-9]+-\d+\b/i)?.[0];
-    if (fromTitle) {
-      return fromTitle.toUpperCase();
-    }
-
-    return firstMatchText(document.body?.innerText || "", /\b[A-Z][A-Z0-9]+-\d+\b/i)?.toUpperCase();
+    return "";
   }
 
   function extractTitle() {
@@ -204,6 +265,25 @@
     return "";
   }
 
+  function normalizedURL(value) {
+    try {
+      const url = new URL(String(value || "").trim());
+      url.search = "";
+      url.hash = "";
+      return url.toString().replace(/\/$/, (match) => (url.pathname === "/" ? match : ""));
+    } catch {
+      return String(value || "").trim();
+    }
+  }
+
+  function hostFromURL(value) {
+    try {
+      return new URL(String(value || "").trim()).hostname.toLowerCase();
+    } catch {
+      return "";
+    }
+  }
+
   function isLabelText(text, label) {
     const normalizedText = normalizeLabel(text);
     const normalizedLabel = normalizeLabel(label);
@@ -251,13 +331,10 @@
     return value;
   }
 
-  function firstMatchText(text, pattern) {
-    return text.match(pattern)?.[0] || "";
-  }
-
   function compactPayload(payload) {
     return Object.fromEntries(
       Object.entries(payload).map(([key, value]) => [key, typeof value === "string" ? cleanText(value) : value])
+        .filter(([, value]) => value !== "")
     );
   }
 

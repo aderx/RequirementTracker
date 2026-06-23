@@ -16,10 +16,21 @@ public enum RequirementParser {
     public static func jiraURL(from text: String, jiraKey: String) -> String {
         let urls = urls(from: text)
         if let exact = urls.first(where: { $0.uppercased().contains(jiraKey.uppercased()) }) {
-            return exact
+            return normalizedURL(exact)
         }
 
         return defaultJiraBaseURL + jiraKey.uppercased()
+    }
+
+    public static func normalizedURL(_ text: String) -> String {
+        let value = cleanURLText(text)
+        guard var components = URLComponents(string: value) else {
+            return value
+        }
+
+        components.query = nil
+        components.fragment = nil
+        return cleanURLText(components.string ?? value)
     }
 
     public static func mrIdentifier(from text: String?) -> String? {
@@ -66,9 +77,12 @@ public enum RequirementParser {
 
     private static func urls(from text: String) -> [String] {
         matches(in: text, pattern: #"https?://[^\s，,）)\]}]+"#)
-            .map { value in
-                value.trimmingCharacters(in: CharacterSet(charactersIn: ".,，。;；:：）)]}"))
-            }
+            .map(cleanURLText)
+            .map(normalizedURL)
+    }
+
+    private static func cleanURLText(_ value: String) -> String {
+        value.trimmingCharacters(in: CharacterSet(charactersIn: " \n\t\r.,，。;；:：）)]}"))
     }
 
     private static func matches(in text: String, pattern: String) -> [String] {
