@@ -14,7 +14,7 @@ struct RequirementTrackerApp: App {
 }
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let store = RequirementStore()
     private let settingsStore = RequirementSettingsStore()
     private let scriptLauncher = GhosttyScriptLauncher()
@@ -29,7 +29,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let panelWidth = RequirementPanelMetrics.width
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApplication.shared.applicationIconImage = Self.makeAppIcon()
+        NSApplication.shared.applicationIconImage = Self.sharedAppIcon
         NSApplication.shared.setActivationPolicy(.accessory)
 
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -75,7 +75,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let popover = NSPopover()
         popover.behavior = .transient
-        popover.animates = true
+        // 关闭弹出动画：菜单栏工具更看重即时打开，且能减少系统繁忙时打开弹窗的卡顿。
+        popover.animates = false
         popover.contentSize = NSSize(
             width: RequirementPanelMetrics.width,
             height: RequirementPanelMetrics.height(isCalendarVisible: false)
@@ -233,6 +234,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.titlebarAppearsTransparent = true
         window.isMovableByWindowBackground = false
         window.isReleasedWhenClosed = false
+        window.delegate = self
         window.minSize = NSSize(width: 780, height: 560)
         window.contentViewController = hostingController
         window.center()
@@ -266,6 +268,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.title = "设置"
         window.titlebarAppearsTransparent = true
         window.isReleasedWhenClosed = false
+        window.delegate = self
         window.minSize = NSSize(width: 680, height: 460)
         window.contentViewController = hostingController
         centerOnMainScreen(window)
@@ -287,7 +290,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         let content = RequirementAboutView(
-            appIcon: Self.makeAppIcon(),
+            appIcon: Self.sharedAppIcon,
             appName: Self.appDisplayName,
             version: Self.appVersion,
             githubURL: Self.githubURL
@@ -302,6 +305,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.title = "关于"
         window.titlebarAppearsTransparent = true
         window.isReleasedWhenClosed = false
+        window.delegate = self
         window.contentViewController = hostingController
         centerOnMainScreen(window)
 
@@ -309,6 +313,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         aboutWindowController = controller
         NSApplication.shared.activate(ignoringOtherApps: true)
         controller.showWindow(nil)
+    }
+
+    // 关闭辅助窗口时释放其控制器与视图树，回收内存（再次打开会重新创建）。
+    func windowWillClose(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow else {
+            return
+        }
+
+        if window === overviewWindowController?.window {
+            overviewWindowController = nil
+        } else if window === settingsWindowController?.window {
+            settingsWindowController = nil
+        } else if window === aboutWindowController?.window {
+            aboutWindowController = nil
+        }
     }
 
     private func centerOnMainScreen(_ window: NSWindow) {
@@ -363,8 +382,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         "https://github.com/aderx/RequirementTracker"
     }
 
+    // 应用图标只生成一次并复用：之前每次打开「关于」都重绘一张 512×512 位图，
+    // 造成 CG image 内存反复占用。256×256 对 Dock（辅助应用不显示）与关于页足够清晰。
+    private static let sharedAppIcon: NSImage = makeAppIcon()
+
     private static func makeAppIcon() -> NSImage {
-        let size = NSSize(width: 512, height: 512)
+        let size = NSSize(width: 256, height: 256)
         let image = NSImage(size: size)
         image.lockFocus()
         drawAppIcon(in: NSRect(origin: .zero, size: size))

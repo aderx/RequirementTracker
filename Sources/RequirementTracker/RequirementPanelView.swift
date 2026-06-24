@@ -50,7 +50,9 @@ struct RequirementPanelView: View {
     }
 
     var body: some View {
-        ZStack {
+        let items = visibleRequirements
+
+        return ZStack {
             Color.clear
                 .ignoresSafeArea()
 
@@ -66,7 +68,7 @@ struct RequirementPanelView: View {
 
                 GlassDivider()
 
-                contentList
+                contentList(items)
 
                 if showsCalendar {
                     GlassDivider()
@@ -76,7 +78,7 @@ struct RequirementPanelView: View {
                 }
 
                 GlassDivider()
-                footer
+                footer(items)
             }
 
         }
@@ -200,14 +202,14 @@ struct RequirementPanelView: View {
         .padding(.top, 0)
     }
 
-    private var contentList: some View {
+    private func contentList(_ items: [Requirement]) -> some View {
         ScrollView(.vertical, showsIndicators: false) {
             LazyVStack(spacing: 0) {
-                if visibleRequirements.isEmpty {
+                if items.isEmpty {
                     EmptyStateView()
                         .padding(.top, 80)
                 } else {
-                    ForEach(visibleRequirements) { requirement in
+                    ForEach(items) { requirement in
                         RequirementRowView(
                             requirement: requirement,
                             isExpanded: expandedID == requirement.id,
@@ -231,17 +233,17 @@ struct RequirementPanelView: View {
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
-            .animation(.snappy(duration: 0.22), value: visibleRequirements.map(\.id))
+            .animation(.snappy(duration: 0.22), value: items.map(\.id))
         }
         .scrollIndicators(.hidden)
         .background(ScrollIndicatorHider())
     }
 
-    private var footer: some View {
+    private func footer(_ items: [Requirement]) -> some View {
         HStack(spacing: 7) {
             dateFilterButton
 
-            Text("\(visibleRequirements.count) 项")
+            Text("\(items.count) 项")
                 .font(.system(size: 10.5))
                 .foregroundStyle(Color.black.opacity(0.38))
 
@@ -629,81 +631,104 @@ private struct CalendarDay: Identifiable {
 
 private struct ScrollIndicatorHider: NSViewRepresentable {
     func makeNSView(context: Context) -> HiderAttachmentView {
-        let view = HiderAttachmentView()
-        view.scheduleHidingPasses()
-        return view
+        HiderAttachmentView()
     }
 
     func updateNSView(_ view: HiderAttachmentView, context: Context) {
-        view.scheduleHidingPasses()
+        view.refresh()
     }
 }
 
-private final class HiderAttachmentView: NSView {
-    private var isHidingScheduled = false
-
-    override func viewDidMoveToSuperview() {
-        super.viewDidMoveToSuperview()
-        scheduleHidingPasses()
+/// 零宽、不绘制的滚动条：即使系统在滚动时重新启用它，也完全不可见，
+/// 因此不会再出现“偶尔闪出滚动条”的情况。
+private final class HiddenScroller: NSScroller {
+    override class func scrollerWidth(
+        for controlSize: NSControl.ControlSize,
+        scrollerStyle: NSScroller.Style
+    ) -> CGFloat {
+        0
     }
+
+    override func draw(_ dirtyRect: NSRect) {}
+    override func drawKnob() {}
+    override func drawKnobSlot(in slotRect: NSRect, highlight flag: Bool) {}
+}
+
+/// 持续隐藏弹窗内 ScrollView 的滚动条。相比旧实现「每次布局都延时多趟遍历视图树」，
+/// 这里只在出现/布局以及真正发生滚动时复位一次，既稳定又减少主线程开销。
+private final class HiderAttachmentView: NSView {
+    private var isObserving = false
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        scheduleHidingPasses()
+        startObservingIfNeeded()
+        refresh()
+    }
+
+    override func viewDidMoveToSuperview() {
+        super.viewDidMoveToSuperview()
+        refresh()
     }
 
     override func layout() {
         super.layout()
-        scheduleHidingPasses()
+        refresh()
     }
 
-    func scheduleHidingPasses() {
-        guard !isHidingScheduled else {
+    func refresh() {
+        guard let contentView = window?.contentView else {
             return
         }
+        hideScrollers(in: contentView)
+    }
 
-        isHidingScheduled = true
-        let delays = [0.0, 0.05, 0.2, 0.6, 1.2]
-        for (index, delay) in delays.enumerated() {
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-                self?.hideIndicators()
-                if index == delays.count - 1 {
-                    self?.isHidingScheduled = false
-                }
-            }
+    private func startObservingIfNeeded() {
+        guard !isObserving else {
+            return
+        }
+        isObserving = true
+
+        let center = NotificationCenter.default
+        for name in [
+            NSScrollView.willStartLiveScrollNotification,
+            NSScrollView.didLiveScrollNotification,
+            NSScrollView.didEndLiveScrollNotification
+        ] {
+            center.addObserver(self, selector: #selector(handleScroll(_:)), name: name, object: nil)
         }
     }
 
-    private func hideIndicators() {
-        var current: NSView? = self
-        while let candidate = current {
-            hideScrollIndicators(in: candidate)
-            current = candidate.superview
+    @objc private func handleScroll(_ notification: Notification) {
+        guard
+            let scrollView = notification.object as? NSScrollView,
+            scrollView.window === window
+        else {
+            return
         }
-
-        if let contentView = window?.contentView {
-            hideScrollIndicators(in: contentView)
-        }
+        hideScrollers(in: scrollView)
     }
 
-    private func hideScrollIndicators(in view: NSView) {
+    private func hideScrollers(in view: NSView) {
         if let scrollView = view as? NSScrollView {
-            scrollView.hasVerticalScroller = false
-            scrollView.hasHorizontalScroller = false
-            scrollView.autohidesScrollers = true
             scrollView.scrollerStyle = .overlay
-            scrollView.verticalScroller = nil
-            scrollView.horizontalScroller = nil
-        }
-
-        if let scroller = view as? NSScroller {
-            scroller.isHidden = true
-            scroller.alphaValue = 0
+            scrollView.autohidesScrollers = true
+            scrollView.hasHorizontalScroller = false
+            scrollView.hasVerticalScroller = false
+            if !(scrollView.verticalScroller is HiddenScroller) {
+                scrollView.verticalScroller = HiddenScroller()
+            }
+            if !(scrollView.horizontalScroller is HiddenScroller) {
+                scrollView.horizontalScroller = HiddenScroller()
+            }
         }
 
         for subview in view.subviews {
-            hideScrollIndicators(in: subview)
+            hideScrollers(in: subview)
         }
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
     }
 }
 
