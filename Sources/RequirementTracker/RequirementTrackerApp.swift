@@ -75,8 +75,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
         let popover = NSPopover()
         popover.behavior = .transient
-        // 关闭弹出动画：菜单栏工具更看重即时打开，且能减少系统繁忙时打开弹窗的卡顿。
-        popover.animates = false
+        popover.animates = true
         popover.contentSize = NSSize(
             width: RequirementPanelMetrics.width,
             height: RequirementPanelMetrics.height(isCalendarVisible: false)
