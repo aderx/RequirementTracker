@@ -150,12 +150,17 @@ public enum RequirementQuery {
         calendar: Calendar = .current,
         referenceDate: Date = Date()
     ) -> [Requirement] {
-        requirements
+        let filtered = requirements
             .filter { requirement in
                 matchesStatus(requirement, filter: statusFilter)
                     && matchesDate(requirement, filter: dateFilter, calendar: calendar, referenceDate: referenceDate)
             }
-            .sorted(by: sortComparator)
+
+        if statusFilter == .incomplete {
+            return filtered.sorted(by: incompleteSortComparator)
+        }
+
+        return filtered.sorted(by: sortComparator)
     }
 
     public static func sorted(_ requirements: [Requirement]) -> [Requirement] {
@@ -306,6 +311,43 @@ public enum RequirementQuery {
         }
 
         return lhs.jiraKey < rhs.jiraKey
+    }
+
+    /// 未完成 TAB 专用排序：开发中 → 开发完成 → 待开发 → 已自测 → 已暂停，
+    /// 同一分组内按最后更新时间正序（早的在前）。
+    private static func incompleteSortComparator(lhs: Requirement, rhs: Requirement) -> Bool {
+        let leftRank = incompleteSortRank(lhs)
+        let rightRank = incompleteSortRank(rhs)
+
+        if leftRank != rightRank {
+            return leftRank < rightRank
+        }
+
+        if lhs.updatedAt != rhs.updatedAt {
+            return lhs.updatedAt < rhs.updatedAt
+        }
+
+        return lhs.jiraKey < rhs.jiraKey
+    }
+
+    private static func incompleteSortRank(_ requirement: Requirement) -> Int {
+        if requirement.stage == .paused {
+            return 4 // 已暂停
+        }
+
+        if requirement.isTested {
+            return 3 // 已自测
+        }
+
+        if requirement.stage == .pending {
+            return 2 // 待开发
+        }
+
+        if requirement.isDone || requirement.stage == .completed {
+            return 1 // 开发完成
+        }
+
+        return 0 // 开发中
     }
 
     private static func isActiveDevelopment(_ requirement: Requirement) -> Bool {

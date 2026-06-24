@@ -55,7 +55,7 @@ struct StatsSheetView: View {
                     StatTile(title: "开发中", value: stats.active, systemImage: "hammer")
                     StatTile(title: "待开发", value: stats.pending, systemImage: "clock")
                     StatTile(title: "已完成", value: stats.completed, systemImage: "checkmark.circle")
-                    StatTile(title: "已测试", value: stats.tested, systemImage: "testtube.2")
+                    StatTile(title: "已自测", value: stats.tested, systemImage: "testtube.2")
                     StatTile(title: "已合并", value: stats.merged, systemImage: "arrow.triangle.merge")
                     StatTile(title: "异常", value: stats.paused, systemImage: "pause.circle")
                 }

@@ -204,9 +204,19 @@ input:focus {
   justify-content: center;
 }
 
+.actions.triple {
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.actions.triple > :nth-child(3) {
+  grid-column: 1 / -1;
+}
+
 .primary-button,
 .secondary-button,
-.text-button {
+.text-button,
+.start-button {
   min-width: 0;
   height: 46px;
   border: 0;
@@ -214,6 +224,20 @@ input:focus {
   cursor: pointer;
   font-weight: 740;
   line-height: 1;
+}
+
+.start-button {
+  color: #fff;
+  background: linear-gradient(135deg, #34c759, #1f9d54);
+  box-shadow: 0 8px 18px rgba(31, 157, 84, 0.22);
+}
+
+.start-button:hover {
+  background: linear-gradient(135deg, #3ed066, #1aa657);
+}
+
+.start-button:active {
+  filter: brightness(0.95);
 }
 
 .primary-button {

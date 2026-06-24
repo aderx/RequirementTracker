@@ -130,7 +130,8 @@ async function handleJiraPage(payload) {
 
     const ignoreButton = button("忽略", "primary-button", closePopup);
     const updateButton = button("更新", "secondary-button", () => saveJira(payload));
-    setActions([ignoreButton, updateButton]);
+    const startButton = button("确认并开始开发", "start-button", () => saveJira(payload, { startDevelopment: true }));
+    setActions([ignoreButton, updateButton, startButton]);
     scheduleDefault(DEFAULT_DELAY_SECONDS, ignoreButton, "忽略", closePopup);
     return;
   }
@@ -145,31 +146,41 @@ async function handleJiraPage(payload) {
 
   const cancelButton = button("取消", "secondary-button", closePopup);
   const addButton = button("添加", "primary-button", () => saveJira(payload));
-  setActions([cancelButton, addButton]);
+  const startButton = button("确认并开始开发", "start-button", () => saveJira(payload, { startDevelopment: true }));
+  setActions([cancelButton, addButton, startButton]);
   scheduleDefault(DEFAULT_DELAY_SECONDS, addButton, "添加", () => saveJira(payload));
 }
 
-async function saveJira(payload) {
+async function saveJira(payload, { startDevelopment = false } = {}) {
   clearTimers();
   hideManualInput();
   setActions([]);
   setView({
     tone: "blue",
     icon: "✓",
-    title: "正在保存 Jira...",
+    title: startDevelopment ? "正在保存并开始开发..." : "正在保存 Jira...",
     message: "请稍等"
   });
 
   const response = await sendNativeMessage({
     type: "upsertJiraRequirement",
-    payload
+    payload: { ...payload, startDevelopment }
   });
 
   if (!response?.ok) {
     throw new Error(response?.error || "保存 Jira 失败");
   }
 
-  const actionText = response.action === "created" ? "Jira 已添加到 App" : "Jira 信息已更新到 App";
+  requestBadgeRefresh();
+
+  let actionText;
+  if (response.action === "created") {
+    actionText = startDevelopment ? "Jira 已添加并转为开发中" : "Jira 已添加到 App";
+  } else if (response.started) {
+    actionText = "Jira 已更新并转为开发中";
+  } else {
+    actionText = "Jira 信息已更新到 App";
+  }
   showSuccess("已保存", actionText);
 }
 
@@ -264,6 +275,8 @@ async function attachMR(payload) {
   if (!response?.ok) {
     throw new Error(response?.error || "保存 MR 失败");
   }
+
+  requestBadgeRefresh();
 
   const actionText = {
     created: "Jira 已新增，MR 已保存",
@@ -479,7 +492,16 @@ function setActions(actions) {
   }
   elements.actions.classList.toggle("hidden", actions.length === 0);
   elements.actions.classList.toggle("single", actions.length === 1);
+  elements.actions.classList.toggle("triple", actions.length === 3);
   actions.forEach((action) => elements.actions.appendChild(action));
+}
+
+function requestBadgeRefresh() {
+  try {
+    chrome.runtime?.sendMessage?.({ type: "REFRESH_ACTIVE_TAB_BADGE" });
+  } catch {
+    // 后台不可用时忽略，标记会在下次切换标签页时刷新
+  }
 }
 
 function button(label, className, onClick) {

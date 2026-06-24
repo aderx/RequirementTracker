@@ -1022,7 +1022,7 @@ private enum OverviewStatusOption: String, CaseIterable, Identifiable {
         case .done:
             "开发完成"
         case .tested:
-            "已测试"
+            "已自测"
         case .merged:
             "已合并"
         case .paused:

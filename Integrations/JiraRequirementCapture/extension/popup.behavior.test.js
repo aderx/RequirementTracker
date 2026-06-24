@@ -121,9 +121,10 @@ async function testExistingJiraDefaultsToIgnoreForFiveSeconds() {
     title: "需求标题"
   });
 
-  assert.equal(popup.elements.actions.children.length, 2);
+  assert.equal(popup.elements.actions.children.length, 3);
   assert.equal(popup.elements.actions.children[0].textContent, "忽略（5s）");
   assert.equal(popup.elements.actions.children[1].textContent, "更新");
+  assert.equal(popup.elements.actions.children[2].textContent, "确认并开始开发");
   assert.equal(popup.elements.countdownText.textContent, "");
 }
 
@@ -136,9 +137,10 @@ async function testNewJiraDefaultsToAddForFiveSeconds() {
     title: "需求标题"
   });
 
-  assert.equal(popup.elements.actions.children.length, 2);
+  assert.equal(popup.elements.actions.children.length, 3);
   assert.equal(popup.elements.actions.children[0].textContent, "取消");
   assert.equal(popup.elements.actions.children[1].textContent, "添加（5s）");
+  assert.equal(popup.elements.actions.children[2].textContent, "确认并开始开发");
   assert.equal(popup.elements.countdownText.textContent, "");
 }
 

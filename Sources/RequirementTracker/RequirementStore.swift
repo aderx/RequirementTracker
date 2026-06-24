@@ -140,6 +140,23 @@ final class RequirementStore: ObservableObject {
         }
     }
 
+    /// 已存在 MR 时一键完成：无需补充完成备注，直接转为已完成。
+    func markCompleted(id: Requirement.ID) {
+        guard
+            let requirement = requirement(id: id),
+            requirement.canMarkMergedDirectly,
+            requirement.hasMergeRequestURL
+        else {
+            return
+        }
+
+        update(id: id) { requirement in
+            requirement.pauseReason = ""
+            requirement.isMerged = true
+        }
+        lastNotice = "已标为已完成"
+    }
+
     func markMerged(id: Requirement.ID, note: String) {
         let trimmedNote = note.trimmingCharacters(in: .whitespacesAndNewlines)
         guard

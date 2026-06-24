@@ -27,6 +27,8 @@ private func handle(request: [String: Any]) throws -> [String: Any] {
         return try writer.pluginSettingsResponse()
     case "inspectRequirement":
         return try writer.inspect(payload: requiredPayload(from: request))
+    case "inspectByURL":
+        return try writer.inspectByURL(payload: requiredPayload(from: request))
     case "upsertRequirement", "upsertJiraRequirement":
         return try writer.upsertJiraRequirement(payload: requiredPayload(from: request))
     case "attachMergeRequest":
@@ -89,30 +91,115 @@ private struct RequirementJSONWriter {
         return response
     }
 
+    /// 按页面地址判断是否已记录：Jira 详情页按编号匹配，其它页面按 Jira/MR 地址匹配。
+    /// 供浏览器插件给图标标记使用。
+    func inspectByURL(payload: [String: Any]) throws -> [String: Any] {
+        let rawURL = stringValue(payload["url"])
+            ?? stringValue(payload["jiraURL"])
+            ?? stringValue(payload["mrURL"])
+            ?? ""
+        let normalized = RequirementParser.normalizedURL(rawURL)
+        let issueKey = RequirementParser.jiraKey(from: rawURL) ?? ""
+
+        let records = try loadRecords()
+        let record = records.first { record in
+            if !issueKey.isEmpty, matchesIssueKey(record, issueKey: issueKey) {
+                return true
+            }
+
+            guard !normalized.isEmpty else {
+                return false
+            }
+
+            let recordJiraURL = RequirementParser.normalizedURL(stringValue(record["jiraURL"]) ?? "")
+            let recordMRURL = RequirementParser.normalizedURL(stringValue(record["mrURL"]) ?? "")
+            return recordJiraURL == normalized || recordMRURL == normalized
+        }
+
+        return [
+            "ok": true,
+            "host": hostName,
+            "exists": record != nil,
+            "issueKey": issueKey,
+            "dataFilePath": dataFileURL.path
+        ]
+    }
+
     func upsertJiraRequirement(payload: [String: Any]) throws -> [String: Any] {
         let issueKey = try issueKey(from: payload)
         let now = ISO8601DateFormatter().string(from: Date())
         let capturedAt = stringValue(payload["capturedAt"]) ?? now
         let normalizedJiraURL = jiraURL(from: payload, issueKey: issueKey)
+        let startDevelopment = boolValue(payload["startDevelopment"]) ?? false
 
         var records = try loadRecords()
         let index = records.firstIndex { matchesIssueKey($0, issueKey: issueKey) }
 
         let action: String
+        var didStart = false
         if let index {
             records[index]["jiraKey"] = issueKey
             records[index]["jiraURL"] = normalizedJiraURL
             records[index]["updatedAt"] = now
             applyJiraFields(from: payload, to: &records[index], capturedAt: capturedAt)
+            if startDevelopment {
+                didStart = beginDevelopmentIfNeeded(&records[index], now: now)
+            }
             action = "updated"
         } else {
             var record = baseRecord(issueKey: issueKey, jiraURL: normalizedJiraURL, now: now)
             applyJiraFields(from: payload, to: &record, capturedAt: capturedAt)
+            if startDevelopment {
+                record["stage"] = "active"
+                didStart = true
+            }
             records.append(record)
             action = "created"
         }
 
-        return try persist(records: records, action: action, issueKey: issueKey)
+        return try persist(records: records, action: action, issueKey: issueKey, started: didStart)
+    }
+
+    /// 仅当需求处于「未开始（待开发）」时转为开发中并补记一条状态事件；
+    /// 已开始/已完成/已暂停/已停止等保持不变。返回是否真正发生了转换。
+    private func beginDevelopmentIfNeeded(_ record: inout [String: Any], now: String) -> Bool {
+        let stage = stringValue(record["stage"]) ?? "pending"
+        let isDone = boolValue(record["isDone"]) ?? false
+        let isTested = boolValue(record["isTested"]) ?? false
+        let isMerged = boolValue(record["isMerged"]) ?? false
+
+        guard stage == "pending", !isDone, !isTested, !isMerged else {
+            return false
+        }
+
+        record["stage"] = "active"
+        appendStatusEvent(to: &record, status: "active", date: now)
+        return true
+    }
+
+    /// 向记录的状态历史追加一条事件，保持与 App 端 recordStatus 一致的去重与首条补齐逻辑。
+    private func appendStatusEvent(to record: inout [String: Any], status: String, date: String) {
+        var history = (record["statusHistory"] as? [[String: Any]]) ?? []
+
+        if let last = history.last, stringValue(last["status"]) == status {
+            return
+        }
+
+        if history.isEmpty {
+            let createdAt = stringValue(record["createdAt"]) ?? date
+            history.append([
+                "id": UUID().uuidString,
+                "status": "pending",
+                "date": createdAt
+            ])
+        }
+
+        history.append([
+            "id": UUID().uuidString,
+            "status": status,
+            "date": date
+        ])
+        record["statusHistory"] = history
     }
 
     func attachMergeRequest(payload: [String: Any]) throws -> [String: Any] {
@@ -163,7 +250,8 @@ private struct RequirementJSONWriter {
         records: [[String: Any]],
         action: String,
         issueKey: String,
-        mrURL: String? = nil
+        mrURL: String? = nil,
+        started: Bool = false
     ) throws -> [String: Any] {
         let backupURL = try backupExistingFileIfNeeded(kind: "before-browser-import")
         try write(records: records)
@@ -175,6 +263,7 @@ private struct RequirementJSONWriter {
             "host": hostName,
             "action": action,
             "issueKey": issueKey,
+            "started": started,
             "dataFilePath": dataFileURL.path
         ]
 
