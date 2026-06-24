@@ -264,7 +264,11 @@ struct RequirementRowView: View {
             contents.append(
                 .item(
                     NativeMenuItemDescriptor(title: "一键标为已完成", systemImage: "checkmark.seal") {
-                        beginCompletionNoteEditing()
+                        if requirement.hasMergeRequestURL {
+                            store.markCompleted(id: requirement.id)
+                        } else {
+                            beginCompletionNoteEditing()
+                        }
                     }
                 )
             )
@@ -528,25 +532,12 @@ struct RequirementRowView: View {
     }
 
     private func performAdvanceAction() {
-        if shouldPromptMRBeforeTesting {
-            beginMREditing(advanceAfterSave: true)
-            return
-        }
-
         if shouldPromptMRBeforeMerging {
             beginMREditing(advanceAfterSave: true, requiresValue: true)
             return
         }
 
         store.advance(id: requirement.id)
-    }
-
-    private var shouldPromptMRBeforeTesting: Bool {
-        !requirement.isMerged
-            && !requirement.isTested
-            && (requirement.isDone || requirement.stage == .completed)
-            && requirement.stage != .paused
-            && requirement.stage != .stopped
     }
 
     private var shouldPromptMRBeforeMerging: Bool {
@@ -676,7 +667,7 @@ private struct TimelineStatusPresentation {
             color = DesignColor.devDone
             systemImage = "flag.checkered"
         case .tested:
-            title = "已测试"
+            title = "已自测"
             color = DesignColor.tested
             systemImage = "checkmark.seal"
         case .merged:
@@ -766,7 +757,7 @@ private struct RequirementInlineEditor: View {
 
             HStack(spacing: 14) {
                 Toggle("已完成", isOn: boolBinding(\.isDone))
-                Toggle("已测试", isOn: boolBinding(\.isTested))
+                Toggle("已自测", isOn: boolBinding(\.isTested))
                 Toggle("已合并", isOn: boolBinding(\.isMerged))
             }
             .toggleStyle(.checkbox)
@@ -1012,7 +1003,7 @@ private struct RequirementDisplayStyle {
         }
 
         if requirement.isTested {
-            title = "已测试"
+            title = "已自测"
             color = DesignColor.tested
             icon = .check
             advanceAction = RequirementAdvanceAction(title: "合并", color: DesignColor.merged, systemImage: "arrow.triangle.merge")

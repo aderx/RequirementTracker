@@ -97,6 +97,11 @@ public struct Requirement: Identifiable, Codable, Equatable, Sendable {
     public var updatedAt: Date
     public var completedAt: Date?
     public var statusHistory: [RequirementStatusEvent]
+    /// 浏览器插件抓取的 Jira 字段。App 暂不展示，仅做记录与持久化保留。
+    public var issueType: String?
+    public var priority: String?
+    public var targetVersion: String?
+    public var jiraCapturedAt: String?
 
     public init(
         id: UUID = UUID(),
@@ -113,7 +118,11 @@ public struct Requirement: Identifiable, Codable, Equatable, Sendable {
         createdAt: Date = Date(),
         updatedAt: Date = Date(),
         completedAt: Date? = nil,
-        statusHistory: [RequirementStatusEvent]? = nil
+        statusHistory: [RequirementStatusEvent]? = nil,
+        issueType: String? = nil,
+        priority: String? = nil,
+        targetVersion: String? = nil,
+        jiraCapturedAt: String? = nil
     ) {
         self.id = id
         self.jiraKey = jiraKey
@@ -129,6 +138,10 @@ public struct Requirement: Identifiable, Codable, Equatable, Sendable {
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.completedAt = completedAt
+        self.issueType = issueType
+        self.priority = priority
+        self.targetVersion = targetVersion
+        self.jiraCapturedAt = jiraCapturedAt
         self.statusHistory = statusHistory ?? Self.legacyStatusHistory(
             stage: stage,
             isDone: isDone,
@@ -156,6 +169,10 @@ public struct Requirement: Identifiable, Codable, Equatable, Sendable {
         case updatedAt
         case completedAt
         case statusHistory
+        case issueType
+        case priority
+        case targetVersion
+        case jiraCapturedAt
     }
 
     public init(from decoder: Decoder) throws {
@@ -174,6 +191,10 @@ public struct Requirement: Identifiable, Codable, Equatable, Sendable {
         createdAt = try container.decode(Date.self, forKey: .createdAt)
         updatedAt = try container.decode(Date.self, forKey: .updatedAt)
         completedAt = try container.decodeIfPresent(Date.self, forKey: .completedAt)
+        issueType = try container.decodeIfPresent(String.self, forKey: .issueType)
+        priority = try container.decodeIfPresent(String.self, forKey: .priority)
+        targetVersion = try container.decodeIfPresent(String.self, forKey: .targetVersion)
+        jiraCapturedAt = try container.decodeIfPresent(String.self, forKey: .jiraCapturedAt)
 
         let decodedHistory = try container.decodeIfPresent([RequirementStatusEvent].self, forKey: .statusHistory) ?? []
         statusHistory = decodedHistory.isEmpty
@@ -206,6 +227,10 @@ public struct Requirement: Identifiable, Codable, Equatable, Sendable {
         try container.encode(updatedAt, forKey: .updatedAt)
         try container.encodeIfPresent(completedAt, forKey: .completedAt)
         try container.encode(statusHistory, forKey: .statusHistory)
+        try container.encodeIfPresent(issueType, forKey: .issueType)
+        try container.encodeIfPresent(priority, forKey: .priority)
+        try container.encodeIfPresent(targetVersion, forKey: .targetVersion)
+        try container.encodeIfPresent(jiraCapturedAt, forKey: .jiraCapturedAt)
     }
 
     public var effectiveStage: RequirementStage {
@@ -234,7 +259,7 @@ public struct Requirement: Identifiable, Codable, Equatable, Sendable {
         }
 
         if isTested {
-            return "已测试"
+            return "已自测"
         }
 
         if isDone {

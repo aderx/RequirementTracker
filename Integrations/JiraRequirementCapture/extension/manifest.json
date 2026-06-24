@@ -19,10 +19,14 @@
       "128": "icons/icon-128.png"
     }
   },
+  "background": {
+    "service_worker": "background.js"
+  },
   "permissions": [
     "activeTab",
     "clipboardWrite",
     "nativeMessaging",
-    "scripting"
+    "scripting",
+    "tabs"
   ]
 }

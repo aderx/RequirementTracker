@@ -356,7 +356,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private static var appVersion: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
-            ?? "1.5"
+            ?? "1.6"
     }
 
     private static var githubURL: String? {
