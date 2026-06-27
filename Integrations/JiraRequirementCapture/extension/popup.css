@@ -24,10 +24,18 @@ body {
 }
 
 body {
-  width: 360px;
+  width: 100%;
   color: var(--text);
   background: var(--bg);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif;
+  scrollbar-width: none;
+}
+
+body::-webkit-scrollbar,
+html::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
 }
 
 button,
@@ -36,7 +44,9 @@ input {
 }
 
 .shell {
+  width: 100%;
   padding: 28px 28px 24px;
+  box-sizing: border-box;
 }
 
 .status-card {
@@ -114,6 +124,22 @@ p {
   overflow-wrap: anywhere;
 }
 
+.host-status {
+  margin: 6px 0 0;
+  color: #344054;
+  font-size: 12px;
+  font-weight: 560;
+  line-height: 1.35;
+}
+
+.host-status.connected {
+  color: #067647;
+}
+
+.host-status.error {
+  color: #b4233b;
+}
+
 .notice-panel {
   margin-top: 22px;
   padding: 14px 16px;
@@ -131,6 +157,7 @@ p {
   gap: 8px;
   margin-top: 24px;
   padding: 14px 16px;
+  width: 100%;
   border: 1px solid var(--line);
   border-radius: 15px;
   background: var(--soft);
@@ -164,6 +191,12 @@ p {
   display: grid;
   gap: 12px;
   margin-top: 24px;
+  width: 100%;
+}
+
+.row,
+.actions {
+  width: 100%;
 }
 
 input {
@@ -211,6 +244,11 @@ input:focus {
 
 .actions.triple > :nth-child(3) {
   grid-column: 1 / -1;
+}
+
+.actions.quad {
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
 }
 
 .primary-button,

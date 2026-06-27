@@ -52,6 +52,7 @@
         pageType: "mr",
         payload: compactPayload({
           mrURL: pageURL,
+          mrState: extractMRState(),
           jiraURL,
           issueKey: jiraURL ? jiraKeyFromText(jiraURL) : "",
           capturedAt: new Date().toISOString()
@@ -132,6 +133,54 @@
       if (jiraHost && hostFromURL(normalized) === jiraHost && /\/browse\//i.test(normalized)) {
         return normalized;
       }
+    }
+
+    return "";
+  }
+
+  function extractMRState() {
+    const selectors = [
+      "[data-testid*='merge-request-state']",
+      "[data-testid*='issuable-state']",
+      "[data-testid*='state']",
+      ".issuable-status-box",
+      ".status-box",
+      "[class*='issuable-status']",
+      "[class*='merge-request-status']"
+    ];
+
+    for (const selector of selectors) {
+      const values = Array.from(document.querySelectorAll(selector))
+        .map((element) => cleanText(element.innerText || element.textContent || ""))
+        .filter(Boolean);
+
+      for (const value of values) {
+        const state = normalizeMRState(value);
+        if (state) {
+          return state;
+        }
+      }
+    }
+
+    return normalizeMRState(document.body?.innerText?.slice(0, 4000) || "");
+  }
+
+  function normalizeMRState(value) {
+    const text = cleanText(value).toLowerCase();
+    if (!text) {
+      return "";
+    }
+
+    if (/\bmerged\b|已合并/.test(text)) {
+      return "merged";
+    }
+
+    if (/\bopen\b|已打开|开启中|进行中/.test(text)) {
+      return "open";
+    }
+
+    if (/\bclosed\b|已关闭/.test(text)) {
+      return "closed";
     }
 
     return "";

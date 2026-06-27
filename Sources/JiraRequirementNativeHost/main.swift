@@ -88,6 +88,17 @@ private struct RequirementJSONWriter {
             response["hasMR"] = false
         }
 
+        if let record {
+            response["status"] = currentStatus(of: record).rawValue
+            response["stage"] = stringValue(record["stage"]) ?? "pending"
+            response["isDone"] = boolValue(record["isDone"]) ?? false
+            response["isTested"] = boolValue(record["isTested"]) ?? false
+            response["isMerged"] = boolValue(record["isMerged"]) ?? false
+            copyIfPresent("issueType", from: record, to: &response)
+            copyIfPresent("priority", from: record, to: &response)
+            copyIfPresent("targetVersion", from: record, to: &response)
+        }
+
         return response
     }
 
@@ -127,54 +138,49 @@ private struct RequirementJSONWriter {
 
     func upsertJiraRequirement(payload: [String: Any]) throws -> [String: Any] {
         let issueKey = try issueKey(from: payload)
-        let now = ISO8601DateFormatter().string(from: Date())
+        let formatter = ISO8601DateFormatter()
+        let nowDate = Date()
+        let now = formatter.string(from: nowDate)
         let capturedAt = stringValue(payload["capturedAt"]) ?? now
         let normalizedJiraURL = jiraURL(from: payload, issueKey: issueKey)
         let startDevelopment = boolValue(payload["startDevelopment"]) ?? false
+        let targetStatus = targetStatus(from: payload, startDevelopment: startDevelopment)
 
         var records = try loadRecords()
         let index = records.firstIndex { matchesIssueKey($0, issueKey: issueKey) }
 
         let action: String
         var didStart = false
+        var statusUpdated = false
         if let index {
             records[index]["jiraKey"] = issueKey
             records[index]["jiraURL"] = normalizedJiraURL
             records[index]["updatedAt"] = now
             applyJiraFields(from: payload, to: &records[index], capturedAt: capturedAt)
-            if startDevelopment {
-                didStart = beginDevelopmentIfNeeded(&records[index], now: now)
+            if let targetStatus {
+                statusUpdated = applyTargetStatus(targetStatus, to: &records[index], startDate: nowDate, formatter: formatter)
+                didStart = statusUpdated && targetStatus == .active
             }
             action = "updated"
         } else {
             var record = baseRecord(issueKey: issueKey, jiraURL: normalizedJiraURL, now: now)
             applyJiraFields(from: payload, to: &record, capturedAt: capturedAt)
-            if startDevelopment {
-                record["stage"] = "active"
-                didStart = true
+            if let targetStatus {
+                statusUpdated = applyTargetStatus(targetStatus, to: &record, startDate: nowDate, formatter: formatter)
+                didStart = statusUpdated && targetStatus == .active
             }
             records.append(record)
             action = "created"
         }
 
-        return try persist(records: records, action: action, issueKey: issueKey, started: didStart)
-    }
-
-    /// 仅当需求处于「未开始（待开发）」时转为开发中并补记一条状态事件；
-    /// 已开始/已完成/已暂停/已停止等保持不变。返回是否真正发生了转换。
-    private func beginDevelopmentIfNeeded(_ record: inout [String: Any], now: String) -> Bool {
-        let stage = stringValue(record["stage"]) ?? "pending"
-        let isDone = boolValue(record["isDone"]) ?? false
-        let isTested = boolValue(record["isTested"]) ?? false
-        let isMerged = boolValue(record["isMerged"]) ?? false
-
-        guard stage == "pending", !isDone, !isTested, !isMerged else {
-            return false
-        }
-
-        record["stage"] = "active"
-        appendStatusEvent(to: &record, status: "active", date: now)
-        return true
+        return try persist(
+            records: records,
+            action: action,
+            issueKey: issueKey,
+            started: didStart,
+            statusUpdated: statusUpdated,
+            targetStatus: targetStatus?.rawValue
+        )
     }
 
     /// 向记录的状态历史追加一条事件，保持与 App 端 recordStatus 一致的去重与首条补齐逻辑。
@@ -211,11 +217,15 @@ private struct RequirementJSONWriter {
         }
 
         let replaceExisting = boolValue(payload["replaceExisting"]) ?? false
-        let now = ISO8601DateFormatter().string(from: Date())
+        let formatter = ISO8601DateFormatter()
+        let nowDate = Date()
+        let now = formatter.string(from: nowDate)
+        let targetStatus = targetStatus(forMRState: stringValue(payload["mrState"]))
         var records = try loadRecords()
         let index = records.firstIndex { matchesIssueKey($0, issueKey: issueKey) }
 
         let action: String
+        var statusUpdated = false
         if let index {
             let existingMRURL = RequirementParser.normalizedURL(stringValue(records[index]["mrURL"]) ?? "")
             if !existingMRURL.isEmpty, existingMRURL != normalizedMRURL, !replaceExisting {
@@ -235,15 +245,34 @@ private struct RequirementJSONWriter {
             records[index]["jiraURL"] = normalizedJiraURL
             records[index]["mrURL"] = normalizedMRURL
             records[index]["updatedAt"] = now
-            action = existingMRURL.isEmpty ? "attached" : "replaced"
+            if let targetStatus {
+                statusUpdated = applyTargetStatus(targetStatus, to: &records[index], startDate: nowDate, formatter: formatter)
+            }
+            if existingMRURL.isEmpty {
+                action = "attached"
+            } else if existingMRURL == normalizedMRURL {
+                action = "synced"
+            } else {
+                action = "replaced"
+            }
         } else {
             var record = baseRecord(issueKey: issueKey, jiraURL: normalizedJiraURL, now: now)
             record["mrURL"] = normalizedMRURL
+            if let targetStatus {
+                statusUpdated = applyTargetStatus(targetStatus, to: &record, startDate: nowDate, formatter: formatter)
+            }
             records.append(record)
             action = "created"
         }
 
-        return try persist(records: records, action: action, issueKey: issueKey, mrURL: normalizedMRURL)
+        return try persist(
+            records: records,
+            action: action,
+            issueKey: issueKey,
+            mrURL: normalizedMRURL,
+            statusUpdated: statusUpdated,
+            targetStatus: targetStatus?.rawValue
+        )
     }
 
     private func persist(
@@ -251,7 +280,9 @@ private struct RequirementJSONWriter {
         action: String,
         issueKey: String,
         mrURL: String? = nil,
-        started: Bool = false
+        started: Bool = false,
+        statusUpdated: Bool = false,
+        targetStatus: String? = nil
     ) throws -> [String: Any] {
         let backupURL = try backupExistingFileIfNeeded(kind: "before-browser-import")
         try write(records: records)
@@ -264,8 +295,13 @@ private struct RequirementJSONWriter {
             "action": action,
             "issueKey": issueKey,
             "started": started,
+            "statusUpdated": statusUpdated,
             "dataFilePath": dataFileURL.path
         ]
+
+        if let targetStatus {
+            response["targetStatus"] = targetStatus
+        }
 
         if let mrURL {
             response["mrURL"] = mrURL
@@ -362,6 +398,138 @@ private struct RequirementJSONWriter {
         }
 
         record[targetKey] = value
+    }
+
+    private func copyIfPresent(_ key: String, from record: [String: Any], to response: inout [String: Any]) {
+        guard let value = stringValue(record[key]), !value.isEmpty else {
+            return
+        }
+
+        response[key] = value
+    }
+
+    private func targetStatus(from payload: [String: Any], startDevelopment: Bool) -> RequirementHostStatus? {
+        if let value = stringValue(payload["targetStatus"]),
+           let status = RequirementHostStatus(rawValue: value),
+           status.isProgressStatus {
+            return status
+        }
+
+        return startDevelopment ? .active : nil
+    }
+
+    private func targetStatus(forMRState state: String?) -> RequirementHostStatus? {
+        switch state?.lowercased() {
+        case "open":
+            return .tested
+        case "merged":
+            return .merged
+        default:
+            return nil
+        }
+    }
+
+    private func currentStatus(of record: [String: Any]) -> RequirementHostStatus {
+        let stage = stringValue(record["stage"]) ?? "pending"
+
+        if stage == "stopped" {
+            return .stopped
+        }
+
+        if stage == "paused" {
+            return .paused
+        }
+
+        if boolValue(record["isMerged"]) == true {
+            return .merged
+        }
+
+        if boolValue(record["isTested"]) == true {
+            return .tested
+        }
+
+        if boolValue(record["isDone"]) == true || stage == "completed" {
+            return .done
+        }
+
+        if stage == "active" {
+            return .active
+        }
+
+        return .pending
+    }
+
+    private func applyTargetStatus(
+        _ target: RequirementHostStatus,
+        to record: inout [String: Any],
+        startDate: Date,
+        formatter: ISO8601DateFormatter
+    ) -> Bool {
+        guard let targetRank = target.progressRank else {
+            return false
+        }
+
+        let currentRank = currentStatus(of: record).progressRank ?? 0
+        guard targetRank > currentRank else {
+            return false
+        }
+
+        let missingStatuses = RequirementHostStatus.progression.filter { status in
+            guard let rank = status.progressRank else {
+                return false
+            }
+            return rank > currentRank && rank <= targetRank
+        }
+
+        var finalDate = startDate
+        for (index, status) in missingStatuses.enumerated() {
+            finalDate = startDate.addingTimeInterval(TimeInterval(index * 5))
+            let date = formatter.string(from: finalDate)
+            applyStatusFields(status, to: &record, date: date)
+            appendStatusEvent(to: &record, status: status.rawValue, date: date)
+        }
+
+        record["updatedAt"] = formatter.string(from: finalDate)
+        return true
+    }
+
+    private func applyStatusFields(_ status: RequirementHostStatus, to record: inout [String: Any], date: String) {
+        record["pauseReason"] = ""
+
+        switch status {
+        case .active:
+            record["stage"] = "active"
+            record["isDone"] = false
+            record["isTested"] = false
+            record["isMerged"] = false
+            record.removeValue(forKey: "completedAt")
+        case .done:
+            record["stage"] = "completed"
+            record["isDone"] = true
+            record["isTested"] = false
+            record["isMerged"] = false
+            if stringValue(record["completedAt"]) == nil {
+                record["completedAt"] = date
+            }
+        case .tested:
+            record["stage"] = "completed"
+            record["isDone"] = true
+            record["isTested"] = true
+            record["isMerged"] = false
+            if stringValue(record["completedAt"]) == nil {
+                record["completedAt"] = date
+            }
+        case .merged:
+            record["stage"] = "completed"
+            record["isDone"] = true
+            record["isTested"] = true
+            record["isMerged"] = true
+            if stringValue(record["completedAt"]) == nil {
+                record["completedAt"] = date
+            }
+        case .pending, .paused, .stopped:
+            break
+        }
     }
 
     private func loadToolConfiguration() throws -> RequirementToolConfiguration {
@@ -463,6 +631,39 @@ private struct RequirementJSONWriter {
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyyMMdd-HHmmss-SSS"
         return formatter.string(from: Date())
+    }
+}
+
+private enum RequirementHostStatus: String {
+    case pending
+    case active
+    case done
+    case tested
+    case merged
+    case paused
+    case stopped
+
+    static let progression: [RequirementHostStatus] = [.active, .done, .tested, .merged]
+
+    var isProgressStatus: Bool {
+        progressRank != nil
+    }
+
+    var progressRank: Int? {
+        switch self {
+        case .pending:
+            0
+        case .active:
+            1
+        case .done:
+            2
+        case .tested:
+            3
+        case .merged:
+            4
+        case .paused, .stopped:
+            nil
+        }
     }
 }
 

@@ -242,6 +242,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         overviewWindowController = controller
         NSApplication.shared.activate(ignoringOtherApps: true)
         controller.showWindow(nil)
+        centerOnMainScreen(window)
     }
 
     private func openSettings() {
@@ -251,6 +252,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             NSApplication.shared.activate(ignoringOtherApps: true)
             centerOnMainScreen(window)
             window.makeKeyAndOrderFront(nil)
+            DispatchQueue.main.async {
+                self.centerOnMainScreen(window)
+            }
             return
         }
 
@@ -276,6 +280,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         settingsWindowController = controller
         NSApplication.shared.activate(ignoringOtherApps: true)
         controller.showWindow(nil)
+        centerOnMainScreen(window)
+        DispatchQueue.main.async {
+            self.centerOnMainScreen(window)
+        }
     }
 
     private func openAbout() {
@@ -312,6 +320,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         aboutWindowController = controller
         NSApplication.shared.activate(ignoringOtherApps: true)
         controller.showWindow(nil)
+        centerOnMainScreen(window)
     }
 
     // 关闭辅助窗口时释放其控制器与视图树，回收内存（再次打开会重新创建）。
@@ -330,18 +339,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private func centerOnMainScreen(_ window: NSWindow) {
-        let screenFrame = NSScreen.main?.visibleFrame ?? NSScreen.screens.first?.visibleFrame ?? .zero
+        let currentFrame = window.frame
+        let statusItemScreen = statusItem?.button?.window?.screen
+        let screen = statusItemScreen
+            ?? NSScreen.main
+            ?? window.screen
+            ?? NSScreen.screens.first
+        let screenFrame = screen?.frame ?? .zero
+
         guard screenFrame != .zero else {
             window.center()
             return
         }
 
-        window.setFrameOrigin(
-            NSPoint(
-                x: screenFrame.midX - window.frame.width / 2,
-                y: screenFrame.midY - window.frame.height / 2
-            )
+        let centeredFrame = NSRect(
+            x: round(screenFrame.midX - currentFrame.width / 2),
+            y: round(screenFrame.midY - currentFrame.height / 2),
+            width: currentFrame.width,
+            height: currentFrame.height
         )
+        window.setFrame(centeredFrame, display: true)
     }
 
     private static func makeStatusIcon() -> NSImage {
@@ -374,7 +391,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private static var appVersion: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
-            ?? "1.6"
+            ?? "1.7"
     }
 
     private static var githubURL: String? {
@@ -429,22 +446,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private static func drawDevelopmentStatusBadge(in rect: NSRect) {
         let badgeRect = NSRect(
-            x: rect.maxX - 8.6,
-            y: rect.maxY - 8.9,
-            width: 7.6,
-            height: 7.6
+            x: rect.maxX - 7.5,
+            y: rect.maxY - 7.8,
+            width: 6.4,
+            height: 6.4
         )
-        let badgePath = NSBezierPath(roundedRect: badgeRect, xRadius: 2.2, yRadius: 2.2)
+        let badgePath = NSBezierPath(roundedRect: badgeRect, xRadius: 1.9, yRadius: 1.9)
 
         NSColor(calibratedRed: 1, green: 149 / 255, blue: 0, alpha: 1).setFill()
         badgePath.fill()
 
         NSColor.white.withAlphaComponent(0.92).setStroke()
-        badgePath.lineWidth = 0.7
+        badgePath.lineWidth = 0.6
         badgePath.stroke()
 
         let attributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 5.4, weight: .bold),
+            .font: NSFont.systemFont(ofSize: 4.5, weight: .bold),
             .foregroundColor: NSColor.white
         ]
         let marker = NSString(string: "D")
@@ -452,7 +469,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         marker.draw(
             at: NSPoint(
                 x: badgeRect.midX - markerSize.width / 2,
-                y: badgeRect.midY - markerSize.height / 2 - 0.3
+                y: badgeRect.midY - markerSize.height / 2 - 0.25
             ),
             withAttributes: attributes
         )

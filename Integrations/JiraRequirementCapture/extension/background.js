@@ -10,9 +10,9 @@ const FALLBACK_SETTINGS = {
 const SETTINGS_TTL_MS = 5 * 60 * 1000;
 
 const BADGE = {
-  recorded: { text: "✓", color: "#34C759" },
-  addable: { text: "+", color: "#2F8CFF" },
-  unsupported: { text: "–", color: "#9AA0A6" }
+  recorded: { text: "•", color: "#34C759" },
+  addable: { text: "•", color: "#2F8CFF" },
+  unsupported: { text: "•", color: "#9AA0A6" }
 };
 
 let cachedSettings = null;

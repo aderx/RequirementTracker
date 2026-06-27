@@ -44,8 +44,12 @@ struct RequirementOverviewView: View {
             let searchableText = [
                 requirement.jiraURL,
                 requirement.mrURL ?? "",
+                requirement.title,
                 requirement.note,
-                requirement.pauseReason
+                requirement.pauseReason,
+                requirement.issueType ?? "",
+                requirement.priority ?? "",
+                requirement.targetVersion ?? ""
             ]
             .joined(separator: " ")
             .foldedForSearch
@@ -161,7 +165,7 @@ struct RequirementOverviewView: View {
 
             searchBar
 
-            ScrollView {
+            ScrollView(.vertical, showsIndicators: false) {
                 LazyVStack(spacing: 4) {
                     if visibleRequirements.isEmpty {
                         OverviewListEmptyState(
@@ -186,7 +190,8 @@ struct RequirementOverviewView: View {
                 }
                 .padding(8)
             }
-            .scrollIndicators(.automatic)
+            .scrollIndicators(.hidden)
+            .background(OverviewScrollIndicatorHider())
         }
         .background(Color.white.opacity(0.24))
     }
@@ -317,6 +322,14 @@ struct RequirementOverviewView: View {
                     Text(requirement.jiraKey)
                         .font(.system(size: 13, weight: .bold, design: .monospaced))
                         .foregroundStyle(OverviewStatusOption(requirement: requirement).tint)
+                        .textSelection(.enabled)
+
+                    Text(requirement.title)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Color.black.opacity(0.56))
+                        .lineLimit(nil)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .multilineTextAlignment(.leading)
 
                     Text("\(relativeDateText(requirement.activityDate))更新")
                         .font(.system(size: 10))
@@ -339,10 +352,37 @@ struct RequirementOverviewView: View {
                     .frame(height: 0.5)
             }
 
-            ScrollView {
+            ScrollView(.vertical, showsIndicators: false) {
                 VStack(spacing: 0) {
                     OverviewDetailRow(label: "状态") {
                         OverviewStatusBadge(status: OverviewStatusOption(requirement: requirement))
+                    }
+
+                    OverviewDetailRow(label: "Jira类型") {
+                        OverviewTextValue(
+                            text: requirement.issueType ?? "",
+                            emptyText: "暂无",
+                            isMonospaced: false,
+                            textColor: overviewIssueTypeColor(for: requirement.issueType ?? "")
+                        )
+                    }
+
+                    OverviewDetailRow(label: "优先级") {
+                        OverviewTextValue(
+                            text: requirement.priority ?? "",
+                            emptyText: "暂无",
+                            isMonospaced: false,
+                            textColor: overviewPriorityColor(for: requirement.priority ?? "")
+                        )
+                    }
+
+                    OverviewDetailRow(label: "版本") {
+                        OverviewTextValue(
+                            text: requirement.targetVersion ?? "",
+                            emptyText: "暂无",
+                            isMonospaced: false,
+                            textColor: overviewVersionColor
+                        )
                     }
 
                     if requirement.stage == .paused || requirement.stage == .stopped {
@@ -381,15 +421,29 @@ struct RequirementOverviewView: View {
                 }
                 .padding(20)
             }
+            .scrollIndicators(.hidden)
+            .background(OverviewScrollIndicatorHider())
         }
     }
 
     private func editPanel(for requirement: Requirement) -> some View {
         VStack(spacing: 0) {
             HStack(spacing: 12) {
-                Text(requirement.jiraKey)
-                    .font(.system(size: 13, weight: .bold, design: .monospaced))
-                    .foregroundStyle(OverviewStatusOption(requirement: requirement).tint)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(requirement.jiraKey)
+                        .font(.system(size: 13, weight: .bold, design: .monospaced))
+                        .foregroundStyle(OverviewStatusOption(requirement: requirement).tint)
+                        .textSelection(.enabled)
+
+                    Text(requirement.title)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Color.black.opacity(0.56))
+                        .lineLimit(nil)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .multilineTextAlignment(.leading)
+                        .textSelection(.enabled)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
 
                 Spacer()
 
@@ -415,7 +469,7 @@ struct RequirementOverviewView: View {
                     .frame(height: 0.5)
             }
 
-            ScrollView {
+            ScrollView(.vertical, showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 0) {
                     VStack(alignment: .leading, spacing: 10) {
                         Text("状态")
@@ -613,7 +667,7 @@ struct RequirementOverviewView: View {
                         .frame(height: 0.5)
                 }
 
-                ScrollView {
+                ScrollView(.vertical, showsIndicators: false) {
                     VStack(spacing: 12) {
                         ForEach(pendingChanges) { change in
                             OverviewChangeCard(change: change) {
@@ -1202,8 +1256,10 @@ private struct OverviewSplitDivider: View {
                     isCursorPushed = false
                 }
             }
+            .scrollIndicators(.hidden)
+            .background(OverviewScrollIndicatorHider())
+        }
     }
-}
 
 private struct OverviewRequirementListRow: View {
     let index: Int
@@ -1232,6 +1288,7 @@ private struct OverviewRequirementListRow: View {
                     .font(.system(size: 11, weight: .bold, design: .monospaced))
                     .foregroundStyle(status.tint)
                     .lineLimit(1)
+                    .textSelection(.enabled)
 
                 Spacer(minLength: 6)
 
@@ -1242,6 +1299,8 @@ private struct OverviewRequirementListRow: View {
                 .font(.system(size: 10))
                 .foregroundStyle(Color.black.opacity(0.45))
                 .lineLimit(1)
+
+            metadataTags
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
@@ -1282,6 +1341,41 @@ private struct OverviewRequirementListRow: View {
         return parts.joined(separator: " · ")
     }
 
+    @ViewBuilder
+    private var metadataTags: some View {
+        let issueType = trimmed(requirement.issueType)
+        let priority = trimmed(requirement.priority)
+        let version = trimmed(requirement.targetVersion)
+
+        if issueType != nil || priority != nil || version != nil {
+            HStack(spacing: 7) {
+                if let issueType {
+                    Text(issueType)
+                        .font(.system(size: 9.5, weight: .semibold))
+                        .foregroundStyle(overviewIssueTypeColor(for: issueType))
+                }
+
+                if let priority {
+                    Text("#\(priority)")
+                        .font(.system(size: 9.5, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(overviewPriorityColor(for: priority))
+                }
+
+                if let version {
+                    Text("#\(version)")
+                        .font(.system(size: 9.5, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(overviewVersionColor)
+                }
+            }
+            .lineLimit(1)
+        }
+    }
+
+    private func trimmed(_ value: String?) -> String? {
+        let text = (value ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.isEmpty ? nil : text
+    }
+
     private func summaryDateText(_ date: Date) -> String {
         let calendar = Calendar.current
         let formattedDate = RequirementDateDisplayFormatter.displayText(for: date, calendar: calendar)
@@ -1297,6 +1391,42 @@ private struct OverviewRequirementListRow: View {
         return formattedDate
     }
 }
+
+private func overviewIssueTypeColor(for value: String) -> Color {
+    let normalized = value.lowercased()
+
+    if normalized.contains("故障") || normalized.contains("bug") {
+        return DesignColor.stopped
+    }
+
+    if normalized.contains("改进") || normalized.contains("improvement") {
+        return DesignColor.merged
+    }
+
+    return Color.black.opacity(0.52)
+}
+
+private func overviewPriorityColor(for value: String) -> Color {
+    let normalized = value
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+        .uppercased()
+
+    if normalized.hasPrefix("P2") {
+        return DesignColor.merged
+    }
+
+    if normalized.hasPrefix("P1") {
+        return DesignColor.paused
+    }
+
+    if normalized.hasPrefix("P0") {
+        return DesignColor.stopped
+    }
+
+    return DesignColor.stopped
+}
+
+private let overviewVersionColor = DesignColor.doing
 
 private struct OverviewStatTile: View {
     let filter: OverviewStatusFilter
@@ -1479,6 +1609,7 @@ private struct OverviewTextValue: View {
     let text: String
     let emptyText: String
     let isMonospaced: Bool
+    var textColor: Color = Color.black.opacity(0.70)
 
     var body: some View {
         let isEmpty = text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -1493,10 +1624,110 @@ private struct OverviewTextValue: View {
         } else {
             Text(text)
                 .font(.system(size: 12, design: isMonospaced ? .monospaced : .default))
-                .foregroundStyle(Color.black.opacity(0.70))
+                .foregroundStyle(textColor)
                 .lineSpacing(2)
                 .textSelection(.enabled)
         }
+    }
+}
+
+private struct OverviewScrollIndicatorHider: NSViewRepresentable {
+    func makeNSView(context: Context) -> OverviewHiderAttachmentView {
+        OverviewHiderAttachmentView()
+    }
+
+    func updateNSView(_ view: OverviewHiderAttachmentView, context: Context) {
+        view.refresh()
+    }
+}
+
+/// 强制收缩滚动条宽度为 0，避免滚动条可见/不可见但仍占位。
+private final class OverviewHiddenScroller: NSScroller {
+    override class func scrollerWidth(
+        for controlSize: NSControl.ControlSize,
+        scrollerStyle: NSScroller.Style
+    ) -> CGFloat {
+        0
+    }
+
+    override func draw(_ dirtyRect: NSRect) {}
+    override func drawKnob() {}
+    override func drawKnobSlot(in slotRect: NSRect, highlight flag: Bool) {}
+}
+
+private final class OverviewHiderAttachmentView: NSView {
+    private var isObserving = false
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        startObservingIfNeeded()
+        refresh()
+    }
+
+    override func viewDidMoveToSuperview() {
+        super.viewDidMoveToSuperview()
+        refresh()
+    }
+
+    override func layout() {
+        super.layout()
+        refresh()
+    }
+
+    func refresh() {
+        guard let contentView = window?.contentView else {
+            return
+        }
+        hideScrollers(in: contentView)
+    }
+
+    private func startObservingIfNeeded() {
+        guard !isObserving else {
+            return
+        }
+        isObserving = true
+
+        let center = NotificationCenter.default
+        for name in [
+            NSScrollView.willStartLiveScrollNotification,
+            NSScrollView.didLiveScrollNotification,
+            NSScrollView.didEndLiveScrollNotification
+        ] {
+            center.addObserver(self, selector: #selector(handleScroll(_:)), name: name, object: nil)
+        }
+    }
+
+    @objc private func handleScroll(_ notification: Notification) {
+        guard
+            let scrollView = notification.object as? NSScrollView,
+            scrollView.window === window
+        else {
+            return
+        }
+        hideScrollers(in: scrollView)
+    }
+
+    private func hideScrollers(in view: NSView) {
+        if let scrollView = view as? NSScrollView {
+            scrollView.scrollerStyle = .overlay
+            scrollView.autohidesScrollers = true
+            scrollView.hasHorizontalScroller = false
+            scrollView.hasVerticalScroller = false
+            if !(scrollView.verticalScroller is OverviewHiddenScroller) {
+                scrollView.verticalScroller = OverviewHiddenScroller()
+            }
+            if !(scrollView.horizontalScroller is OverviewHiddenScroller) {
+                scrollView.horizontalScroller = OverviewHiddenScroller()
+            }
+        }
+
+        for subview in view.subviews {
+            hideScrollers(in: subview)
+        }
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
     }
 }
 

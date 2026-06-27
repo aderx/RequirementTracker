@@ -1,6 +1,5 @@
 const HOST_NAME = "com.aderx.requirementtracker.jira_capture";
 const DEFAULT_DELAY_SECONDS = 5;
-const SUCCESS_DELAY_SECONDS = 2;
 const FALLBACK_SETTINGS = {
   jiraBaseURL: "http://jira.zstack.io/browse/",
   mrHosts: ["gitlab.zstack.io"]
@@ -9,6 +8,7 @@ const FALLBACK_SETTINGS = {
 const elements = {
   titleText: document.getElementById("titleText"),
   statusText: document.getElementById("statusText"),
+  hostStatusText: document.getElementById("hostStatusText"),
   iconFrame: document.getElementById("iconFrame"),
   statusIcon: document.getElementById("statusIcon"),
   noticePanel: document.getElementById("noticePanel"),
@@ -47,6 +47,7 @@ async function run() {
 
   const settingsResult = await loadPluginSettings();
   currentSettings = settingsResult.settings;
+  setHostStatus(!settingsResult.hostError, settingsResult.hostError);
 
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -72,6 +73,23 @@ async function run() {
   } catch (error) {
     showUnsupported(error.message || "页面识别失败");
   }
+}
+
+function setHostStatus(connected, errorMessage = "") {
+  if (!elements.hostStatusText) {
+    return;
+  }
+
+  if (connected) {
+    elements.hostStatusText.textContent = "Native Host：已连接";
+    elements.hostStatusText.classList.remove("error");
+    elements.hostStatusText.classList.add("connected");
+    return;
+  }
+
+  elements.hostStatusText.textContent = `Native Host：${errorMessage || "未连接"}`;
+  elements.hostStatusText.classList.remove("connected");
+  elements.hostStatusText.classList.add("error");
 }
 
 async function handlePageResult(result, hostError) {
@@ -120,19 +138,22 @@ async function handleJiraPage(payload) {
   }
 
   if (inspect.exists) {
+    const statusAction = jiraStatusAction(inspect.status);
     setView({
       tone: "subtle",
       icon: "=",
       title: "这个 Jira 已记录",
-      message: "可以更新页面信息，也可以忽略本次添加"
+      message: statusAction ? statusAction.message : "可以更新页面信息，也可以忽略本次添加"
     });
     renderSummary("JIRA", payload.issueKey || payload.jiraKey || "未识别", "标题", payload.title || "暂无标题");
 
     const ignoreButton = button("忽略", "primary-button", closePopup);
     const updateButton = button("更新", "secondary-button", () => saveJira(payload));
-    const startButton = button("确认并开始开发", "start-button", () => saveJira(payload, { startDevelopment: true }));
-    setActions([ignoreButton, updateButton, startButton]);
-    scheduleDefault(DEFAULT_DELAY_SECONDS, ignoreButton, "忽略", closePopup);
+    const actions = [ignoreButton, updateButton];
+    if (statusAction) {
+      actions.push(button("更新状态", "start-button", () => saveJira(payload, { targetStatus: statusAction.targetStatus })));
+    }
+    setActions(actions);
     return;
   }
 
@@ -148,23 +169,22 @@ async function handleJiraPage(payload) {
   const addButton = button("添加", "primary-button", () => saveJira(payload));
   const startButton = button("确认并开始开发", "start-button", () => saveJira(payload, { startDevelopment: true }));
   setActions([cancelButton, addButton, startButton]);
-  scheduleDefault(DEFAULT_DELAY_SECONDS, addButton, "添加", () => saveJira(payload));
 }
 
-async function saveJira(payload, { startDevelopment = false } = {}) {
+async function saveJira(payload, { startDevelopment = false, targetStatus = "" } = {}) {
   clearTimers();
   hideManualInput();
   setActions([]);
   setView({
     tone: "blue",
     icon: "✓",
-    title: startDevelopment ? "正在保存并开始开发..." : "正在保存 Jira...",
+    title: startDevelopment || targetStatus ? "正在保存并更新状态..." : "正在保存 Jira...",
     message: "请稍等"
   });
 
   const response = await sendNativeMessage({
     type: "upsertJiraRequirement",
-    payload: { ...payload, startDevelopment }
+    payload: { ...payload, startDevelopment, targetStatus }
   });
 
   if (!response?.ok) {
@@ -176,6 +196,8 @@ async function saveJira(payload, { startDevelopment = false } = {}) {
   let actionText;
   if (response.action === "created") {
     actionText = startDevelopment ? "Jira 已添加并转为开发中" : "Jira 已添加到 App";
+  } else if (response.statusUpdated) {
+    actionText = statusSuccessText(response.targetStatus || targetStatus);
   } else if (response.started) {
     actionText = "Jira 已更新并转为开发中";
   } else {
@@ -225,6 +247,7 @@ async function attachMRWithInspection(payload, replaceExisting = false) {
 
   const existingMR = normalizedURL(inspect.mrURL || "");
   const newMR = normalizedURL(payload.mrURL || "");
+  const shouldSyncMRState = isMRStateSyncable(payload.mrState);
   if (existingMR && existingMR !== newMR && !replaceExisting) {
     setView({
       tone: "subtle",
@@ -237,11 +260,10 @@ async function attachMRWithInspection(payload, replaceExisting = false) {
     const ignoreButton = button("忽略", "primary-button", closePopup);
     const replaceButton = button("替换", "secondary-button", () => attachMRWithInspection(payload, true));
     setActions([ignoreButton, replaceButton]);
-    scheduleDefault(DEFAULT_DELAY_SECONDS, ignoreButton, "忽略", closePopup);
     return;
   }
 
-  if (existingMR === newMR) {
+  if (existingMR === newMR && !shouldSyncMRState) {
     showSuccess("已保存", "这个 MR 已经记录在对应 Jira 中");
     return;
   }
@@ -250,6 +272,7 @@ async function attachMRWithInspection(payload, replaceExisting = false) {
     issueKey: target.issueKey,
     jiraURL: target.jiraURL,
     mrURL: newMR,
+    mrState: payload.mrState,
     replaceExisting
   });
 }
@@ -281,10 +304,11 @@ async function attachMR(payload) {
   const actionText = {
     created: "Jira 已新增，MR 已保存",
     attached: "MR 已保存到对应 Jira",
-    replaced: "MR 地址已替换"
+    replaced: "MR 地址已替换",
+    synced: "MR 状态已同步到对应 Jira"
   }[response.action] || "需求记录已更新到 App";
 
-  showSuccess("已保存", actionText);
+  showSuccess("已保存", response.statusUpdated ? `${actionText}，${statusSuccessText(response.targetStatus)}` : actionText);
 }
 
 function showManualJiraInput(payload, message = "输入完整 Jira 地址或 Jira 编号") {
@@ -347,7 +371,6 @@ function showNativeHostError() {
 
   const closeButton = button("关闭", "text-button", closePopup);
   setActions([closeButton]);
-  scheduleClose(DEFAULT_DELAY_SECONDS, closeButton);
 }
 
 function showSuccess(title, message) {
@@ -363,7 +386,6 @@ function showSuccess(title, message) {
 
   const closeButton = button("关闭", "text-button", closePopup);
   setActions([closeButton]);
-  scheduleClose(SUCCESS_DELAY_SECONDS, closeButton);
 }
 
 function showOperationError(message) {
@@ -379,7 +401,6 @@ function showOperationError(message) {
 
   const closeButton = button("关闭", "text-button", closePopup);
   setActions([closeButton]);
-  scheduleClose(DEFAULT_DELAY_SECONDS, closeButton);
 }
 
 async function loadPluginSettings() {
@@ -493,7 +514,45 @@ function setActions(actions) {
   elements.actions.classList.toggle("hidden", actions.length === 0);
   elements.actions.classList.toggle("single", actions.length === 1);
   elements.actions.classList.toggle("triple", actions.length === 3);
+  elements.actions.classList.toggle("quad", actions.length === 4);
   actions.forEach((action) => elements.actions.appendChild(action));
+}
+
+function jiraStatusAction(status) {
+  switch (String(status || "").toLowerCase()) {
+  case "pending":
+    return {
+      targetStatus: "active",
+      message: "可以更新页面信息，或将 Jira 状态切换为开发中"
+    };
+  case "active":
+    return {
+      targetStatus: "done",
+      message: "可以更新页面信息，或将 Jira 状态切换为开发完成"
+    };
+  default:
+    return null;
+  }
+}
+
+function isMRStateSyncable(state) {
+  const value = String(state || "").toLowerCase();
+  return value === "open" || value === "merged";
+}
+
+function statusSuccessText(status) {
+  switch (String(status || "").toLowerCase()) {
+  case "active":
+    return "Jira 已转为开发中";
+  case "done":
+    return "Jira 已转为开发完成";
+  case "tested":
+    return "Jira 已转为自测完成";
+  case "merged":
+    return "Jira 已转为已合并";
+  default:
+    return "Jira 状态已更新";
+  }
 }
 
 function requestBadgeRefresh() {

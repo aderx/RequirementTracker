@@ -129,7 +129,7 @@ struct RequirementSettingsView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
 
-            ScrollView {
+            ScrollView(.vertical, showsIndicators: false) {
                 LazyVStack(spacing: 5) {
                     ForEach(settingsStore.configuration.scriptProjects) { project in
                         Button {
@@ -213,7 +213,7 @@ struct RequirementSettingsView: View {
                     .foregroundStyle(Color.black.opacity(0.42))
                     .lineLimit(1)
 
-                ScrollView {
+                ScrollView(.vertical, showsIndicators: false) {
                     LazyVStack(spacing: 10) {
                         ForEach(project.scripts) { script in
                             scriptEditor(projectID: project.id, script: script)
@@ -286,7 +286,7 @@ struct RequirementSettingsView: View {
                 .pointingHandCursor()
             }
 
-            ScrollView {
+            ScrollView(.vertical, showsIndicators: false) {
                 LazyVStack(spacing: 10) {
                     ForEach(settingsStore.configuration.quickLinks) { link in
                         HStack(spacing: 9) {

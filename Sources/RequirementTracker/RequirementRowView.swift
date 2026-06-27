@@ -44,6 +44,8 @@ struct RequirementRowView: View {
                         .foregroundStyle(Color.black.opacity(0.56))
                         .lineLimit(2)
                 }
+
+                metadataTags
             }
 
             if editorMode == .mr {
@@ -98,6 +100,17 @@ struct RequirementRowView: View {
 
     private var topLine: some View {
         HStack(alignment: .center, spacing: 4) {
+            if let issueTypeText {
+                let issueTypeTint = issueTypeColor(for: issueTypeText)
+                Text(issueTypeText)
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(issueTypeTint)
+                    .lineLimit(1)
+                    .padding(.horizontal, 4)
+                    .frame(height: 16)
+                    .background(issueTypeTint.opacity(0.10), in: RoundedRectangle(cornerRadius: 3, style: .continuous))
+            }
+
             Button {
                 store.openJira(for: requirement.id)
             } label: {
@@ -165,6 +178,73 @@ struct RequirementRowView: View {
 
             rowMenu
         }
+    }
+
+    @ViewBuilder
+    private var metadataTags: some View {
+        let priorityText = trimmed(requirement.priority)
+        let versionText = trimmed(requirement.targetVersion)
+
+        if priorityText != nil || versionText != nil {
+            HStack(spacing: 7) {
+                if let priorityText {
+                    Text("#\(priorityText)")
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(priorityColor(for: priorityText))
+                        .lineLimit(1)
+                }
+
+                if let versionText {
+                    Text("#\(versionText)")
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(DesignColor.doing)
+                        .lineLimit(1)
+                }
+            }
+        }
+    }
+
+    private var issueTypeText: String? {
+        trimmed(requirement.issueType)
+    }
+
+    private func issueTypeColor(for value: String) -> Color {
+        let normalized = value.lowercased()
+
+        if normalized.contains("故障") || normalized.contains("bug") {
+            return DesignColor.stopped
+        }
+
+        if normalized.contains("改进") || normalized.contains("improvement") {
+            return DesignColor.merged
+        }
+
+        return Color.black.opacity(0.58)
+    }
+
+    private func priorityColor(for value: String) -> Color {
+        let normalized = value
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .uppercased()
+
+        if normalized.hasPrefix("P0") {
+            return DesignColor.stopped
+        }
+
+        if normalized.hasPrefix("P1") {
+            return DesignColor.paused
+        }
+
+        if normalized.hasPrefix("P2") {
+            return DesignColor.merged
+        }
+
+        return DesignColor.stopped
+    }
+
+    private func trimmed(_ value: String?) -> String? {
+        let text = (value ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.isEmpty ? nil : text
     }
 
     private var bottomLine: some View {

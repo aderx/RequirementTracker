@@ -160,6 +160,10 @@ public enum RequirementQuery {
             return filtered.sorted(by: incompleteSortComparator)
         }
 
+        if statusFilter == .active {
+            return filtered.sorted(by: activeSortComparator)
+        }
+
         return filtered.sorted(by: sortComparator)
     }
 
@@ -348,6 +352,34 @@ public enum RequirementQuery {
         }
 
         return 0 // 开发中
+    }
+
+    /// 开发中 TAB 包含开发中、开发完成、已自测等未合并项，组内先按状态推进顺序排序。
+    private static func activeSortComparator(lhs: Requirement, rhs: Requirement) -> Bool {
+        let leftRank = activeSortRank(lhs)
+        let rightRank = activeSortRank(rhs)
+
+        if leftRank != rightRank {
+            return leftRank < rightRank
+        }
+
+        if lhs.updatedAt != rhs.updatedAt {
+            return lhs.updatedAt < rhs.updatedAt
+        }
+
+        return lhs.jiraKey < rhs.jiraKey
+    }
+
+    private static func activeSortRank(_ requirement: Requirement) -> Int {
+        if requirement.isTested {
+            return 2
+        }
+
+        if requirement.isDone || requirement.stage == .completed {
+            return 1
+        }
+
+        return 0
     }
 
     private static func isActiveDevelopment(_ requirement: Requirement) -> Bool {

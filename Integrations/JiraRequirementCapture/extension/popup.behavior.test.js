@@ -114,7 +114,7 @@ async function testUnsupportedCountdownLivesOnCloseButton() {
 
 async function testExistingJiraDefaultsToIgnoreForFiveSeconds() {
   const popup = createPopupSandbox();
-  popup.setNativeMessageStub(async () => ({ ok: true, exists: true }));
+  popup.setNativeMessageStub(async () => ({ ok: true, exists: true, status: "pending" }));
 
   await popup.handleJiraPage({
     issueKey: "ZSTAC-12345",
@@ -122,9 +122,9 @@ async function testExistingJiraDefaultsToIgnoreForFiveSeconds() {
   });
 
   assert.equal(popup.elements.actions.children.length, 3);
-  assert.equal(popup.elements.actions.children[0].textContent, "忽略（5s）");
+  assert.equal(popup.elements.actions.children[0].textContent, "忽略");
   assert.equal(popup.elements.actions.children[1].textContent, "更新");
-  assert.equal(popup.elements.actions.children[2].textContent, "确认并开始开发");
+  assert.equal(popup.elements.actions.children[2].textContent, "更新状态");
   assert.equal(popup.elements.countdownText.textContent, "");
 }
 
@@ -139,7 +139,7 @@ async function testNewJiraDefaultsToAddForFiveSeconds() {
 
   assert.equal(popup.elements.actions.children.length, 3);
   assert.equal(popup.elements.actions.children[0].textContent, "取消");
-  assert.equal(popup.elements.actions.children[1].textContent, "添加（5s）");
+  assert.equal(popup.elements.actions.children[1].textContent, "添加");
   assert.equal(popup.elements.actions.children[2].textContent, "确认并开始开发");
   assert.equal(popup.elements.countdownText.textContent, "");
 }
@@ -150,7 +150,7 @@ async function testSuccessClosesAfterTwoSeconds() {
   popup.showSuccess("已保存", "需求记录已更新到 App");
 
   assert.equal(popup.elements.actions.children.length, 1);
-  assert.equal(popup.elements.actions.children[0].textContent, "关闭（2s）");
+  assert.equal(popup.elements.actions.children[0].textContent, "关闭");
   assert.equal(popup.elements.countdownText.textContent, "");
 }
 
