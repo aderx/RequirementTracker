@@ -1,12 +1,18 @@
 import AppKit
 import Foundation
+import RequirementCore
 
 enum RequirementPluginSupport {
     private static let extensionRelativePath = "Integrations/JiraRequirementCapture/extension"
     private static let installerRelativePath = "Scripts/install-jira-native-host.sh"
+    private static let bundledExtensionDirectoryName = "JiraRequirementCaptureExtension"
+    private static let bundledNativeHostExecutableName = "JiraRequirementNativeHost"
 
     static var extensionDirectoryURL: URL? {
-        repositoryRootURL()?.appendingPathComponent(extensionRelativePath, isDirectory: true)
+        firstExistingURL([
+            bundledExtensionDirectoryURL,
+            repositoryRootURL()?.appendingPathComponent(extensionRelativePath, isDirectory: true)
+        ])
     }
 
     static var installerScriptURL: URL? {
@@ -35,6 +41,14 @@ enum RequirementPluginSupport {
             throw PluginSupportError.missingExtensionID
         }
 
+        if let bundledNativeHostExecutableURL,
+           FileManager.default.fileExists(atPath: bundledNativeHostExecutableURL.path) {
+            return try installBundledNativeHost(
+                hostExecutableURL: bundledNativeHostExecutableURL,
+                extensionID: extensionID
+            )
+        }
+
         guard let repositoryRootURL = repositoryRootURL(),
               let installerScriptURL,
               FileManager.default.fileExists(atPath: installerScriptURL.path)
@@ -47,6 +61,23 @@ enum RequirementPluginSupport {
             repositoryRootURL: repositoryRootURL,
             extensionID: extensionID
         )
+    }
+
+    private static var bundledExtensionDirectoryURL: URL? {
+        Bundle.main.resourceURL?.appendingPathComponent(bundledExtensionDirectoryName, isDirectory: true)
+    }
+
+    private static var bundledNativeHostExecutableURL: URL? {
+        Bundle.main.resourceURL?.appendingPathComponent(bundledNativeHostExecutableName)
+    }
+
+    private static func firstExistingURL(_ candidates: [URL?]) -> URL? {
+        let fileManager = FileManager.default
+        for candidate in candidates.compactMap({ $0 }) where fileManager.fileExists(atPath: candidate.path) {
+            return candidate
+        }
+
+        return nil
     }
 
     private static func repositoryRootURL() -> URL? {
@@ -64,6 +95,36 @@ enum RequirementPluginSupport {
         }
 
         return nil
+    }
+
+    private static func installBundledNativeHost(
+        hostExecutableURL: URL,
+        extensionID: String
+    ) throws -> String {
+        let manifestDirectoryURL = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/Google/Chrome/NativeMessagingHosts", isDirectory: true)
+        let manifestURL = manifestDirectoryURL
+            .appendingPathComponent(RequirementPluginSettings.defaultNativeHostName)
+            .appendingPathExtension("json")
+
+        try FileManager.default.createDirectory(
+            at: manifestDirectoryURL,
+            withIntermediateDirectories: true
+        )
+
+        let manifest: [String: Any] = [
+            "name": RequirementPluginSettings.defaultNativeHostName,
+            "description": "RequirementTracker Jira capture native host",
+            "path": hostExecutableURL.path,
+            "type": "stdio",
+            "allowed_origins": [
+                "chrome-extension://\(extensionID)/"
+            ]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: manifest, options: [.prettyPrinted, .sortedKeys])
+        try data.write(to: manifestURL, options: .atomic)
+
+        return "Installed native messaging host:\n\(manifestURL.path)"
     }
 
     private static func nearestRepositoryRoot(from startURL: URL) -> URL? {
