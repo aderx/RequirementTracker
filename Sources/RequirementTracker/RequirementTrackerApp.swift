@@ -172,7 +172,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
         DispatchQueue.main.async {
             NSApplication.shared.activate(ignoringOtherApps: true)
-            popover.contentViewController?.view.window?.makeKey()
+            let window = popover.contentViewController?.view.window
+            window?.makeKey()
+            // 打开弹窗时不默认聚焦搜索框等输入控件，用户点击后再聚焦。
+            window?.makeFirstResponder(nil)
         }
     }
 
@@ -403,7 +406,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private static var appVersion: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
-            ?? "1.8.1"
+            ?? "1.9.0"
     }
 
     private static var githubURL: String? {

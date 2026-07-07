@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Requirement Tracker</title>
+  <title>需求记录</title>
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
@@ -15,31 +15,12 @@
 
       <h1 id="titleText">需求记录</h1>
       <p id="statusText">正在识别当前页面...</p>
-      <p id="hostStatusText" class="host-status">正在读取插件状态...</p>
     </section>
 
-    <section id="noticePanel" class="notice-panel hidden" aria-label="提示">
-      <span id="noticeText"></span>
-    </section>
-
-    <section id="summaryPanel" class="info-card hidden" aria-label="识别结果">
-      <div class="row">
-        <span class="label" id="primaryLabel">页面</span>
-        <span class="value" id="primaryValue">-</span>
-      </div>
-      <div class="row hidden" id="secondaryRow">
-        <span class="label" id="secondaryLabel">关联</span>
-        <span class="value" id="secondaryValue">-</span>
-      </div>
-      <div class="row hidden" id="tertiaryRow">
-        <span class="label" id="tertiaryLabel">关联</span>
-        <span class="value" id="tertiaryValue">-</span>
-      </div>
-    </section>
+    <section id="summaryPanel" class="info-card hidden" aria-label="识别结果"></section>
 
     <section id="manualPanel" class="manual-card hidden" aria-label="手动输入">
-      <input id="manualJiraInput" type="text" placeholder="ZSTAC-12345 或 http://jira.../browse/ZSTAC-12345">
-      <p class="manual-hint">保存前会自动去掉 URL 参数和 hash</p>
+      <input id="manualJiraInput" type="text" placeholder="ZSTAC-12345 或完整 Jira 链接">
     </section>
 
     <section id="actions" class="actions hidden" aria-label="操作"></section>

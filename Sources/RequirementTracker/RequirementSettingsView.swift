@@ -8,6 +8,7 @@ struct RequirementSettingsView: View {
     @State private var selectedProjectID: RequirementScriptProject.ID?
     @State private var pluginAlertMessage = ""
     @State private var isInstallingNativeHost = false
+    @State private var nativeHostStatus: RequirementNativeHostStatus?
 
     var body: some View {
         ZStack {
@@ -81,13 +82,156 @@ struct RequirementSettingsView: View {
     private var content: some View {
         switch selectedTab {
         case .base:
-            placeholder(icon: "gearshape", title: "基础设置")
+            baseConfigurationView
         case .plugin:
             pluginConfigurationView
         case .scripts:
             scriptConfigurationView
         case .quickLinks:
             quickLinksView
+        }
+    }
+
+    private var baseConfigurationView: some View {
+        ScrollView(.vertical, showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 12) {
+                pluginSettingCard(
+                    title: "列表排序",
+                    subtitle: "点击状态切换组内时间方向（↑早的在前 ↓新的在前），‹ › 调整分组顺序"
+                ) {
+                    VStack(alignment: .leading, spacing: 7) {
+                        ForEach(RequirementStatusFilter.allCases) { statusFilter in
+                            tabSortRow(for: statusFilter)
+                        }
+                    }
+                }
+            }
+            .padding(22)
+        }
+    }
+
+    private func tabSortRow(for statusFilter: RequirementStatusFilter) -> some View {
+        let rules = settingsStore.tabSortRules(for: statusFilter)
+        let isDefault = rules == RequirementTabSortConfiguration.defaultRules(for: statusFilter)
+
+        return HStack(spacing: 6) {
+            Text(statusFilter.title)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(DesignColor.textPrimary)
+                .frame(width: 50, alignment: .leading)
+
+            ForEach(Array(rules.enumerated()), id: \.element.id) { index, rule in
+                tabSortChip(statusFilter: statusFilter, rule: rule, index: index, count: rules.count)
+            }
+
+            Spacer(minLength: 0)
+
+            if !isDefault {
+                Button {
+                    settingsStore.resetTabSortRules(for: statusFilter)
+                } label: {
+                    Image(systemName: "arrow.counterclockwise")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(Color.black.opacity(0.45))
+                }
+                .buttonStyle(.borderless)
+                .help("恢复默认")
+                .pointingHandCursor()
+            }
+        }
+    }
+
+    private func tabSortChip(
+        statusFilter: RequirementStatusFilter,
+        rule: RequirementTabSortRule,
+        index: Int,
+        count: Int
+    ) -> some View {
+        HStack(spacing: 1) {
+            if count > 1 {
+                tabSortMoveButton(systemImage: "chevron.left", enabled: index > 0) {
+                    settingsStore.moveTabSortRule(for: statusFilter, ruleID: rule.id, offset: -1)
+                }
+            }
+
+            Button {
+                settingsStore.toggleTabSortDirection(for: statusFilter, ruleID: rule.id)
+            } label: {
+                HStack(spacing: 3) {
+                    Text(rule.status.title)
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(DesignColor.textPrimary)
+
+                    Image(systemName: rule.ascending ? "arrow.up" : "arrow.down")
+                        .font(.system(size: 8.5, weight: .semibold))
+                        .foregroundStyle(Color.black.opacity(0.55))
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(rule.ascending ? "组内时间早的在前，点击切换为倒序" : "组内时间新的在前，点击切换为正序")
+            .pointingHandCursor()
+
+            if count > 1 {
+                tabSortMoveButton(systemImage: "chevron.right", enabled: index < count - 1) {
+                    settingsStore.moveTabSortRule(for: statusFilter, ruleID: rule.id, offset: 1)
+                }
+            }
+        }
+        .padding(.horizontal, 5)
+        .padding(.vertical, 4)
+        .background(Color.black.opacity(0.04), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .strokeBorder(Color.black.opacity(0.10), lineWidth: 0.5)
+        )
+    }
+
+    private func tabSortMoveButton(
+        systemImage: String,
+        enabled: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: 8, weight: .semibold))
+                .frame(width: 12, height: 14)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.borderless)
+        .disabled(!enabled)
+        .foregroundStyle(Color.black.opacity(enabled ? 0.45 : 0.15))
+        .pointingHandCursor(enabled)
+    }
+
+    private func reorderButtons(
+        canMoveUp: Bool,
+        canMoveDown: Bool,
+        onMoveUp: @escaping () -> Void,
+        onMoveDown: @escaping () -> Void
+    ) -> some View {
+        HStack(spacing: 2) {
+            Button(action: onMoveUp) {
+                Image(systemName: "chevron.up")
+                    .font(.system(size: 10, weight: .semibold))
+                    .frame(width: 18, height: 18)
+            }
+            .buttonStyle(.borderless)
+            .disabled(!canMoveUp)
+            .foregroundStyle(Color.black.opacity(canMoveUp ? 0.55 : 0.18))
+            .help("上移")
+            .pointingHandCursor(canMoveUp)
+
+            Button(action: onMoveDown) {
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 10, weight: .semibold))
+                    .frame(width: 18, height: 18)
+            }
+            .buttonStyle(.borderless)
+            .disabled(!canMoveDown)
+            .foregroundStyle(Color.black.opacity(canMoveDown ? 0.55 : 0.18))
+            .help("下移")
+            .pointingHandCursor(canMoveDown)
         }
     }
 
@@ -215,8 +359,13 @@ struct RequirementSettingsView: View {
 
                 ScrollView(.vertical, showsIndicators: false) {
                     LazyVStack(spacing: 10) {
-                        ForEach(project.scripts) { script in
-                            scriptEditor(projectID: project.id, script: script)
+                        ForEach(Array(project.scripts.enumerated()), id: \.element.id) { index, script in
+                            scriptEditor(
+                                projectID: project.id,
+                                script: script,
+                                index: index,
+                                count: project.scripts.count
+                            )
                         }
                     }
                     .padding(.vertical, 2)
@@ -238,12 +387,25 @@ struct RequirementSettingsView: View {
 
     private func scriptEditor(
         projectID: RequirementScriptProject.ID,
-        script: RequirementScriptCommand
+        script: RequirementScriptCommand,
+        index: Int,
+        count: Int
     ) -> some View {
         VStack(alignment: .leading, spacing: 7) {
             HStack(spacing: 8) {
                 TextField("脚本名称", text: scriptNameBinding(projectID: projectID, scriptID: script.id))
                     .textFieldStyle(.roundedBorder)
+
+                reorderButtons(
+                    canMoveUp: index > 0,
+                    canMoveDown: index < count - 1,
+                    onMoveUp: {
+                        settingsStore.moveScript(projectID: projectID, scriptID: script.id, offset: -1)
+                    },
+                    onMoveDown: {
+                        settingsStore.moveScript(projectID: projectID, scriptID: script.id, offset: 1)
+                    }
+                )
 
                 Button(role: .destructive) {
                     settingsStore.deleteScript(projectID: projectID, scriptID: script.id)
@@ -288,14 +450,24 @@ struct RequirementSettingsView: View {
 
             ScrollView(.vertical, showsIndicators: false) {
                 LazyVStack(spacing: 10) {
-                    ForEach(settingsStore.configuration.quickLinks) { link in
+                    ForEach(Array(settingsStore.configuration.quickLinks.enumerated()), id: \.element.id) { index, link in
                         HStack(spacing: 9) {
                             TextField("名称", text: quickLinkNameBinding(linkID: link.id))
                                 .textFieldStyle(.roundedBorder)
                                 .frame(width: 170)
 
-                            TextField("URL", text: quickLinkURLBinding(linkID: link.id))
-                                .textFieldStyle(.roundedBorder)
+                            quickLinkURLEditor(linkID: link.id)
+
+                            reorderButtons(
+                                canMoveUp: index > 0,
+                                canMoveDown: index < settingsStore.configuration.quickLinks.count - 1,
+                                onMoveUp: {
+                                    settingsStore.moveQuickLink(id: link.id, offset: -1)
+                                },
+                                onMoveDown: {
+                                    settingsStore.moveQuickLink(id: link.id, offset: 1)
+                                }
+                            )
 
                             Button(role: .destructive) {
                                 settingsStore.deleteQuickLink(id: link.id)
@@ -327,7 +499,7 @@ struct RequirementSettingsView: View {
                     .textFieldStyle(.roundedBorder)
             }
 
-            pluginSettingCard(title: "Chrome 扩展 ID", subtitle: "用于安装 Native Messaging Host 授权") {
+            pluginSettingCard(title: "Chrome 扩展 ID", subtitle: "从 chrome://extensions 复制扩展 ID，填入后点击右侧安装即可连接") {
                 VStack(alignment: .leading, spacing: 10) {
                     TextField("从 chrome://extensions 复制", text: pluginChromeExtensionIDBinding)
                         .textFieldStyle(.roundedBorder)
@@ -341,6 +513,11 @@ struct RequirementSettingsView: View {
                         .buttonStyle(.bordered)
                         .pointingHandCursor()
 
+                        nativeHostStatusInline
+                            .padding(.leading, 4)
+
+                        Spacer(minLength: 8)
+
                         Button {
                             installNativeHost()
                         } label: {
@@ -350,23 +527,92 @@ struct RequirementSettingsView: View {
                         .disabled(isInstallingNativeHost || settingsStore.configuration.pluginSettings.chromeExtensionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                         .pointingHandCursor(!isInstallingNativeHost)
                     }
-
-                    HStack(spacing: 8) {
-                        Text("Native Host")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(Color.black.opacity(0.55))
-
-                        Text(RequirementPluginSettings.defaultNativeHostName)
-                            .font(.system(size: 11, design: .monospaced))
-                            .foregroundStyle(Color.black.opacity(0.62))
-                            .lineLimit(1)
-                    }
                 }
             }
 
             Spacer()
         }
         .padding(22)
+    }
+
+    private var nativeHostStatusInline: some View {
+        HStack(spacing: 6) {
+            Circle()
+                .fill(nativeHostStatusColor)
+                .frame(width: 7, height: 7)
+
+            Text(nativeHostStatusTitle)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(DesignColor.textPrimary)
+                .fixedSize()
+
+            Text(nativeHostStatusDetail)
+                .font(.system(size: 11))
+                .foregroundStyle(Color.black.opacity(0.45))
+                .lineLimit(1)
+                .truncationMode(.middle)
+
+            Button {
+                refreshNativeHostStatus()
+            } label: {
+                Image(systemName: "arrow.clockwise")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(Color.black.opacity(0.50))
+            }
+            .buttonStyle(.borderless)
+            .help("刷新连接状态")
+            .pointingHandCursor()
+        }
+        .onAppear {
+            refreshNativeHostStatus()
+        }
+    }
+
+    private var nativeHostStatusColor: Color {
+        guard let nativeHostStatus else {
+            return Color.black.opacity(0.25)
+        }
+
+        return nativeHostStatus.isConnected
+            ? Color(red: 0.08, green: 0.65, blue: 0.42)
+            : Color(red: 0.85, green: 0.18, blue: 0.26)
+    }
+
+    private var nativeHostStatusTitle: String {
+        guard let nativeHostStatus else {
+            return "检查中..."
+        }
+
+        return nativeHostStatus.isConnected ? "已连接" : "未连接"
+    }
+
+    private var nativeHostStatusDetail: String {
+        guard let nativeHostStatus else {
+            return ""
+        }
+
+        if nativeHostStatus.isConnected {
+            if let lastSeenAt = nativeHostStatus.lastSeenAt {
+                return "最近通信 \(Self.heartbeatFormatter.string(from: lastSeenAt))"
+            }
+
+            return "已安装，等待插件首次通信"
+        }
+
+        return nativeHostStatus.detail
+    }
+
+    private static let heartbeatFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_CN")
+        formatter.dateFormat = "M月d日 HH:mm"
+        return formatter
+    }()
+
+    private func refreshNativeHostStatus() {
+        nativeHostStatus = RequirementPluginSupport.nativeHostStatus(
+            extensionID: settingsStore.configuration.pluginSettings.chromeExtensionID
+        )
     }
 
     private func pluginSettingCard<Content: View>(
@@ -489,6 +735,30 @@ struct RequirementSettingsView: View {
         }
     }
 
+    /// URL 编辑框：单行内容、最多三行换行展示，超出部分滚动查看。
+    private func quickLinkURLEditor(linkID: RequirementQuickLink.ID) -> some View {
+        let binding = quickLinkURLBinding(linkID: linkID)
+
+        return SettingsMultilineEditor(text: binding, disallowsLineBreaks: true)
+            .frame(height: 48)
+            .padding(6)
+            .background(Color.white.opacity(0.84), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .strokeBorder(Color.black.opacity(0.10), lineWidth: 0.7)
+            )
+            .overlay(alignment: .topLeading) {
+                if binding.wrappedValue.isEmpty {
+                    Text("https://...")
+                        .font(.system(size: 12, design: .monospaced))
+                        .foregroundStyle(Color.black.opacity(0.28))
+                        .padding(.leading, 8)
+                        .padding(.top, 6)
+                        .allowsHitTesting(false)
+                }
+            }
+    }
+
     private func quickLinkNameBinding(linkID: RequirementQuickLink.ID) -> Binding<String> {
         Binding {
             settingsStore.configuration.quickLinks.first { $0.id == linkID }?.name ?? ""
@@ -559,6 +829,7 @@ struct RequirementSettingsView: View {
             }
 
             isInstallingNativeHost = false
+            refreshNativeHostStatus()
         }
     }
 }
@@ -600,9 +871,11 @@ private enum RequirementSettingsTab: String, CaseIterable, Identifiable {
 
 private struct SettingsMultilineEditor: NSViewRepresentable {
     @Binding var text: String
+    /// 为 true 时作为“单行内容、多行展示”的编辑器：换行会被拒绝或过滤（适合 URL）。
+    var disallowsLineBreaks = false
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(text: $text)
+        Coordinator(text: $text, disallowsLineBreaks: disallowsLineBreaks)
     }
 
     func makeNSView(context: Context) -> NSScrollView {
@@ -646,9 +919,11 @@ private struct SettingsMultilineEditor: NSViewRepresentable {
 
     final class Coordinator: NSObject, NSTextViewDelegate {
         @Binding var text: String
+        let disallowsLineBreaks: Bool
 
-        init(text: Binding<String>) {
+        init(text: Binding<String>, disallowsLineBreaks: Bool) {
             _text = text
+            self.disallowsLineBreaks = disallowsLineBreaks
         }
 
         func textDidChange(_ notification: Notification) {
@@ -656,7 +931,20 @@ private struct SettingsMultilineEditor: NSViewRepresentable {
                 return
             }
 
+            if disallowsLineBreaks, textView.string.contains(where: \.isNewline) {
+                textView.string = textView.string.filter { !$0.isNewline }
+            }
+
             text = textView.string
+        }
+
+        func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+            guard disallowsLineBreaks else {
+                return false
+            }
+
+            return commandSelector == #selector(NSResponder.insertNewline(_:))
+                || commandSelector == #selector(NSResponder.insertNewlineIgnoringFieldEditor(_:))
         }
     }
 }

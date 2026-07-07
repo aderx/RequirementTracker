@@ -51,7 +51,7 @@
       return {
         pageType: "mr",
         payload: compactPayload({
-          mrURL: pageURL,
+          mrURL: canonicalMRURL(pageURL),
           mrState: extractMRState(),
           jiraURL,
           issueKey: jiraURL ? jiraKeyFromText(jiraURL) : "",
@@ -113,10 +113,16 @@
     return String(value || "").match(/\b[A-Z][A-Z0-9]+-\d+\b/i)?.[0]?.toUpperCase() || "";
   }
 
+  // MR 的 diffs/commits/pipelines 等子页同样按 MR 页面处理。
   function isMRPage(pageURL, mrHosts) {
     const host = location.hostname.toLowerCase();
     return mrHosts.map((value) => String(value || "").toLowerCase()).includes(host)
-      && /\/-\/merge_requests\/\d+(?:\/)?$/i.test(pageURL);
+      && /\/-\/merge_requests\/\d+(?:\/[a-z_]+)?$/i.test(pageURL);
+  }
+
+  // 子页地址统一归到 MR 主地址，保证保存与匹配一致。
+  function canonicalMRURL(value) {
+    return String(value || "").replace(/(\/-\/merge_requests\/\d+)\/[a-z_]+$/i, "$1");
   }
 
   function findLinkedJiraURL(jiraBaseURL) {

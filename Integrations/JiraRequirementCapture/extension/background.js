@@ -1,7 +1,8 @@
-// 后台 Service Worker：根据当前标签页地址在插件图标右下角显示状态标记。
-// - 已记录：绿色「✓」
-// - 可记录（支持的 Jira / MR 页面但尚未记录）：蓝色「+」
-// - 不支持处理的页面：灰色「–」
+// 后台 Service Worker：根据当前标签页地址在插件图标上显示原生矩形角标。
+// 图标本身是蓝色的，角标用高对比颜色区分状态：
+// - 不支持的页面：不显示角标
+// - 可添加（支持的 Jira / MR 页面但尚未记录）：橙色「+」
+// - 已记录：绿色「↻」
 const HOST_NAME = "com.aderx.requirementtracker.jira_capture";
 const FALLBACK_SETTINGS = {
   jiraBaseURL: "http://jira.zstack.io/browse/",
@@ -9,10 +10,9 @@ const FALLBACK_SETTINGS = {
 };
 const SETTINGS_TTL_MS = 5 * 60 * 1000;
 
-const BADGE = {
-  recorded: { text: "•", color: "#34C759" },
-  addable: { text: "•", color: "#2F8CFF" },
-  unsupported: { text: "•", color: "#9AA0A6" }
+const BADGE_STYLES = {
+  addable: { text: "+", color: "#FF9500" },
+  recorded: { text: "↻", color: "#1F9D54" }
 };
 
 let cachedSettings = null;
@@ -31,7 +31,8 @@ chrome.tabs.onActivated.addListener(({ tabId }) => {
 });
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  if (changeInfo.status === "complete" || typeof changeInfo.url === "string") {
+  // 导航会重置标签页级图标，loading 阶段就重画一次，避免角标长时间缺失。
+  if (changeInfo.status === "loading" || changeInfo.status === "complete" || typeof changeInfo.url === "string") {
     updateBadgeForTab(tabId, tab.url || "");
   }
 });
@@ -68,15 +69,23 @@ async function resolveState(url) {
   }
 
   try {
-    const response = await sendNativeMessage({ type: "inspectByURL", payload: { url } });
+    const response = await sendNativeMessage({
+      type: "inspectByURL",
+      payload: { url: canonicalPageURL(url) }
+    });
     if (response?.ok && response.exists) {
       return "recorded";
     }
   } catch {
-    // Native Host 不可用时，支持的页面仍按“可记录”展示。
+    // Native Host 不可用时，支持的页面仍按“可添加”展示。
   }
 
   return "addable";
+}
+
+// MR 的“变更/提交/流水线”等子页统一归到 MR 主地址，与记录的 mrURL 匹配。
+function canonicalPageURL(value) {
+  return normalizedURL(value).replace(/(\/-\/merge_requests\/\d+)\/[a-z_]+$/i, "$1");
 }
 
 async function detectPageType(url) {
@@ -102,7 +111,8 @@ async function detectPageType(url) {
 
   const mrHosts = (Array.isArray(settings.mrHosts) ? settings.mrHosts : [])
     .map((value) => String(value || "").toLowerCase());
-  if (mrHosts.includes(host) && /\/-\/merge_requests\/\d+(?:\/)?$/i.test(parsed.pathname)) {
+  // 允许 MR 的 diffs/commits/pipelines 等子页，避免切换 Tab 后角标消失。
+  if (mrHosts.includes(host) && /\/-\/merge_requests\/\d+(?:\/[a-z_]+)?\/?$/i.test(parsed.pathname)) {
     return "mr";
   }
 
@@ -136,9 +146,13 @@ async function loadSettings() {
 }
 
 function applyBadge(tabId, state) {
-  const config = BADGE[state] || BADGE.unsupported;
-  chrome.action.setBadgeText({ tabId, text: config.text }, ignoreError);
-  chrome.action.setBadgeBackgroundColor({ tabId, color: config.color }, ignoreError);
+  const style = BADGE_STYLES[state];
+  chrome.action.setBadgeText({ tabId, text: style?.text || "" }, ignoreError);
+  if (!style) {
+    return;
+  }
+
+  chrome.action.setBadgeBackgroundColor({ tabId, color: style.color }, ignoreError);
   if (chrome.action.setBadgeTextColor) {
     chrome.action.setBadgeTextColor({ tabId, color: "#FFFFFF" }, ignoreError);
   }

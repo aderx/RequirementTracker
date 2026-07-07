@@ -118,25 +118,185 @@ public struct RequirementPluginSettings: Codable, Equatable, Sendable {
 
 public struct RequirementBaseSettings: Codable, Equatable, Sendable {
     public var panelFilters: RequirementPanelFilterConfiguration
+    public var tabSort: RequirementTabSortConfiguration
 
     public init(
-        panelFilters: RequirementPanelFilterConfiguration = RequirementPanelFilterConfiguration()
+        panelFilters: RequirementPanelFilterConfiguration = RequirementPanelFilterConfiguration(),
+        tabSort: RequirementTabSortConfiguration = RequirementTabSortConfiguration()
     ) {
         self.panelFilters = panelFilters
+        self.tabSort = tabSort
     }
 
     private enum CodingKeys: String, CodingKey {
         case panelFilters
+        case tabSort
     }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         panelFilters = try container.decodeIfPresent(RequirementPanelFilterConfiguration.self, forKey: .panelFilters)
             ?? RequirementPanelFilterConfiguration()
+        tabSort = try container.decodeIfPresent(RequirementTabSortConfiguration.self, forKey: .tabSort)
+            ?? RequirementTabSortConfiguration()
     }
 
     public var normalized: RequirementBaseSettings {
-        RequirementBaseSettings(panelFilters: panelFilters.normalized)
+        RequirementBaseSettings(
+            panelFilters: panelFilters.normalized,
+            tabSort: tabSort.normalized
+        )
+    }
+}
+
+/// 单个状态分组的排序规则：`ascending` 为 true 时组内时间早的在前。
+public struct RequirementTabSortRule: Codable, Equatable, Sendable, Identifiable {
+    public var status: RequirementTimelineStatus
+    public var ascending: Bool
+
+    public var id: String { status.rawValue }
+
+    public init(status: RequirementTimelineStatus, ascending: Bool = true) {
+        self.status = status
+        self.ascending = ascending
+    }
+}
+
+/// 各状态 TAB 的列表排序配置：状态分组顺序 + 每组时间方向。
+/// 默认值与既有排序行为保持一致。
+public struct RequirementTabSortConfiguration: Codable, Equatable, Sendable {
+    public var incomplete: [RequirementTabSortRule]
+    public var active: [RequirementTabSortRule]
+    public var pending: [RequirementTabSortRule]
+    public var paused: [RequirementTabSortRule]
+    public var completed: [RequirementTabSortRule]
+
+    public init(
+        incomplete: [RequirementTabSortRule]? = nil,
+        active: [RequirementTabSortRule]? = nil,
+        pending: [RequirementTabSortRule]? = nil,
+        paused: [RequirementTabSortRule]? = nil,
+        completed: [RequirementTabSortRule]? = nil
+    ) {
+        self.incomplete = incomplete ?? Self.defaultRules(for: .incomplete)
+        self.active = active ?? Self.defaultRules(for: .active)
+        self.pending = pending ?? Self.defaultRules(for: .pending)
+        self.paused = paused ?? Self.defaultRules(for: .paused)
+        self.completed = completed ?? Self.defaultRules(for: .completed)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case incomplete
+        case active
+        case pending
+        case paused
+        case completed
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        incomplete = try container.decodeIfPresent([RequirementTabSortRule].self, forKey: .incomplete)
+            ?? Self.defaultRules(for: .incomplete)
+        active = try container.decodeIfPresent([RequirementTabSortRule].self, forKey: .active)
+            ?? Self.defaultRules(for: .active)
+        pending = try container.decodeIfPresent([RequirementTabSortRule].self, forKey: .pending)
+            ?? Self.defaultRules(for: .pending)
+        paused = try container.decodeIfPresent([RequirementTabSortRule].self, forKey: .paused)
+            ?? Self.defaultRules(for: .paused)
+        completed = try container.decodeIfPresent([RequirementTabSortRule].self, forKey: .completed)
+            ?? Self.defaultRules(for: .completed)
+    }
+
+    /// 每个 TAB 实际包含的状态集合（由筛选逻辑决定，顺序可配置、成员不可增删）。
+    public static func allowedStatuses(for statusFilter: RequirementStatusFilter) -> [RequirementTimelineStatus] {
+        switch statusFilter {
+        case .incomplete:
+            [.active, .done, .pending, .tested, .paused]
+        case .active:
+            [.active, .done, .tested]
+        case .pending:
+            [.pending]
+        case .paused:
+            [.paused, .stopped]
+        case .completed:
+            [.merged]
+        }
+    }
+
+    public static func defaultRules(for statusFilter: RequirementStatusFilter) -> [RequirementTabSortRule] {
+        // 异常与已完成 TAB 默认按时间倒序（新的在前），其余按时间正序。
+        let ascending = statusFilter != .paused && statusFilter != .completed
+        return allowedStatuses(for: statusFilter).map {
+            RequirementTabSortRule(status: $0, ascending: ascending)
+        }
+    }
+
+    public func rules(for statusFilter: RequirementStatusFilter) -> [RequirementTabSortRule] {
+        let stored = switch statusFilter {
+        case .incomplete:
+            incomplete
+        case .active:
+            active
+        case .pending:
+            pending
+        case .paused:
+            paused
+        case .completed:
+            completed
+        }
+
+        return Self.normalizedRules(stored, for: statusFilter)
+    }
+
+    public mutating func setRules(
+        _ rules: [RequirementTabSortRule],
+        for statusFilter: RequirementStatusFilter
+    ) {
+        let normalized = Self.normalizedRules(rules, for: statusFilter)
+        switch statusFilter {
+        case .incomplete:
+            incomplete = normalized
+        case .active:
+            active = normalized
+        case .pending:
+            pending = normalized
+        case .paused:
+            paused = normalized
+        case .completed:
+            completed = normalized
+        }
+    }
+
+    /// 去掉不属于该 TAB 的状态与重复项，缺失的状态按默认规则补到末尾。
+    private static func normalizedRules(
+        _ rules: [RequirementTabSortRule],
+        for statusFilter: RequirementStatusFilter
+    ) -> [RequirementTabSortRule] {
+        let allowed = allowedStatuses(for: statusFilter)
+        var seen = Set<RequirementTimelineStatus>()
+        var normalized: [RequirementTabSortRule] = []
+
+        for rule in rules where allowed.contains(rule.status) && !seen.contains(rule.status) {
+            seen.insert(rule.status)
+            normalized.append(rule)
+        }
+
+        for rule in defaultRules(for: statusFilter) where !seen.contains(rule.status) {
+            seen.insert(rule.status)
+            normalized.append(rule)
+        }
+
+        return normalized
+    }
+
+    public var normalized: RequirementTabSortConfiguration {
+        RequirementTabSortConfiguration(
+            incomplete: Self.normalizedRules(incomplete, for: .incomplete),
+            active: Self.normalizedRules(active, for: .active),
+            pending: Self.normalizedRules(pending, for: .pending),
+            paused: Self.normalizedRules(paused, for: .paused),
+            completed: Self.normalizedRules(completed, for: .completed)
+        )
     }
 }
 
