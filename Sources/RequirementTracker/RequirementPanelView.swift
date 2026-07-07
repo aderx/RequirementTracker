@@ -23,7 +23,7 @@ struct RequirementPanelView: View {
     @State private var statusFilter: RequirementStatusFilter = .incomplete
     @State private var isAdding = false
     @State private var bulkInput = ""
-    @State private var expandedID: Requirement.ID?
+    @State private var expandedIDs: [RequirementStatusFilter: Requirement.ID] = [:]
     @State private var showsCalendar = false
     @State private var displayMonth = Date()
     @State private var isDateFilterHovering = false
@@ -212,10 +212,14 @@ struct RequirementPanelView: View {
                     ForEach(items) { requirement in
                         RequirementRowView(
                             requirement: requirement,
-                            isExpanded: expandedID == requirement.id,
+                            isExpanded: expandedIDs[statusFilter] == requirement.id,
                             onToggleExpanded: {
                                 withAnimation(.snappy(duration: 0.18)) {
-                                    expandedID = expandedID == requirement.id ? nil : requirement.id
+                                    if expandedIDs[statusFilter] == requirement.id {
+                                        expandedIDs[statusFilter] = nil
+                                    } else {
+                                        expandedIDs[statusFilter] = requirement.id
+                                    }
                                 }
                             }
                         )
@@ -235,8 +239,11 @@ struct RequirementPanelView: View {
             .padding(.vertical, 4)
             .animation(.snappy(duration: 0.22), value: items.map(\.id))
         }
-        .scrollIndicators(.hidden)
+        .scrollIndicators(.never)
         .background(ScrollIndicatorHider())
+        // 每个状态 tab 是一棵独立的列表视图：切换 tab 时整体替换，
+        // 不与上一个 tab 的列表做 diff 动画，避免卡片“乱跳”。
+        .id(statusFilter)
     }
 
     private func footer(_ items: [Requirement]) -> some View {
@@ -654,10 +661,12 @@ private final class HiddenScroller: NSScroller {
     override func drawKnobSlot(in slotRect: NSRect, highlight flag: Bool) {}
 }
 
-/// 持续隐藏弹窗内 ScrollView 的滚动条。相比旧实现「每次布局都延时多趟遍历视图树」，
-/// 这里只在出现/布局以及真正发生滚动时复位一次，既稳定又减少主线程开销。
+/// 持续隐藏弹窗内 ScrollView 的滚动条。除了出现/布局/滚动通知时复位外，
+/// 还监听滚动内容的 bounds 变化：鼠标滚轮滚动不一定派发 live-scroll 通知，
+/// 但一定改变 contentView 的 bounds，以此兜住滚动过程中被系统加回的滚动条。
 private final class HiderAttachmentView: NSView {
     private var isObserving = false
+    private var observedContentViews = Set<ObjectIdentifier>()
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
@@ -705,26 +714,82 @@ private final class HiderAttachmentView: NSView {
         else {
             return
         }
-        hideScrollers(in: scrollView)
+        applyHiddenState(scrollView)
+        reapplyAfterCurrentPass(scrollView)
+    }
+
+    @objc private func handleContentBoundsChange(_ notification: Notification) {
+        guard
+            let contentView = notification.object as? NSClipView,
+            contentView.window === window,
+            let scrollView = contentView.enclosingScrollView
+        else {
+            return
+        }
+        applyHiddenState(scrollView)
+        reapplyAfterCurrentPass(scrollView)
+    }
+
+    /// SwiftUI 可能在同一轮事件里把滚动条按系统 legacy 样式重新加回
+    ///（右侧重新出现占位），追加一次异步复位，确保这轮更新之后仍不占位。
+    private func reapplyAfterCurrentPass(_ scrollView: NSScrollView) {
+        DispatchQueue.main.async { [weak self, weak scrollView] in
+            guard let self, let scrollView else {
+                return
+            }
+            self.applyHiddenState(scrollView)
+        }
     }
 
     private func hideScrollers(in view: NSView) {
         if let scrollView = view as? NSScrollView {
-            scrollView.scrollerStyle = .overlay
-            scrollView.autohidesScrollers = true
-            scrollView.hasHorizontalScroller = false
-            scrollView.hasVerticalScroller = false
-            if !(scrollView.verticalScroller is HiddenScroller) {
-                scrollView.verticalScroller = HiddenScroller()
-            }
-            if !(scrollView.horizontalScroller is HiddenScroller) {
-                scrollView.horizontalScroller = HiddenScroller()
-            }
+            applyHiddenState(scrollView)
         }
 
         for subview in view.subviews {
             hideScrollers(in: subview)
         }
+    }
+
+    // SwiftUI 在滚动的每一帧都可能把 scrollerStyle 重置回系统 legacy 样式
+    //（右侧重新预留占位），这里按需纠正、无变化时零开销，可安全高频调用。
+    private func applyHiddenState(_ scrollView: NSScrollView) {
+        if scrollView.scrollerStyle != .overlay {
+            scrollView.scrollerStyle = .overlay
+        }
+        if !scrollView.autohidesScrollers {
+            scrollView.autohidesScrollers = true
+        }
+        if scrollView.hasHorizontalScroller {
+            scrollView.hasHorizontalScroller = false
+        }
+        if scrollView.hasVerticalScroller {
+            scrollView.hasVerticalScroller = false
+        }
+        if !(scrollView.verticalScroller is HiddenScroller) {
+            scrollView.verticalScroller = HiddenScroller()
+        }
+        if !(scrollView.horizontalScroller is HiddenScroller) {
+            scrollView.horizontalScroller = HiddenScroller()
+        }
+
+        observeContentBoundsIfNeeded(scrollView)
+    }
+
+    private func observeContentBoundsIfNeeded(_ scrollView: NSScrollView) {
+        let identifier = ObjectIdentifier(scrollView.contentView)
+        guard !observedContentViews.contains(identifier) else {
+            return
+        }
+        observedContentViews.insert(identifier)
+
+        scrollView.contentView.postsBoundsChangedNotifications = true
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleContentBoundsChange(_:)),
+            name: NSView.boundsDidChangeNotification,
+            object: scrollView.contentView
+        )
     }
 
     deinit {

@@ -426,47 +426,31 @@ expect(
     "Ghostty JXA should support existing project windows and new windows"
 )
 expect(
+    launchScript.contains("existingWindow(\"project-window-1\")"),
+    "Ghostty JXA should reuse the known project window by stable ID"
+)
+expect(
+    launchScript.contains("waitAfterCommand: true"),
+    "Ghostty JXA should keep the terminal open after the command exits"
+)
+expect(
+    !launchScript.contains("--working-directory") && !launchScript.contains("--input"),
+    "Ghostty JXA must not pass instance-level launch arguments that leak into user-opened tabs"
+)
+let freshWindowScript = GhosttyAutomationScript.jxa(
+    projectDirectory: "/Users/dev/zstack-ui-next",
+    command: "pnpm dev"
+)
+expect(
+    freshWindowScript.contains("existingWindow(null)"),
+    "Ghostty JXA without a known window should create a new window"
+)
+expect(
     GhosttyAutomationScript.shellCommand(
         projectDirectory: "/Users/dev/project with spaces",
         command: "pnpm dev"
     ) == "cd '/Users/dev/project with spaces'\npnpm dev",
     "Ghostty fallback shell command should cd into project directories, including paths with spaces"
-)
-let openArguments = GhosttyAutomationScript.openArguments(
-    projectDirectory: "/Users/dev/project with spaces",
-    inputFilePath: "/tmp/RequirementTracker Scripts/input file.txt"
-)
-expect(
-    openArguments == [
-        "-na",
-        "/Applications/Ghostty.app",
-        "--args",
-        "--working-directory=/Users/dev/project with spaces",
-        "--input=path:/tmp/RequirementTracker Scripts/input file.txt"
-    ],
-    "Ghostty open fallback should pass startup input by file path, not command-wrapper arguments"
-)
-expect(
-    GhosttyAutomationScript.applicationArguments(
-        projectDirectory: "/Users/dev/project with spaces",
-        inputFilePath: "/tmp/RequirementTracker Scripts/input file.txt"
-    ) == [
-        "--working-directory=/Users/dev/project with spaces",
-        "--input=path:/tmp/RequirementTracker Scripts/input file.txt"
-    ],
-    "Ghostty app launch should pass only application arguments so NSWorkspace can return the launched process"
-)
-
-expect(
-    GhosttyAutomationScript.newTabAppleEventCodes == GhosttyAutomationScript.AppleEventCodes(
-        eventClass: "Ghst",
-        eventID: "NTab",
-        configurationParameter: "GNtS",
-        workingDirectoryProperty: "GScD",
-        initialInputProperty: "GScI",
-        waitAfterCommandProperty: "GScW"
-    ),
-    "Ghostty tab launch should target the app-level new-tab AppleEvent with a surface configuration"
 )
 
 print("RequirementCoreChecks passed")
