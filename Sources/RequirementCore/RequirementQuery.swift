@@ -147,6 +147,7 @@ public enum RequirementQuery {
         _ requirements: [Requirement],
         statusFilter: RequirementStatusFilter,
         dateFilter: RequirementDateFilter,
+        sortRules: [RequirementTabSortRule]? = nil,
         calendar: Calendar = .current,
         referenceDate: Date = Date()
     ) -> [Requirement] {
@@ -155,6 +156,10 @@ public enum RequirementQuery {
                 matchesStatus(requirement, filter: statusFilter)
                     && matchesDate(requirement, filter: dateFilter, calendar: calendar, referenceDate: referenceDate)
             }
+
+        if let sortRules, !sortRules.isEmpty {
+            return filtered.sorted(by: rulesComparator(sortRules))
+        }
 
         if statusFilter == .incomplete {
             return filtered.sorted(by: incompleteSortComparator)
@@ -165,6 +170,49 @@ public enum RequirementQuery {
         }
 
         return filtered.sorted(by: sortComparator)
+    }
+
+    /// 按配置规则排序：先按状态分组顺序，组内按该状态的时间字段与配置方向。
+    private static func rulesComparator(
+        _ rules: [RequirementTabSortRule]
+    ) -> (Requirement, Requirement) -> Bool {
+        var order: [RequirementTimelineStatus: Int] = [:]
+        var ascending: [RequirementTimelineStatus: Bool] = [:]
+        for (index, rule) in rules.enumerated() {
+            order[rule.status] = order[rule.status] ?? index
+            ascending[rule.status] = ascending[rule.status] ?? rule.ascending
+        }
+
+        return { lhs, rhs in
+            let lhsStatus = lhs.currentTimelineStatus
+            let rhsStatus = rhs.currentTimelineStatus
+            let lhsRank = order[lhsStatus] ?? rules.count
+            let rhsRank = order[rhsStatus] ?? rules.count
+
+            if lhsRank != rhsRank {
+                return lhsRank < rhsRank
+            }
+
+            let lhsDate = ruleSortDate(lhs)
+            let rhsDate = ruleSortDate(rhs)
+            if lhsDate != rhsDate {
+                return (ascending[lhsStatus] ?? true) ? lhsDate < rhsDate : lhsDate > rhsDate
+            }
+
+            return lhs.jiraKey < rhs.jiraKey
+        }
+    }
+
+    /// 各状态组内参与排序的时间：待开发按创建时间、已合并按完成时间，其余按更新时间。
+    private static func ruleSortDate(_ requirement: Requirement) -> Date {
+        switch requirement.currentTimelineStatus {
+        case .pending:
+            requirement.createdAt
+        case .merged:
+            requirement.completedAt ?? requirement.updatedAt
+        default:
+            requirement.updatedAt
+        }
     }
 
     public static func sorted(_ requirements: [Requirement]) -> [Requirement] {

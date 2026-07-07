@@ -63,6 +63,25 @@ public enum RequirementTimelineStatus: String, Codable, Sendable {
     case merged
     case paused
     case stopped
+
+    public var title: String {
+        switch self {
+        case .pending:
+            "待开发"
+        case .active:
+            "开发中"
+        case .done:
+            "开发完成"
+        case .tested:
+            "已自测"
+        case .merged:
+            "已合并"
+        case .paused:
+            "已暂停"
+        case .stopped:
+            "已停止"
+        }
+    }
 }
 
 public struct RequirementStatusEvent: Identifiable, Codable, Equatable, Sendable {

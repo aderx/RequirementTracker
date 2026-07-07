@@ -2,6 +2,12 @@ import AppKit
 import Foundation
 import RequirementCore
 
+struct RequirementNativeHostStatus {
+    var isConnected: Bool
+    var detail: String
+    var lastSeenAt: Date?
+}
+
 enum RequirementPluginSupport {
     private static let extensionRelativePath = "Integrations/JiraRequirementCapture/extension"
     private static let installerRelativePath = "Scripts/install-jira-native-host.sh"
@@ -61,6 +67,82 @@ enum RequirementPluginSupport {
             repositoryRootURL: repositoryRootURL,
             extensionID: extensionID
         )
+    }
+
+    /// 按 Native Host 清单的安装情况判断插件连接状态：
+    /// 清单存在、指向的宿主程序存在、授权的扩展 ID 与配置一致即视为已连接。
+    /// `lastSeenAt` 来自宿主每次处理插件消息时写入的心跳文件。
+    static func nativeHostStatus(extensionID: String) -> RequirementNativeHostStatus {
+        let lastSeenAt = pluginLastSeenDate()
+        let manifestURL = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/Google/Chrome/NativeMessagingHosts", isDirectory: true)
+            .appendingPathComponent(RequirementPluginSettings.defaultNativeHostName)
+            .appendingPathExtension("json")
+
+        guard FileManager.default.fileExists(atPath: manifestURL.path) else {
+            return RequirementNativeHostStatus(
+                isConnected: false,
+                detail: "尚未安装 Native Host",
+                lastSeenAt: lastSeenAt
+            )
+        }
+
+        guard
+            let data = try? Data(contentsOf: manifestURL),
+            let manifest = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let hostPath = manifest["path"] as? String,
+            !hostPath.isEmpty
+        else {
+            return RequirementNativeHostStatus(
+                isConnected: false,
+                detail: "Native Host 配置损坏，请重新安装",
+                lastSeenAt: lastSeenAt
+            )
+        }
+
+        guard FileManager.default.isExecutableFile(atPath: hostPath) else {
+            return RequirementNativeHostStatus(
+                isConnected: false,
+                detail: "Native Host 程序不存在，请重新安装",
+                lastSeenAt: lastSeenAt
+            )
+        }
+
+        let trimmedID = extensionID.trimmingCharacters(in: .whitespacesAndNewlines)
+        let allowedOrigins = manifest["allowed_origins"] as? [String] ?? []
+        if !trimmedID.isEmpty, !allowedOrigins.contains("chrome-extension://\(trimmedID)/") {
+            return RequirementNativeHostStatus(
+                isConnected: false,
+                detail: "授权的扩展 ID 与当前配置不一致，请重新安装",
+                lastSeenAt: lastSeenAt
+            )
+        }
+
+        return RequirementNativeHostStatus(
+            isConnected: true,
+            detail: hostPath,
+            lastSeenAt: lastSeenAt
+        )
+    }
+
+    private static func pluginLastSeenDate() -> Date? {
+        let heartbeatURL = FileManager.default.urls(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask
+        ).first?
+            .appendingPathComponent("RequirementTracker", isDirectory: true)
+            .appendingPathComponent("plugin-heartbeat.json")
+
+        guard
+            let heartbeatURL,
+            let data = try? Data(contentsOf: heartbeatURL),
+            let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let value = object["lastSeenAt"] as? String
+        else {
+            return nil
+        }
+
+        return ISO8601DateFormatter().date(from: value)
     }
 
     private static var bundledExtensionDirectoryURL: URL? {

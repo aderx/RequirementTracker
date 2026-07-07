@@ -453,4 +453,61 @@ expect(
     "Ghostty fallback shell command should cd into project directories, including paths with spaces"
 )
 
+let sortActiveOld = requirement("ZSTAC-9001", stage: .active, createdAt: makeDate(year: 2026, month: 7, day: 1))
+let sortActiveNew = requirement("ZSTAC-9002", stage: .active, createdAt: makeDate(year: 2026, month: 7, day: 2))
+let sortTested = requirement(
+    "ZSTAC-9003",
+    stage: .completed,
+    isDone: true,
+    isTested: true,
+    createdAt: makeDate(year: 2026, month: 7, day: 1),
+    completedAt: makeDate(year: 2026, month: 7, day: 3)
+)
+let sortPending = requirement("ZSTAC-9004", stage: .pending, createdAt: makeDate(year: 2026, month: 6, day: 30))
+let sortInput = [sortTested, sortActiveNew, sortPending, sortActiveOld]
+
+expect(
+    RequirementQuery.filteredAndSorted(
+        sortInput,
+        statusFilter: .incomplete,
+        dateFilter: .all,
+        sortRules: RequirementTabSortConfiguration.defaultRules(for: .incomplete)
+    ).map(\.jiraKey) == RequirementQuery.filteredAndSorted(
+        sortInput,
+        statusFilter: .incomplete,
+        dateFilter: .all
+    ).map(\.jiraKey),
+    "Default tab sort rules should match the legacy incomplete ordering"
+)
+
+expect(
+    RequirementQuery.filteredAndSorted(
+        sortInput,
+        statusFilter: .incomplete,
+        dateFilter: .all,
+        sortRules: [
+            RequirementTabSortRule(status: .tested),
+            RequirementTabSortRule(status: .active, ascending: false),
+            RequirementTabSortRule(status: .pending),
+            RequirementTabSortRule(status: .done),
+            RequirementTabSortRule(status: .paused)
+        ]
+    ).map(\.jiraKey) == ["ZSTAC-9003", "ZSTAC-9002", "ZSTAC-9001", "ZSTAC-9004"],
+    "Custom tab sort rules should reorder status groups and honor per-status direction"
+)
+
+var sortConfiguration = RequirementTabSortConfiguration()
+sortConfiguration.setRules(
+    [
+        RequirementTabSortRule(status: .merged),
+        RequirementTabSortRule(status: .tested)
+    ],
+    for: .incomplete
+)
+let normalizedIncompleteRules = sortConfiguration.rules(for: .incomplete)
+expect(
+    normalizedIncompleteRules.first?.status == .tested && normalizedIncompleteRules.count == 5,
+    "Tab sort rules should drop foreign statuses and backfill missing ones"
+)
+
 print("RequirementCoreChecks passed")

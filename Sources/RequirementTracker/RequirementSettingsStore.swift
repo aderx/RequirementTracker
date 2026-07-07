@@ -47,6 +47,42 @@ final class RequirementSettingsStore: ObservableObject {
         transform(&configuration.pluginSettings)
     }
 
+    func tabSortRules(for statusFilter: RequirementStatusFilter) -> [RequirementTabSortRule] {
+        configuration.baseSettings.tabSort.rules(for: statusFilter)
+    }
+
+    func moveTabSortRule(for statusFilter: RequirementStatusFilter, ruleID: RequirementTabSortRule.ID, offset: Int) {
+        var rules = tabSortRules(for: statusFilter)
+        guard let index = rules.firstIndex(where: { $0.id == ruleID }) else {
+            return
+        }
+
+        let target = index + offset
+        guard rules.indices.contains(target) else {
+            return
+        }
+
+        rules.swapAt(index, target)
+        configuration.baseSettings.tabSort.setRules(rules, for: statusFilter)
+    }
+
+    func toggleTabSortDirection(for statusFilter: RequirementStatusFilter, ruleID: RequirementTabSortRule.ID) {
+        var rules = tabSortRules(for: statusFilter)
+        guard let index = rules.firstIndex(where: { $0.id == ruleID }) else {
+            return
+        }
+
+        rules[index].ascending.toggle()
+        configuration.baseSettings.tabSort.setRules(rules, for: statusFilter)
+    }
+
+    func resetTabSortRules(for statusFilter: RequirementStatusFilter) {
+        configuration.baseSettings.tabSort.setRules(
+            RequirementTabSortConfiguration.defaultRules(for: statusFilter),
+            for: statusFilter
+        )
+    }
+
     @discardableResult
     func addScriptProject(directoryURL: URL) -> RequirementScriptProject.ID? {
         let normalizedPath = directoryURL.path
@@ -93,6 +129,21 @@ final class RequirementSettingsStore: ObservableObject {
         }
     }
 
+    func moveScript(projectID: RequirementScriptProject.ID, scriptID: RequirementScriptCommand.ID, offset: Int) {
+        updateScriptProject(id: projectID) { project in
+            guard let index = project.scripts.firstIndex(where: { $0.id == scriptID }) else {
+                return
+            }
+
+            let target = index + offset
+            guard project.scripts.indices.contains(target) else {
+                return
+            }
+
+            project.scripts.swapAt(index, target)
+        }
+    }
+
     func addQuickLink() {
         configuration.quickLinks.append(
             RequirementQuickLink(name: "新链接", url: "")
@@ -101,6 +152,19 @@ final class RequirementSettingsStore: ObservableObject {
 
     func deleteQuickLink(id: RequirementQuickLink.ID) {
         configuration.quickLinks.removeAll { $0.id == id }
+    }
+
+    func moveQuickLink(id: RequirementQuickLink.ID, offset: Int) {
+        guard let index = configuration.quickLinks.firstIndex(where: { $0.id == id }) else {
+            return
+        }
+
+        let target = index + offset
+        guard configuration.quickLinks.indices.contains(target) else {
+            return
+        }
+
+        configuration.quickLinks.swapAt(index, target)
     }
 
     func updateQuickLink(id: RequirementQuickLink.ID, _ transform: (inout RequirementQuickLink) -> Void) {

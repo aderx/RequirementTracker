@@ -5,23 +5,29 @@ const FALLBACK_SETTINGS = {
   mrHosts: ["gitlab.zstack.io"]
 };
 
+// 需求状态推进链与展示名称，与 App 内保持一致。
+const STATUS_FLOW = ["pending", "active", "done", "tested", "merged"];
+const STATUS_NAMES = {
+  pending: "待开发",
+  active: "开发中",
+  done: "开发完成",
+  tested: "已自测",
+  merged: "已合并",
+  paused: "已暂停",
+  stopped: "已停止"
+};
+const MR_STATE_NAMES = {
+  open: "开启中",
+  merged: "已合并",
+  closed: "已关闭"
+};
+
 const elements = {
   titleText: document.getElementById("titleText"),
   statusText: document.getElementById("statusText"),
-  hostStatusText: document.getElementById("hostStatusText"),
   iconFrame: document.getElementById("iconFrame"),
   statusIcon: document.getElementById("statusIcon"),
-  noticePanel: document.getElementById("noticePanel"),
-  noticeText: document.getElementById("noticeText"),
   summaryPanel: document.getElementById("summaryPanel"),
-  primaryLabel: document.getElementById("primaryLabel"),
-  primaryValue: document.getElementById("primaryValue"),
-  secondaryRow: document.getElementById("secondaryRow"),
-  secondaryLabel: document.getElementById("secondaryLabel"),
-  secondaryValue: document.getElementById("secondaryValue"),
-  tertiaryRow: document.getElementById("tertiaryRow"),
-  tertiaryLabel: document.getElementById("tertiaryLabel"),
-  tertiaryValue: document.getElementById("tertiaryValue"),
   manualPanel: document.getElementById("manualPanel"),
   manualJiraInput: document.getElementById("manualJiraInput"),
   actions: document.getElementById("actions"),
@@ -47,8 +53,8 @@ async function run() {
 
   const settingsResult = await loadPluginSettings();
   currentSettings = settingsResult.settings;
-  setHostStatus(!settingsResult.hostError, settingsResult.hostError);
 
+  let result;
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!tab?.id) {
@@ -66,35 +72,26 @@ async function run() {
     });
 
     if (!response?.ok) {
-      throw new Error(response?.error || "页面没有返回识别结果");
+      throw new Error(response?.error || "页面识别失败");
     }
 
-    await handlePageResult(response.result, settingsResult.hostError);
+    result = response.result;
+  } catch {
+    // 无法注入或读取页面（如浏览器内置页面），按不支持处理。
+    showUnsupported();
+    return;
+  }
+
+  try {
+    await handlePageResult(result, settingsResult.hostError);
   } catch (error) {
-    showUnsupported(error.message || "页面识别失败");
+    showOperationError(error.message || "操作失败");
   }
-}
-
-function setHostStatus(connected, errorMessage = "") {
-  if (!elements.hostStatusText) {
-    return;
-  }
-
-  if (connected) {
-    elements.hostStatusText.textContent = "Native Host：已连接";
-    elements.hostStatusText.classList.remove("error");
-    elements.hostStatusText.classList.add("connected");
-    return;
-  }
-
-  elements.hostStatusText.textContent = `Native Host：${errorMessage || "未连接"}`;
-  elements.hostStatusText.classList.remove("connected");
-  elements.hostStatusText.classList.add("error");
 }
 
 async function handlePageResult(result, hostError) {
   if (!result || result.pageType === "unsupported") {
-    showUnsupported(result?.reason || "当前页面暂不支持");
+    showUnsupported(result?.reason || "");
     return;
   }
 
@@ -113,18 +110,23 @@ async function handlePageResult(result, hostError) {
     return;
   }
 
-  showUnsupported("当前页面暂不支持");
+  showUnsupported();
 }
 
 async function handleJiraPage(payload) {
   hideManualInput();
-  hideNotice();
-  renderSummary("JIRA", payload.issueKey || payload.jiraKey || "未识别", "标题", payload.title || "暂无标题");
+  const issueKey = payload.issueKey || payload.jiraKey || "未识别";
+  const title = payload.title || "暂无标题";
+  const jiraURL = payload.jiraURL || jiraPayloadFromValue(issueKey).jiraURL;
+  renderSummary([
+    { label: "需求", value: issueKey, copyText: jiraURL },
+    { label: "标题", value: title }
+  ]);
   setView({
     tone: "blue",
     icon: "✓",
-    title: "正在检查 Jira...",
-    message: "请稍等"
+    title: "正在检查记录...",
+    message: ""
   });
   setActions([]);
 
@@ -134,24 +136,28 @@ async function handleJiraPage(payload) {
   });
 
   if (!inspect?.ok) {
-    throw new Error(inspect?.error || "查询 Jira 失败");
+    throw new Error(inspect?.error || "查询需求记录失败");
   }
 
   if (inspect.exists) {
-    const statusAction = jiraStatusAction(inspect.status);
+    const next = nextStatus(inspect.status);
+    renderSummary([
+      { label: "需求", value: issueKey, copyText: inspect.jiraURL || jiraURL },
+      { label: "标题", value: title },
+      { label: "记录状态", value: statusName(inspect.status) || "未知" }
+    ]);
     setView({
       tone: "subtle",
       icon: "=",
-      title: "这个 Jira 已记录",
-      message: statusAction ? statusAction.message : "可以更新页面信息，也可以忽略本次添加"
+      title: "需求已记录",
+      message: ""
     });
-    renderSummary("JIRA", payload.issueKey || payload.jiraKey || "未识别", "标题", payload.title || "暂无标题");
 
-    const ignoreButton = button("忽略", "primary-button", closePopup);
-    const updateButton = button("更新", "secondary-button", () => saveJira(payload));
-    const actions = [ignoreButton, updateButton];
-    if (statusAction) {
-      actions.push(button("更新状态", "start-button", () => saveJira(payload, { targetStatus: statusAction.targetStatus })));
+    const actions = [
+      button("更新信息", "secondary-button", () => saveJira(payload))
+    ];
+    if (next) {
+      actions.push(button(`转为${statusName(next)}`, "start-button", () => saveJira(payload, { targetStatus: next })));
     }
     setActions(actions);
     return;
@@ -159,56 +165,54 @@ async function handleJiraPage(payload) {
 
   setView({
     tone: "blue",
-    icon: "✓",
-    title: "添加这个 Jira？",
-    message: "已从当前页面识别到需求信息"
+    icon: "+",
+    title: "添加这个需求？",
+    message: ""
   });
-  renderSummary("JIRA", payload.issueKey || payload.jiraKey || "未识别", "标题", payload.title || "暂无标题");
 
-  const cancelButton = button("取消", "secondary-button", closePopup);
-  const addButton = button("添加", "primary-button", () => saveJira(payload));
-  const startButton = button("确认并开始开发", "start-button", () => saveJira(payload, { startDevelopment: true }));
-  setActions([cancelButton, addButton, startButton]);
+  setActions([
+    button("添加", "primary-button", () => saveJira(payload)),
+    button("添加并开始开发", "start-button", () => saveJira(payload, { targetStatus: "active" }))
+  ]);
 }
 
-async function saveJira(payload, { startDevelopment = false, targetStatus = "" } = {}) {
+async function saveJira(payload, { targetStatus = "" } = {}) {
   clearTimers();
   hideManualInput();
   setActions([]);
   setView({
     tone: "blue",
     icon: "✓",
-    title: startDevelopment || targetStatus ? "正在保存并更新状态..." : "正在保存 Jira...",
-    message: "请稍等"
+    title: "正在保存...",
+    message: ""
   });
 
   const response = await sendNativeMessage({
     type: "upsertJiraRequirement",
-    payload: { ...payload, startDevelopment, targetStatus }
+    payload: { ...payload, targetStatus }
   });
 
   if (!response?.ok) {
-    throw new Error(response?.error || "保存 Jira 失败");
+    throw new Error(response?.error || "保存失败");
   }
 
   requestBadgeRefresh();
 
   let actionText;
   if (response.action === "created") {
-    actionText = startDevelopment ? "Jira 已添加并转为开发中" : "Jira 已添加到 App";
+    actionText = response.statusUpdated
+      ? `已添加，${statusSuccessText(response.targetStatus || targetStatus)}`
+      : "已添加到需求记录";
   } else if (response.statusUpdated) {
     actionText = statusSuccessText(response.targetStatus || targetStatus);
-  } else if (response.started) {
-    actionText = "Jira 已更新并转为开发中";
   } else {
-    actionText = "Jira 信息已更新到 App";
+    actionText = "页面信息已更新";
   }
-  showSuccess("已保存", actionText);
+  showSuccess("完成", actionText);
 }
 
 async function handleMRPage(payload) {
   hideSummary();
-  hideNotice();
 
   if (!payload.jiraURL && !payload.issueKey) {
     showManualJiraInput(payload);
@@ -221,18 +225,17 @@ async function handleMRPage(payload) {
 async function attachMRWithInspection(payload, replaceExisting = false) {
   clearTimers();
   hideManualInput();
-  hideNotice();
   setActions([]);
   setView({
     tone: "blue",
     icon: "✓",
-    title: "正在检查 Jira 记录...",
-    message: "请稍等"
+    title: "正在检查记录...",
+    message: ""
   });
 
   const target = jiraPayloadFromValue(payload.jiraURL || payload.issueKey || "");
   if (!target.issueKey) {
-    showManualJiraInput(payload, "请输入完整 Jira 地址或 Jira 编号");
+    showManualJiraInput(payload, "没有识别到有效的 Jira 编号");
     return;
   }
 
@@ -242,29 +245,51 @@ async function attachMRWithInspection(payload, replaceExisting = false) {
   });
 
   if (!inspect?.ok) {
-    throw new Error(inspect?.error || "查询 Jira 失败");
+    throw new Error(inspect?.error || "查询需求记录失败");
   }
 
   const existingMR = normalizedURL(inspect.mrURL || "");
   const newMR = normalizedURL(payload.mrURL || "");
-  const shouldSyncMRState = isMRStateSyncable(payload.mrState);
+  const targetStatus = mrTargetStatus(payload.mrState);
+  const willAdvance = inspect.exists
+    ? statusRank(targetStatus) > statusRank(inspect.status)
+    : Boolean(targetStatus);
+
   if (existingMR && existingMR !== newMR && !replaceExisting) {
     setView({
       tone: "subtle",
       icon: "◇",
       title: "替换已有 MR？",
-      message: "这个 Jira 已经保存过 MR 地址"
+      message: "这个需求已保存过另一个 MR 地址"
     });
-    renderSummary("JIRA", target.issueKey, "当前", displayURL(existingMR), "新 MR", displayURL(newMR));
+    renderSummary([
+      { label: "需求", value: target.issueKey, copyText: inspect.jiraURL || target.jiraURL },
+      { label: "已保存", value: displayURL(existingMR) },
+      { label: "新 MR", value: displayURL(newMR) }
+    ]);
 
-    const ignoreButton = button("忽略", "primary-button", closePopup);
-    const replaceButton = button("替换", "secondary-button", () => attachMRWithInspection(payload, true));
-    setActions([ignoreButton, replaceButton]);
+    setActions([
+      button("替换", "primary-button", () => attachMRWithInspection(payload, true))
+    ]);
     return;
   }
 
-  if (existingMR === newMR && !shouldSyncMRState) {
-    showSuccess("已保存", "这个 MR 已经记录在对应 Jira 中");
+  if (existingMR === newMR && !willAdvance) {
+    renderSummary([
+      { label: "需求", value: target.issueKey, copyText: inspect.jiraURL || target.jiraURL },
+      { label: "MR 状态", value: mrStateName(payload.mrState) || "未知" },
+      { label: "记录状态", value: statusName(inspect.status) || "未知" }
+    ]);
+    setView({
+      tone: "subtle",
+      icon: "=",
+      title: "MR 已记录",
+      message: "没有需要同步的变化"
+    });
+
+    const closeButton = button("关闭", "text-button muted", closePopup);
+    setActions([closeButton]);
+    scheduleClose(DEFAULT_DELAY_SECONDS, closeButton);
     return;
   }
 
@@ -281,13 +306,12 @@ async function attachMR(payload) {
   clearTimers();
   hideManualInput();
   hideSummary();
-  hideNotice();
   setActions([]);
   setView({
     tone: "blue",
     icon: "✓",
     title: "正在保存 MR...",
-    message: "请稍等"
+    message: ""
   });
 
   const response = await sendNativeMessage({
@@ -299,37 +323,43 @@ async function attachMR(payload) {
     throw new Error(response?.error || "保存 MR 失败");
   }
 
+  if (response.action === "needsReplacement") {
+    await attachMRWithInspection(payload, false);
+    return;
+  }
+
   requestBadgeRefresh();
 
+  const issueKey = response.issueKey || payload.issueKey;
   const actionText = {
-    created: "Jira 已新增，MR 已保存",
-    attached: "MR 已保存到对应 Jira",
+    created: `已创建 ${issueKey} 并保存 MR`,
+    attached: `MR 已保存到 ${issueKey}`,
     replaced: "MR 地址已替换",
-    synced: "MR 状态已同步到对应 Jira"
-  }[response.action] || "需求记录已更新到 App";
+    synced: "MR 状态已同步"
+  }[response.action] || "需求记录已更新";
 
-  showSuccess("已保存", response.statusUpdated ? `${actionText}，${statusSuccessText(response.targetStatus)}` : actionText);
+  showSuccess("完成", response.statusUpdated
+    ? `${actionText}，${statusSuccessText(response.targetStatus)}`
+    : actionText);
 }
 
-function showManualJiraInput(payload, message = "输入完整 Jira 地址或 Jira 编号") {
+function showManualJiraInput(payload, message = "当前 MR 页面没有找到 Jira 链接") {
   clearTimers();
   hideSummary();
-  hideNotice();
   setView({
     tone: "blue",
     icon: "+",
-    title: "需要关联 Jira",
+    title: "关联 Jira",
     message
   });
   elements.manualPanel.classList.remove("hidden");
   elements.manualJiraInput.value = "";
   elements.manualJiraInput.focus();
 
-  const cancelButton = button("取消", "secondary-button", closePopup);
   const saveButton = button("保存", "primary-button", async () => {
     const target = jiraPayloadFromValue(elements.manualJiraInput.value);
     if (!target.issueKey) {
-      setStatus("请输入有效的 Jira 地址或编号", "error");
+      setStatus("请输入 Jira 编号或完整链接", "error");
       return;
     }
 
@@ -339,18 +369,17 @@ function showManualJiraInput(payload, message = "输入完整 Jira 地址或 Jir
       jiraURL: target.jiraURL
     });
   });
-  setActions([cancelButton, saveButton]);
+  setActions([saveButton]);
 }
 
-function showUnsupported() {
+function showUnsupported(message = "") {
   hideSummary();
   hideManualInput();
-  hideNotice();
   setView({
     tone: "warning",
     icon: "!",
-    title: "暂不支持此页面",
-    message: "请打开 Jira 详情页或 GitLab MR 页面"
+    title: "此页面暂不支持",
+    message: message || "支持 Jira 详情页和 GitLab MR 页面"
   });
 
   const closeButton = button("关闭", "text-button muted", closePopup);
@@ -364,10 +393,9 @@ function showNativeHostError() {
   setView({
     tone: "error",
     icon: "x",
-    title: "Native Host 未连接",
-    message: "请在 App 的插件配置里安装后重试"
+    title: "未连接到 App",
+    message: "请先打开需求记录 App，并在设置的插件配置中安装 Native Host"
   });
-  showNotice("未找到本机通信组件，插件暂时不能写入 App");
 
   const closeButton = button("关闭", "text-button", closePopup);
   setActions([closeButton]);
@@ -376,7 +404,6 @@ function showNativeHostError() {
 function showSuccess(title, message) {
   hideSummary();
   hideManualInput();
-  hideNotice();
   setView({
     tone: "success",
     icon: "✓",
@@ -386,6 +413,7 @@ function showSuccess(title, message) {
 
   const closeButton = button("关闭", "text-button", closePopup);
   setActions([closeButton]);
+  scheduleClose(DEFAULT_DELAY_SECONDS, closeButton);
 }
 
 function showOperationError(message) {
@@ -395,9 +423,8 @@ function showOperationError(message) {
     tone: "error",
     icon: "x",
     title: "操作失败",
-    message: "请检查插件配置后重试"
+    message: message || "请稍后重试"
   });
-  showNotice(message || "操作失败");
 
   const closeButton = button("关闭", "text-button", closePopup);
   setActions([closeButton]);
@@ -425,6 +452,43 @@ async function loadPluginSettings() {
   }
 }
 
+function statusName(status) {
+  return STATUS_NAMES[String(status || "").toLowerCase()] || "";
+}
+
+function statusRank(status) {
+  return STATUS_FLOW.indexOf(String(status || "").toLowerCase());
+}
+
+function nextStatus(status) {
+  const rank = statusRank(status);
+  if (rank < 0 || rank >= STATUS_FLOW.length - 1) {
+    return "";
+  }
+
+  return STATUS_FLOW[rank + 1];
+}
+
+function mrTargetStatus(state) {
+  switch (String(state || "").toLowerCase()) {
+  case "open":
+    return "tested";
+  case "merged":
+    return "merged";
+  default:
+    return "";
+  }
+}
+
+function mrStateName(state) {
+  return MR_STATE_NAMES[String(state || "").toLowerCase()] || "";
+}
+
+function statusSuccessText(status) {
+  const name = statusName(status);
+  return name ? `需求已转为${name}` : "需求状态已更新";
+}
+
 function jiraPayloadFromValue(value) {
   const raw = String(value || "").trim();
   const issueKey = jiraKeyFromText(raw);
@@ -448,7 +512,6 @@ function jiraPayloadFromValue(value) {
 function resetContent() {
   hideSummary();
   hideManualInput();
-  hideNotice();
   setActions([]);
 }
 
@@ -460,46 +523,60 @@ function setView({ tone, icon, title, message }) {
   setStatus(message || "");
 }
 
-function renderSummary(
-  primaryLabel,
-  primaryValue,
-  secondaryLabel = "",
-  secondaryValue = "",
-  tertiaryLabel = "",
-  tertiaryValue = ""
-) {
-  elements.summaryPanel.classList.remove("hidden");
-  elements.primaryLabel.textContent = primaryLabel;
-  elements.primaryValue.textContent = primaryValue || "-";
-  setOptionalRow(elements.secondaryRow, elements.secondaryLabel, elements.secondaryValue, secondaryLabel, secondaryValue);
-  setOptionalRow(elements.tertiaryRow, elements.tertiaryLabel, elements.tertiaryValue, tertiaryLabel, tertiaryValue);
+function renderSummary(rows) {
+  const visibleRows = (rows || []).filter((row) => row && (row.label || row.value));
+  elements.summaryPanel.innerHTML = "";
+  if (Array.isArray(elements.summaryPanel.children)) {
+    elements.summaryPanel.children.length = 0;
+  }
+  elements.summaryPanel.classList.toggle("hidden", visibleRows.length === 0);
+
+  for (const row of visibleRows) {
+    const rowElement = document.createElement("div");
+    rowElement.className = "row";
+
+    const label = document.createElement("span");
+    label.className = "label";
+    label.textContent = row.label;
+    rowElement.appendChild(label);
+
+    const value = document.createElement("span");
+    value.className = "value";
+    value.textContent = row.value || "-";
+    if (row.copyText) {
+      value.appendChild(copyButtonFor(row.copyText));
+    }
+    rowElement.appendChild(value);
+
+    elements.summaryPanel.appendChild(rowElement);
+  }
 }
 
-function setOptionalRow(row, labelElement, valueElement, label, value) {
-  if (label || value) {
-    row.classList.remove("hidden");
-    labelElement.textContent = label;
-    valueElement.textContent = value || "-";
-    return;
-  }
-
-  row.classList.add("hidden");
+/// 复制按钮：点击后把 text 写入剪贴板，并给出短暂的“已复制”反馈。
+function copyButtonFor(text) {
+  const element = document.createElement("button");
+  element.type = "button";
+  element.className = "copy-button";
+  element.textContent = "复制";
+  element.title = text;
+  element.addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      element.textContent = "已复制";
+      element.classList.add("copied");
+    } catch {
+      element.textContent = "复制失败";
+    }
+    setTimeout(() => {
+      element.textContent = "复制";
+      element.classList.remove("copied");
+    }, 1500);
+  });
+  return element;
 }
 
 function hideSummary() {
   elements.summaryPanel.classList.add("hidden");
-  elements.secondaryRow.classList.add("hidden");
-  elements.tertiaryRow.classList.add("hidden");
-}
-
-function showNotice(text) {
-  elements.noticePanel.classList.remove("hidden");
-  elements.noticeText.textContent = text;
-}
-
-function hideNotice() {
-  elements.noticePanel.classList.add("hidden");
-  elements.noticeText.textContent = "";
 }
 
 function hideManualInput() {
@@ -514,45 +591,7 @@ function setActions(actions) {
   elements.actions.classList.toggle("hidden", actions.length === 0);
   elements.actions.classList.toggle("single", actions.length === 1);
   elements.actions.classList.toggle("triple", actions.length === 3);
-  elements.actions.classList.toggle("quad", actions.length === 4);
   actions.forEach((action) => elements.actions.appendChild(action));
-}
-
-function jiraStatusAction(status) {
-  switch (String(status || "").toLowerCase()) {
-  case "pending":
-    return {
-      targetStatus: "active",
-      message: "可以更新页面信息，或将 Jira 状态切换为开发中"
-    };
-  case "active":
-    return {
-      targetStatus: "done",
-      message: "可以更新页面信息，或将 Jira 状态切换为开发完成"
-    };
-  default:
-    return null;
-  }
-}
-
-function isMRStateSyncable(state) {
-  const value = String(state || "").toLowerCase();
-  return value === "open" || value === "merged";
-}
-
-function statusSuccessText(status) {
-  switch (String(status || "").toLowerCase()) {
-  case "active":
-    return "Jira 已转为开发中";
-  case "done":
-    return "Jira 已转为开发完成";
-  case "tested":
-    return "Jira 已转为自测完成";
-  case "merged":
-    return "Jira 已转为已合并";
-  default:
-    return "Jira 状态已更新";
-  }
 }
 
 function requestBadgeRefresh() {
@@ -576,6 +615,8 @@ function button(label, className, onClick) {
       await onClick();
     } catch (error) {
       showOperationError(error.message || "操作失败");
+    } finally {
+      element.disabled = false;
     }
   });
   return element;

@@ -21,6 +21,7 @@ private func handle(request: [String: Any]) throws -> [String: Any] {
         dataFileURL: RequirementJSONWriter.defaultDataFileURL(),
         settingsFileURL: RequirementJSONWriter.defaultSettingsFileURL()
     )
+    writer.recordPluginHeartbeat()
 
     switch stringValue(request["type"]) {
     case "getPluginSettings":
@@ -63,6 +64,26 @@ private struct RequirementJSONWriter {
             ],
             "settingsFilePath": settingsFileURL.path
         ]
+    }
+
+    /// 记录一次插件通信时间，供 App 设置页展示连接状态。写失败不影响主流程。
+    func recordPluginHeartbeat() {
+        let heartbeatURL = dataFileURL
+            .deletingLastPathComponent()
+            .appendingPathComponent("plugin-heartbeat.json")
+        let payload: [String: Any] = [
+            "lastSeenAt": ISO8601DateFormatter().string(from: Date())
+        ]
+
+        guard let data = try? JSONSerialization.data(withJSONObject: payload) else {
+            return
+        }
+
+        try? FileManager.default.createDirectory(
+            at: heartbeatURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try? data.write(to: heartbeatURL, options: [.atomic])
     }
 
     func inspect(payload: [String: Any]) throws -> [String: Any] {

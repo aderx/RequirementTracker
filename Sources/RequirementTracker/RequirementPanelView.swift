@@ -28,20 +28,29 @@ struct RequirementPanelView: View {
     @State private var displayMonth = Date()
     @State private var isDateFilterHovering = false
     @State private var isAddButtonHovering = false
+    @State private var searchText = ""
 
     private var visibleRequirements: [Requirement] {
-        let filtered = RequirementQuery.filteredAndSorted(
+        var filtered = RequirementQuery.filteredAndSorted(
             store.requirements,
             statusFilter: statusFilter,
-            dateFilter: dateFilter
+            dateFilter: dateFilter,
+            sortRules: settingsStore.tabSortRules(for: statusFilter)
         )
 
-        guard let selectedDay else {
+        if let selectedDay {
+            filtered = filtered.filter {
+                Calendar.current.isDate($0.activityDate, inSameDayAs: selectedDay)
+            }
+        }
+
+        let keyword = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !keyword.isEmpty else {
             return filtered
         }
 
         return filtered.filter {
-            Calendar.current.isDate($0.activityDate, inSameDayAs: selectedDay)
+            $0.jiraKey.localizedCaseInsensitiveContains(keyword)
         }
     }
 
@@ -57,7 +66,7 @@ struct RequirementPanelView: View {
                 .ignoresSafeArea()
 
             VStack(spacing: 0) {
-                header
+                header(items)
 
                 if isAdding {
                     addPanel
@@ -89,13 +98,22 @@ struct RequirementPanelView: View {
         .onChange(of: showsCalendar) { isVisible in
             onCalendarVisibilityChange?(isVisible)
         }
+        // 弹窗关闭后自动清空搜索，下次打开回到完整列表。
+        .onReceive(NotificationCenter.default.publisher(for: NSPopover.willCloseNotification)) { _ in
+            searchText = ""
+        }
     }
 
-    private var header: some View {
+    private func header(_ items: [Requirement]) -> some View {
         HStack(spacing: 5) {
             Text("需求记录")
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(DesignColor.textPrimary)
+
+            Text("\(items.count) 项")
+                .font(.system(size: 10.5))
+                .foregroundStyle(Color.black.opacity(0.38))
+                .padding(.leading, 2)
 
             Spacer()
 
@@ -248,18 +266,48 @@ struct RequirementPanelView: View {
 
     private func footer(_ items: [Requirement]) -> some View {
         HStack(spacing: 7) {
+            searchField
+
+            Spacer(minLength: 7)
+
             dateFilterButton
-
-            Text("\(items.count) 项")
-                .font(.system(size: 10.5))
-                .foregroundStyle(Color.black.opacity(0.38))
-
-            Spacer()
 
             settingsMenu
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 7)
+    }
+
+    private var searchField: some View {
+        HStack(spacing: 4) {
+            TextField("搜索", text: $searchText)
+                .textFieldStyle(.plain)
+                .font(.system(size: 10.5))
+                .foregroundStyle(DesignColor.textPrimary)
+
+            if !searchText.isEmpty {
+                Button {
+                    searchText = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 9.5))
+                        .foregroundStyle(Color.black.opacity(0.30))
+                }
+                .buttonStyle(.plain)
+                .help("清空搜索")
+                .pointingHandCursor()
+            }
+        }
+        .padding(.horizontal, 7)
+        .frame(width: 86, height: 22)
+        .background(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(Color.black.opacity(0.04))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .strokeBorder(Color.black.opacity(0.11), lineWidth: 0.5)
+        )
     }
 
     private var dateFilterButton: some View {
