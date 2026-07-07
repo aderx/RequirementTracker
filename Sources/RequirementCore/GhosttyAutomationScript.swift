@@ -3,40 +3,10 @@ import Foundation
 public enum GhosttyAutomationScript {
     public static let defaultApplicationPath = "/Applications/Ghostty.app"
 
-    public struct AppleEventCodes: Equatable, Sendable {
-        public let eventClass: String
-        public let eventID: String
-        public let configurationParameter: String
-        public let workingDirectoryProperty: String
-        public let initialInputProperty: String
-        public let waitAfterCommandProperty: String
-
-        public init(
-            eventClass: String,
-            eventID: String,
-            configurationParameter: String,
-            workingDirectoryProperty: String,
-            initialInputProperty: String,
-            waitAfterCommandProperty: String
-        ) {
-            self.eventClass = eventClass
-            self.eventID = eventID
-            self.configurationParameter = configurationParameter
-            self.workingDirectoryProperty = workingDirectoryProperty
-            self.initialInputProperty = initialInputProperty
-            self.waitAfterCommandProperty = waitAfterCommandProperty
-        }
-    }
-
-    public static let newTabAppleEventCodes = AppleEventCodes(
-        eventClass: "Ghst",
-        eventID: "NTab",
-        configurationParameter: "GNtS",
-        workingDirectoryProperty: "GScD",
-        initialInputProperty: "GScI",
-        waitAfterCommandProperty: "GScW"
-    )
-
+    /// 通过 Ghostty 的脚本接口在「常规单实例」里启动脚本：
+    /// 已知项目窗口存在则在其中新建 tab，否则新建窗口并返回窗口 ID。
+    /// 工作目录与初始输入都只作用于本次创建的 surface，
+    /// 不会污染用户手动打开的窗口或 tab。
     public static func jxa(
         projectDirectory: String,
         command: String,
@@ -63,11 +33,11 @@ public enum GhosttyAutomationScript {
           }
         }
 
-        const configuration = app.SurfaceConfiguration({
+        const configuration = {
           initialWorkingDirectory: \(jsStringLiteral(projectDirectory)),
           initialInput: \(jsStringLiteral(input)),
           waitAfterCommand: true
-        });
+        };
 
         let targetWindow = existingWindow(\(knownWindowValue));
         if (targetWindow) {
@@ -77,6 +47,7 @@ public enum GhosttyAutomationScript {
         }
 
         try {
+          app.activate();
           targetWindow.activateWindow();
         } catch (error) {}
 
@@ -98,31 +69,6 @@ public enum GhosttyAutomationScript {
     ) -> String {
         let trimmedCommand = command.trimmingCharacters(in: .whitespacesAndNewlines)
         return "cd \(shellSingleQuoted(projectDirectory))\n\(trimmedCommand)"
-    }
-
-    public static func openArguments(
-        projectDirectory: String,
-        inputFilePath: String,
-        applicationPath: String = defaultApplicationPath
-    ) -> [String] {
-        [
-            "-na",
-            applicationPath,
-            "--args"
-        ] + applicationArguments(
-            projectDirectory: projectDirectory,
-            inputFilePath: inputFilePath
-        )
-    }
-
-    public static func applicationArguments(
-        projectDirectory: String,
-        inputFilePath: String
-    ) -> [String] {
-        [
-            "--working-directory=\(projectDirectory)",
-            "--input=path:\(inputFilePath)"
-        ]
     }
 
     public static func jsStringLiteral(_ value: String) -> String {

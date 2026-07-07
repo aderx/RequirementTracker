@@ -6,6 +6,18 @@ import SwiftUI
 struct RequirementTrackerApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
+    init() {
+        // 系统“显示滚动条”为自动/始终时（接鼠标即触发），滚动视图会用
+        // legacy 样式在列表右侧预留滚动条位置。仅对本应用强制 overlay
+        // 样式：滚动条悬浮绘制、不占布局空间，卡片才能占满滚动区域宽度。
+        // AppKit 经 CFPreferences 读取该偏好，易失的 register(defaults:)
+        // 对它不可见，必须持久化写入本应用偏好域才生效。
+        let defaults = UserDefaults.standard
+        if defaults.string(forKey: "AppleShowScrollBars") != "WhenScrolling" {
+            defaults.set("WhenScrolling", forKey: "AppleShowScrollBars")
+        }
+    }
+
     var body: some Scene {
         Settings {
             EmptyView()
@@ -391,7 +403,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private static var appVersion: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
-            ?? "1.8.0"
+            ?? "1.8.1"
     }
 
     private static var githubURL: String? {
