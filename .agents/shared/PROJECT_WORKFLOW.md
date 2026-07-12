@@ -53,10 +53,11 @@ This file is the single project-level workflow source for Codex, Claude Code, an
 ## Production Build And Install Flow
 
 - Build the release binary from `main` only.
-- Use `swift build -c release` for release binaries.
+- Use `Scripts/package-app.sh release` for release binaries and the final App bundle. The script enforces `main`, runs the release builds, embeds the WidgetKit extension, and re-signs the nested extension and App.
 - Rebuild the production app bundle before installing:
   - Copy `.build/release/RequirementTracker` into `dist/需求记录.app/Contents/MacOS/RequirementTracker`.
   - Copy `.build/release/JiraRequirementNativeHost` into `dist/需求记录.app/Contents/Resources/JiraRequirementNativeHost`.
+  - Build `WidgetExtension/RequirementCalendarWidget.xcodeproj` as a real App Extension target and embed `.build/widget-xcode/Build/Products/Release/RequirementCalendarWidget.appex` at `dist/需求记录.app/Contents/PlugIns/RequirementCalendarWidget.appex`.
   - Copy `Integrations/JiraRequirementCapture/extension` into `dist/需求记录.app/Contents/Resources/JiraRequirementCaptureExtension`.
   - Update `dist/需求记录.app/Contents/Info.plist` to the branch version.
   - Re-sign the bundle.
@@ -65,6 +66,7 @@ This file is the single project-level workflow source for Codex, Claude Code, an
 - After replacement, verify:
   - `/Applications/需求记录.app/Contents/Info.plist` has the expected `CFBundleShortVersionString`.
   - `/Applications/需求记录.app/Contents/Resources/JiraRequirementCaptureExtension/manifest.json` has the expected extension version.
+  - `/Applications/需求记录.app/Contents/PlugIns/RequirementCalendarWidget.appex/Contents/Info.plist` has the expected widget version and `com.apple.widgetkit-extension` extension point.
   - The Chrome Native Messaging manifest points to `/Applications/需求记录.app/Contents/Resources/JiraRequirementNativeHost`.
   - The running `RequirementTracker` process path is `/Applications/需求记录.app/Contents/MacOS/RequirementTracker`.
 
@@ -87,6 +89,7 @@ This file is the single project-level workflow source for Codex, Claude Code, an
 - Current branch and version are known.
 - Development happened on a version branch from `main`.
 - Version metadata was updated for the same version.
+- The signed App bundle contains a signed `RequirementCalendarWidget.appex`.
 - Development build was launched for user validation after code changes.
 - User confirmed validation before merge/release.
 - Version branch was pushed and merged into `main`.

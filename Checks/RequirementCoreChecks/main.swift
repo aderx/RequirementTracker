@@ -1,4 +1,5 @@
 import Foundation
+import RequirementCalendarCore
 import RequirementCore
 
 @discardableResult
@@ -733,6 +734,77 @@ let normalizedIncompleteRules = sortConfiguration.rules(for: .incomplete)
 expect(
     normalizedIncompleteRules.first?.status == .tested && normalizedIncompleteRules.count == 5,
     "Tab sort rules should drop foreign statuses and backfill missing ones"
+)
+
+var mondayFirstCalendar = Calendar(identifier: .gregorian)
+mondayFirstCalendar.locale = Locale(identifier: "zh_Hans_CN")
+mondayFirstCalendar.timeZone = TimeZone(secondsFromGMT: 0)!
+mondayFirstCalendar.firstWeekday = 2
+let mondayFirstGrid = CalendarGridBuilder(
+    calendar: mondayFirstCalendar,
+    locale: Locale(identifier: "zh_Hans_CN")
+)
+let june2026 = mondayFirstGrid.month(
+    containing: makeDate(year: 2026, month: 6, day: 15),
+    today: makeDate(year: 2026, month: 6, day: 19)
+)
+let juneCells = june2026.weeks.flatMap { $0 }
+expect(
+    june2026.weeks.count == 6
+        && june2026.weeks.allSatisfy { $0.count == 7 }
+        && juneCells[0]?.number == 1,
+    "A month grid should always provide six complete weeks and honor Monday as the first weekday"
+)
+expect(
+    june2026.weekdaySymbols == ["一", "二", "三", "四", "五", "六", "日"],
+    "Weekday labels should follow the calendar first-weekday preference"
+)
+expect(
+    juneCells.compactMap { $0 }.first(where: { $0.number == 19 })?.isToday == true,
+    "The current day should be marked inside its month"
+)
+expect(
+    juneCells.compactMap { $0 }.first(where: { $0.number == 20 })?.isWeekend == true
+        && juneCells.compactMap { $0 }.first(where: { $0.number == 22 })?.isWeekend == false,
+    "Weekend highlighting should come from Calendar rather than fixed columns"
+)
+
+var sundayFirstCalendar = mondayFirstCalendar
+sundayFirstCalendar.firstWeekday = 1
+let sundayFirstGrid = CalendarGridBuilder(
+    calendar: sundayFirstCalendar,
+    locale: Locale(identifier: "zh_Hans_CN")
+)
+let february2024 = sundayFirstGrid.month(
+    containing: makeDate(year: 2024, month: 2, day: 10),
+    today: makeDate(year: 2024, month: 2, day: 29)
+)
+let februaryCells = february2024.weeks.flatMap { $0 }
+expect(
+    februaryCells.prefix(4).allSatisfy { $0 == nil }
+        && februaryCells[4]?.number == 1
+        && februaryCells.compactMap { $0 }.last?.number == 29,
+    "Leap February should align to Sunday-first columns and include February 29"
+)
+
+let year2026 = mondayFirstGrid.year(
+    containing: makeDate(year: 2026, month: 7, day: 12),
+    today: makeDate(year: 2026, month: 7, day: 12)
+)
+let highlightedYearDays = year2026.months
+    .flatMap(\.weeks)
+    .flatMap { $0 }
+    .compactMap { $0 }
+    .filter(\.isToday)
+expect(
+    year2026.year == 2026
+        && year2026.months.map(\.month) == Array(1 ... 12)
+        && highlightedYearDays.count == 1,
+    "A Gregorian year grid should contain all 12 months and exactly one highlighted current day"
+)
+expect(
+    CalendarDisplayText.year(year2026.year) == "2026年",
+    "Calendar years should render as ungrouped digits"
 )
 
 print("RequirementCoreChecks passed")
