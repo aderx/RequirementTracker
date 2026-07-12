@@ -124,6 +124,16 @@ struct RequirementSettingsView: View {
 
         return ScrollView(.vertical, showsIndicators: true) {
             VStack(alignment: .leading, spacing: 14) {
+                settingsPageHeader(
+                    title: "弹窗样式",
+                    help: "选择菜单栏弹窗底部的状态、日期、搜索与更多操作布局。"
+                )
+
+                panelStyleSelector
+
+                GlassDivider()
+                    .padding(.vertical, 2)
+
                 HStack(spacing: 8) {
                     settingsPageHeader(
                         title: "列表排序",
@@ -167,6 +177,63 @@ struct RequirementSettingsView: View {
                 )
             }
             .padding(20)
+        }
+    }
+
+    private var panelStyleSelector: some View {
+        HStack(spacing: 8) {
+            ForEach(RequirementPanelStyle.allCases) { style in
+                let isSelected = settingsStore.panelStyle == style
+
+                Button {
+                    withAnimation(.easeInOut(duration: 0.18)) {
+                        settingsStore.setPanelStyle(style)
+                    }
+                } label: {
+                    HStack(spacing: 9) {
+                        Image(systemName: style.systemImage)
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(isSelected ? DesignColor.doing : Color.black.opacity(0.42))
+                            .frame(width: 24, height: 24)
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(style.title)
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(DesignColor.textPrimary)
+
+                            Text(style.summary)
+                                .font(.system(size: 9.5))
+                                .foregroundStyle(Color.black.opacity(0.46))
+                                .lineLimit(2)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+
+                        Spacer(minLength: 2)
+
+                        Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(isSelected ? DesignColor.doing : Color.black.opacity(0.18))
+                    }
+                    .padding(.horizontal, 10)
+                    .frame(maxWidth: .infinity, minHeight: 58)
+                    .background(
+                        isSelected ? DesignColor.doing.opacity(0.085) : Color.white.opacity(0.56),
+                        in: RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 9, style: .continuous)
+                            .strokeBorder(
+                                isSelected ? DesignColor.doing.opacity(0.22) : Color.black.opacity(0.075),
+                                lineWidth: 0.6
+                            )
+                    )
+                    .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("弹窗样式：\(style.title)")
+                .accessibilityAddTraits(isSelected ? .isSelected : [])
+                .pointingHandCursor()
+            }
         }
     }
 
@@ -1108,6 +1175,30 @@ private enum RequirementSettingsTab: String, CaseIterable, Identifiable {
             "terminal"
         case .quickLinks:
             "link"
+        }
+    }
+}
+
+private extension RequirementPanelStyle {
+    var systemImage: String {
+        switch self {
+        case .standard:
+            "rectangle"
+        case .minimal:
+            "minus"
+        case .modern:
+            "sparkles"
+        }
+    }
+
+    var summary: String {
+        switch self {
+        case .standard:
+            "顶部状态栏，底部日期与搜索"
+        case .minimal:
+            "状态、日期与搜索集中在横条"
+        case .modern:
+            "玻璃搜索按钮与独立操作按钮"
         }
     }
 }

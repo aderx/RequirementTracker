@@ -32,6 +32,14 @@ final class RequirementSettingsStore: ObservableObject {
         configuration.validQuickLinks
     }
 
+    var panelStyle: RequirementPanelStyle {
+        configuration.baseSettings.panelStyle
+    }
+
+    func setPanelStyle(_ style: RequirementPanelStyle) {
+        configuration.baseSettings.panelStyle = style
+    }
+
     func panelDateSelection(for statusFilter: RequirementStatusFilter) -> RequirementPanelDateSelection {
         configuration.baseSettings.panelFilters.selection(for: statusFilter)
     }
