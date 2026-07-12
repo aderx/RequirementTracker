@@ -29,6 +29,12 @@ struct RequirementPanelView: View {
     @State private var isDateFilterHovering = false
     @State private var isAddButtonHovering = false
     @State private var searchText = ""
+    @State private var isSearchExpanded = false
+    @State private var bottomOverlayHeight: CGFloat = 0
+    @State private var modernTopOverlayHeight: CGFloat = 0
+    @State private var isModernTopActionsExpanded = false
+    @FocusState private var isSearchFocused: Bool
+    @Namespace private var modernGlassNamespace
 
     private var visibleRequirements: [Requirement] {
         var filtered = RequirementQuery.filteredAndSorted(
@@ -58,6 +64,10 @@ struct RequirementPanelView: View {
         RequirementPanelMetrics.height(isCalendarVisible: showsCalendar)
     }
 
+    private var panelStyle: RequirementPanelStyle {
+        settingsStore.panelStyle
+    }
+
     var body: some View {
         let items = visibleRequirements
 
@@ -65,31 +75,11 @@ struct RequirementPanelView: View {
             Color.clear
                 .ignoresSafeArea()
 
-            VStack(spacing: 0) {
-                header(items)
-
-                if isAdding {
-                    addPanel
-                        .transition(.opacity.combined(with: .move(edge: .top)))
-                }
-
-                filterBar
-
-                GlassDivider()
-
-                contentList(items)
-
-                if showsCalendar {
-                    GlassDivider()
-
-                    calendarPanel
-                        .transition(.opacity.combined(with: .move(edge: .bottom)))
-                }
-
-                GlassDivider()
-                footer(items)
+            if panelStyle == .modern {
+                modernPanelContent(items)
+            } else {
+                legacyPanelContent(items)
             }
-
         }
         .frame(width: RequirementPanelMetrics.width, height: panelHeight)
         .onAppear {
@@ -98,10 +88,100 @@ struct RequirementPanelView: View {
         .onChange(of: showsCalendar) { isVisible in
             onCalendarVisibilityChange?(isVisible)
         }
+        .onPreferenceChange(BottomOverlayHeightPreferenceKey.self) { height in
+            guard abs(bottomOverlayHeight - height) > 0.5 else {
+                return
+            }
+            bottomOverlayHeight = height
+        }
+        .onPreferenceChange(ModernTopOverlayHeightPreferenceKey.self) { height in
+            guard abs(modernTopOverlayHeight - height) > 0.5 else {
+                return
+            }
+            modernTopOverlayHeight = height
+        }
+        .onChange(of: panelStyle) { style in
+            withAnimation(.snappy(duration: 0.18)) {
+                showsCalendar = false
+                isSearchExpanded = !searchText.isEmpty
+                isModernTopActionsExpanded = false
+
+                if style != .standard {
+                    isAdding = false
+                    bulkInput = ""
+                }
+            }
+        }
         // 弹窗关闭后自动清空搜索，下次打开回到完整列表。
         .onReceive(NotificationCenter.default.publisher(for: NSPopover.willCloseNotification)) { _ in
             searchText = ""
+            isSearchExpanded = false
+            isSearchFocused = false
+            isModernTopActionsExpanded = false
+            showsCalendar = false
         }
+    }
+
+    private func legacyPanelContent(_ items: [Requirement]) -> some View {
+        VStack(spacing: 0) {
+            if panelStyle == .standard {
+                header(items)
+            }
+
+            if panelStyle == .standard, isAdding {
+                addPanel
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+
+            legacyPanelFilterArea
+
+            ZStack(alignment: .bottom) {
+                contentList(
+                    items,
+                    bottomInset: max(bottomOverlayHeight + 12, 12),
+                    topInset: panelStyle == .minimal ? 10 : 4,
+                    coveredBottomHeight: panelStyle == .standard ? bottomOverlayHeight : 0
+                )
+
+                measuredBottomOverlay
+            }
+            .frame(maxHeight: .infinity)
+        }
+    }
+
+    private func modernPanelContent(_ items: [Requirement]) -> some View {
+        ZStack(alignment: .bottom) {
+            contentList(
+                items,
+                bottomInset: max(bottomOverlayHeight + 12, 12),
+                topInset: max(modernTopOverlayHeight + 10, 10)
+            )
+
+            measuredBottomOverlay
+        }
+        .overlay(alignment: .top) {
+            modernTopOverlay(items)
+                .background {
+                    GeometryReader { geometry in
+                        Color.clear.preference(
+                            key: ModernTopOverlayHeightPreferenceKey.self,
+                            value: geometry.size.height
+                        )
+                    }
+                }
+        }
+    }
+
+    private var measuredBottomOverlay: some View {
+        bottomOverlay
+            .background {
+                GeometryReader { geometry in
+                    Color.clear.preference(
+                        key: BottomOverlayHeightPreferenceKey.self,
+                        value: geometry.size.height
+                    )
+                }
+            }
     }
 
     private func header(_ items: [Requirement]) -> some View {
@@ -189,6 +269,188 @@ struct RequirementPanelView: View {
         .padding(.bottom, 8)
     }
 
+    @ViewBuilder
+    private var legacyPanelFilterArea: some View {
+        if panelStyle == .standard {
+            filterBar
+            GlassDivider()
+        }
+    }
+
+    @ViewBuilder
+    private func modernTopOverlay(_ items: [Requirement]) -> some View {
+        if #available(macOS 26.0, *) {
+            nativeModernTopOverlay(items)
+        } else {
+            fallbackModernTopOverlay(items)
+        }
+    }
+
+    @available(macOS 26.0, *)
+    private func nativeModernTopOverlay(_ items: [Requirement]) -> some View {
+        GlassEffectContainer(spacing: 4) {
+            HStack(spacing: 6) {
+                modernTitleCluster(items)
+                    .glassEffect(.regular, in: Capsule())
+                    .glassEffectID("modern-title", in: modernGlassNamespace)
+
+                Spacer(minLength: 6)
+
+                modernTopContentCluster
+                    .glassEffect(.regular.interactive(), in: Capsule())
+                    .glassEffectID("modern-top-content", in: modernGlassNamespace)
+
+                modernTopToggleButton
+                    .glassEffect(.regular.interactive(), in: Circle())
+                    .glassEffectID("modern-top-toggle", in: modernGlassNamespace)
+            }
+            .frame(maxWidth: .infinity)
+        }
+        .padding(.horizontal, 10)
+        .padding(.top, 8)
+        .frame(maxWidth: .infinity)
+    }
+
+    private func fallbackModernTopOverlay(_ items: [Requirement]) -> some View {
+        HStack(spacing: 6) {
+            modernTitleCluster(items)
+                .background(.ultraThinMaterial, in: Capsule())
+                .overlay(
+                    Capsule()
+                        .strokeBorder(Color.white.opacity(0.52), lineWidth: 0.6)
+                )
+                .shadow(color: Color.black.opacity(0.08), radius: 8, y: 3)
+
+            Spacer(minLength: 6)
+
+            modernTopContentCluster
+                .background(.ultraThinMaterial, in: Capsule())
+                .overlay(
+                    Capsule()
+                        .strokeBorder(Color.white.opacity(0.52), lineWidth: 0.6)
+                )
+                .shadow(color: Color.black.opacity(0.08), radius: 8, y: 3)
+
+            modernTopToggleButton
+                .background(.ultraThinMaterial, in: Circle())
+                .overlay(
+                    Circle()
+                        .strokeBorder(Color.white.opacity(0.52), lineWidth: 0.6)
+                )
+                .shadow(color: Color.black.opacity(0.08), radius: 8, y: 3)
+        }
+        .padding(.horizontal, 10)
+        .padding(.top, 8)
+        .frame(maxWidth: .infinity)
+    }
+
+    private func modernTitleCluster(_ items: [Requirement]) -> some View {
+        HStack(spacing: 5) {
+            Text("需求记录")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(DesignColor.textPrimary)
+
+            Text("\(items.count) 项")
+                .font(.system(size: 10.5))
+                .foregroundStyle(Color.black.opacity(0.38))
+        }
+        .padding(.horizontal, 8)
+        .frame(height: 32)
+        .fixedSize()
+    }
+
+    private var modernTopContentCluster: some View {
+        HStack(spacing: 0) {
+            if isModernTopActionsExpanded {
+                if !scriptMenuContents.isEmpty {
+                    NativeIconMenuButton(
+                        kind: .symbol("terminal"),
+                        contents: scriptMenuContents,
+                        size: CGSize(width: 28, height: 28),
+                        tintAlpha: 0.70,
+                        help: "启动脚本",
+                        hoverShape: .circle
+                    )
+                    .frame(width: 28, height: 28)
+                }
+
+                if !quickLinkMenuContents.isEmpty {
+                    NativeIconMenuButton(
+                        kind: .symbol("link"),
+                        contents: quickLinkMenuContents,
+                        size: CGSize(width: 28, height: 28),
+                        tintAlpha: 0.70,
+                        help: "快速打开链接",
+                        hoverShape: .circle
+                    )
+                    .frame(width: 28, height: 28)
+                }
+            } else {
+                ForEach(RequirementStatusFilter.allCases) { filter in
+                    modernStatusIconButton(filter)
+                }
+            }
+        }
+        .padding(.horizontal, 3)
+        .frame(height: 32)
+        .fixedSize()
+        .animation(.snappy(duration: 0.20), value: isModernTopActionsExpanded)
+    }
+
+    private func modernStatusIconButton(_ filter: RequirementStatusFilter) -> some View {
+        Button {
+            withAnimation(.snappy(duration: 0.16)) {
+                statusFilter = filter
+            }
+        } label: {
+            Image(systemName: filter.compactSystemImage)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(
+                    statusFilter == filter
+                        ? DesignColor.doing
+                        : Color.black.opacity(0.50)
+                )
+                .frame(width: 24, height: 28)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(FloatingIconButtonStyle(diameter: 24))
+        .help(filter.title)
+        .accessibilityLabel(filter.title)
+        .accessibilityAddTraits(statusFilter == filter ? .isSelected : [])
+        .pointingHandCursor()
+    }
+
+    private var modernTopToggleButton: some View {
+        Button {
+            guard hasModernTopActions else {
+                return
+            }
+
+            withAnimation(.snappy(duration: 0.20)) {
+                isModernTopActionsExpanded.toggle()
+            }
+        } label: {
+            Image(systemName: isModernTopActionsExpanded ? "xmark" : "ellipsis")
+                .font(.system(size: 11.5, weight: .semibold))
+                .foregroundStyle(
+                    isModernTopActionsExpanded
+                        ? DesignColor.doing
+                        : Color.black.opacity(0.62)
+                )
+                .frame(width: 32, height: 32)
+                .contentShape(Circle())
+        }
+        .buttonStyle(FloatingIconButtonStyle(diameter: 28))
+        .disabled(!hasModernTopActions)
+        .opacity(hasModernTopActions ? 1 : 0.45)
+        .help(isModernTopActionsExpanded ? "关闭操作" : "更多操作")
+        .pointingHandCursor(hasModernTopActions)
+    }
+
+    private var hasModernTopActions: Bool {
+        !scriptMenuContents.isEmpty || !quickLinkMenuContents.isEmpty
+    }
+
     private var addPanel: some View {
         VStack(alignment: .leading, spacing: 8) {
             PlainTextEditor(text: $bulkInput)
@@ -220,7 +482,12 @@ struct RequirementPanelView: View {
         .padding(.top, 0)
     }
 
-    private func contentList(_ items: [Requirement]) -> some View {
+    private func contentList(
+        _ items: [Requirement],
+        bottomInset: CGFloat,
+        topInset: CGFloat = 4,
+        coveredBottomHeight: CGFloat = 0
+    ) -> some View {
         ScrollView(.vertical, showsIndicators: false) {
             LazyVStack(spacing: 0) {
                 if items.isEmpty {
@@ -254,36 +521,389 @@ struct RequirementPanelView: View {
                 }
             }
             .padding(.horizontal, 8)
-            .padding(.vertical, 4)
+            // 现代模式的顶部控件覆盖在列表之上，按实测高度留出起始空间；
+            // 其余样式继续使用原来的紧凑顶部间距。
+            .padding(.top, topInset)
+            // 底部控件覆盖在列表之上，按其实测高度增加滚动尾部空间，
+            // 让最后一张卡片可以完整滚到控件上方。
+            .padding(.bottom, bottomInset)
             .animation(.snappy(duration: 0.22), value: items.map(\.id))
         }
         .scrollIndicators(.never)
         .background(ScrollIndicatorHider())
+        // 默认模式的底部控件与列表共用弹窗背景；遮掉控件覆盖范围内的卡片，
+        // 避免为了挡住滚动内容而再叠一层颜色不同的材质。
+        .mask {
+            VStack(spacing: 0) {
+                Color.white
+                Color.clear.frame(height: coveredBottomHeight)
+            }
+        }
         // 每个状态 tab 是一棵独立的列表视图：切换 tab 时整体替换，
         // 不与上一个 tab 的列表做 diff 动画，避免卡片“乱跳”。
         .id(statusFilter)
     }
 
-    private func footer(_ items: [Requirement]) -> some View {
-        HStack(spacing: 7) {
-            searchField
-
-            Spacer(minLength: 7)
-
-            dateFilterButton
-
-            settingsMenu
+    @ViewBuilder
+    private var bottomOverlay: some View {
+        switch panelStyle {
+        case .standard:
+            standardBottomOverlay
+        case .minimal:
+            minimalBottomOverlay
+        case .modern:
+            modernBottomOverlay
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 7)
     }
 
-    private var searchField: some View {
+    private var standardBottomOverlay: some View {
+        VStack(spacing: 0) {
+            attachedCalendarPanel
+            standardFooter
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private var minimalBottomOverlay: some View {
+        VStack(spacing: 0) {
+            minimalFloatingCalendarPanel
+            minimalFooter
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    @ViewBuilder
+    private var minimalFloatingCalendarPanel: some View {
+        if showsCalendar {
+            calendarPanel
+                .background(minimalBarBackground(cornerRadius: 16))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .strokeBorder(Color.black.opacity(0.10), lineWidth: 0.6)
+                )
+                .shadow(color: Color.black.opacity(0.10), radius: 8, y: 3)
+                .padding(.horizontal, 10)
+                .transition(.opacity.combined(with: .move(edge: .bottom)))
+        }
+    }
+
+    @ViewBuilder
+    private var attachedCalendarPanel: some View {
+        if showsCalendar {
+            calendarPanel
+                .overlay(alignment: .top) {
+                    GlassDivider()
+                }
+                .transition(.opacity.combined(with: .move(edge: .bottom)))
+        }
+    }
+
+    private var standardFooter: some View {
+        VStack(spacing: 0) {
+            GlassDivider()
+
+            HStack(spacing: 5) {
+                dateFilterButton(
+                    maximumWidth: 68,
+                    controlHeight: 20,
+                    fontSize: 10
+                )
+
+                inlineSearchField(
+                    width: 78,
+                    controlHeight: 20,
+                    fontSize: 10
+                )
+
+                Spacer(minLength: 5)
+
+                settingsMenu(size: CGSize(width: 20, height: 20))
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
+        }
+    }
+
+    private var minimalFooter: some View {
+        VStack(spacing: 6) {
+            if isSearchExpanded {
+                minimalSearchFilterBar
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+            }
+
+            minimalMainBar
+        }
+        .padding(.horizontal, 10)
+        .padding(.top, 6)
+        .padding(.bottom, 8)
+    }
+
+    private var minimalMainBar: some View {
+        HStack(spacing: 2) {
+            HStack(spacing: 0) {
+                ForEach(RequirementStatusFilter.allCases) { filter in
+                    Button {
+                        withAnimation(.snappy(duration: 0.16)) {
+                            statusFilter = filter
+                        }
+                    } label: {
+                        Image(systemName: filter.compactSystemImage)
+                            .font(.system(size: 10.5, weight: .semibold))
+                            .foregroundStyle(
+                                statusFilter == filter
+                                    ? DesignColor.doing
+                                    : Color.black.opacity(0.48)
+                            )
+                            .frame(width: 19, height: 26)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(FloatingIconButtonStyle(diameter: 18))
+                    .help(filter.title)
+                    .accessibilityLabel(filter.title)
+                    .accessibilityAddTraits(statusFilter == filter ? .isSelected : [])
+                    .pointingHandCursor()
+                }
+            }
+
+            compactDivider
+
+            HStack(spacing: 0) {
+                minimalSearchToggle
+
+                Text("\(visibleRequirements.count) 项")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(Color.black.opacity(0.46))
+                    .fixedSize()
+            }
+
+            Spacer(minLength: 0)
+
+            if !scriptMenuContents.isEmpty {
+                NativeIconMenuButton(
+                    kind: .symbol("terminal"),
+                    contents: scriptMenuContents,
+                    size: CGSize(width: 24, height: 24),
+                    tintAlpha: 0.66,
+                    help: "启动脚本",
+                    hoverShape: .circle
+                )
+                .frame(width: 24, height: 24)
+            }
+
+            if !quickLinkMenuContents.isEmpty {
+                NativeIconMenuButton(
+                    kind: .symbol("link"),
+                    contents: quickLinkMenuContents,
+                    size: CGSize(width: 24, height: 24),
+                    tintAlpha: 0.66,
+                    help: "快速打开链接",
+                    hoverShape: .circle
+                )
+                .frame(width: 24, height: 24)
+            }
+
+            settingsMenu(
+                size: CGSize(width: 24, height: 24),
+                hoverShape: .circle
+            )
+        }
+        .padding(.horizontal, 6)
+        .frame(maxWidth: .infinity)
+        .frame(height: 36)
+        .background(minimalBarBackground())
+        .overlay(
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .strokeBorder(Color.black.opacity(0.10), lineWidth: 0.6)
+        )
+        .shadow(color: Color.black.opacity(0.10), radius: 8, y: 3)
+    }
+
+    private var minimalSearchFilterBar: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 10.5, weight: .semibold))
+                .foregroundStyle(Color.black.opacity(0.42))
+                .frame(width: 18)
+
+            inlineSearchField()
+                .frame(maxWidth: .infinity)
+
+            compactDivider
+
+            dateFilterButton(maximumWidth: 72)
+        }
+        .padding(.horizontal, 8)
+        .frame(maxWidth: .infinity)
+        .frame(height: 36)
+        .background(minimalBarBackground())
+        .overlay(
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .strokeBorder(Color.black.opacity(0.10), lineWidth: 0.6)
+        )
+        .shadow(color: Color.black.opacity(0.10), radius: 8, y: 3)
+    }
+
+    private var minimalSearchToggle: some View {
+        Button {
+            toggleSearch()
+        } label: {
+            Image(systemName: isSearchExpanded ? "xmark" : "magnifyingglass")
+                .font(.system(size: 10.5, weight: .semibold))
+                .foregroundStyle(
+                    isSearchExpanded
+                        ? DesignColor.doing
+                        : Color.black.opacity(0.52)
+                )
+                .frame(width: 22, height: 26)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(FloatingIconButtonStyle(diameter: 20))
+        .help(isSearchExpanded ? "关闭搜索与筛选" : "搜索与筛选")
+        .pointingHandCursor()
+    }
+
+    private func minimalBarBackground(cornerRadius: CGFloat = 9) -> some View {
+        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            .fill(.regularMaterial)
+            .overlay(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(Color(nsColor: .controlBackgroundColor).opacity(0.36))
+            )
+    }
+
+    @ViewBuilder
+    private var modernBottomOverlay: some View {
+        if #available(macOS 26.0, *) {
+            nativeModernBottomOverlay
+        } else {
+            fallbackModernBottomOverlay
+        }
+    }
+
+    @available(macOS 26.0, *)
+    private var nativeModernBottomOverlay: some View {
+        GlassEffectContainer(spacing: 4) {
+            VStack(spacing: 8) {
+                if showsCalendar {
+                    calendarPanel
+                        .glassEffect(
+                            .regular.interactive(),
+                            in: RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        )
+                        .glassEffectID("modern-calendar", in: modernGlassNamespace)
+                        .padding(.horizontal, 10)
+                        .transition(.opacity.combined(with: .move(edge: .bottom)))
+                }
+
+                HStack(spacing: 8) {
+                    modernSearchCluster
+                        .glassEffect(.regular.interactive(), in: Capsule())
+                        .glassEffectID("modern-search", in: modernGlassNamespace)
+
+                    Spacer(minLength: 8)
+
+                    settingsMenu(
+                        size: CGSize(width: 34, height: 34),
+                        hoverShape: .circle
+                    )
+                        .glassEffect(.regular.interactive(), in: Circle())
+                        .glassEffectID("modern-more", in: modernGlassNamespace)
+                }
+                .padding(.horizontal, 10)
+            }
+        }
+        .padding(.top, 6)
+        .padding(.bottom, 8)
+        .frame(maxWidth: .infinity)
+    }
+
+    private var fallbackModernBottomOverlay: some View {
+        VStack(spacing: 8) {
+            if showsCalendar {
+                calendarPanel
+                    .background(
+                        .ultraThinMaterial,
+                        in: RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            .strokeBorder(Color.white.opacity(0.52), lineWidth: 0.6)
+                    )
+                    .shadow(color: Color.black.opacity(0.08), radius: 8, y: 3)
+                    .padding(.horizontal, 10)
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+            }
+
+            HStack(spacing: 8) {
+                modernSearchCluster
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .overlay(
+                        Capsule()
+                            .strokeBorder(Color.white.opacity(0.52), lineWidth: 0.6)
+                    )
+                    .shadow(color: Color.black.opacity(0.08), radius: 8, y: 3)
+
+                Spacer(minLength: 8)
+
+                settingsMenu(
+                    size: CGSize(width: 34, height: 34),
+                    hoverShape: .circle
+                )
+                    .background(.ultraThinMaterial, in: Circle())
+                    .overlay(
+                        Circle()
+                            .strokeBorder(Color.white.opacity(0.52), lineWidth: 0.6)
+                    )
+                    .shadow(color: Color.black.opacity(0.08), radius: 8, y: 3)
+            }
+            .padding(.horizontal, 10)
+        }
+        .padding(.top, 6)
+        .padding(.bottom, 8)
+        .frame(maxWidth: .infinity)
+    }
+
+    private var modernSearchCluster: some View {
+        HStack(spacing: 3) {
+            Button {
+                toggleSearch()
+            } label: {
+                Image(systemName: isSearchExpanded ? "xmark" : "magnifyingglass")
+                    .font(.system(size: 11.5, weight: .semibold))
+                    .foregroundStyle(isSearchExpanded ? DesignColor.doing : Color.black.opacity(0.62))
+                    .frame(width: 26, height: 30)
+                    .contentShape(Circle())
+            }
+            .buttonStyle(FloatingIconButtonStyle(diameter: 24))
+            .help(isSearchExpanded ? "关闭搜索" : "搜索")
+            .pointingHandCursor()
+
+            if isSearchExpanded {
+                compactDivider
+
+                inlineSearchField(width: 78)
+
+                compactDivider
+
+                dateFilterButton(maximumWidth: 62)
+            }
+        }
+        .padding(.horizontal, isSearchExpanded ? 4 : 2)
+        .frame(height: 34)
+        .animation(.snappy(duration: 0.20), value: isSearchExpanded)
+    }
+
+    private func inlineSearchField(
+        width: CGFloat? = nil,
+        controlHeight: CGFloat = 24,
+        fontSize: CGFloat = 10.5
+    ) -> some View {
         HStack(spacing: 4) {
             TextField("搜索", text: $searchText)
                 .textFieldStyle(.plain)
-                .font(.system(size: 10.5))
+                .font(.system(size: fontSize))
                 .foregroundStyle(DesignColor.textPrimary)
+                .focused($isSearchFocused)
 
             if !searchText.isEmpty {
                 Button {
@@ -298,42 +918,48 @@ struct RequirementPanelView: View {
                 .pointingHandCursor()
             }
         }
-        .padding(.horizontal, 7)
-        .frame(width: 86, height: 22)
-        .background(
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(Color.black.opacity(0.04))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .strokeBorder(Color.black.opacity(0.11), lineWidth: 0.5)
-        )
+        .frame(minWidth: width, maxWidth: width ?? .infinity)
+        .frame(height: controlHeight)
+        .contentShape(Rectangle())
     }
 
-    private var dateFilterButton: some View {
+    private func dateFilterButton(
+        maximumWidth: CGFloat,
+        controlHeight: CGFloat = 24,
+        fontSize: CGFloat = 10.5
+    ) -> some View {
         Button {
             withAnimation(.snappy(duration: 0.14)) {
                 showsCalendar.toggle()
                 displayMonth = selectedDay ?? Date()
             }
         } label: {
-            HStack(spacing: 5) {
-                Image(systemName: "calendar")
-                    .font(.system(size: 10, weight: .medium))
+            HStack(spacing: 3) {
                 Text(dateFilterTitle)
                     .lineLimit(1)
                 Image(systemName: showsCalendar ? "chevron.up" : "chevron.down")
-                    .font(.system(size: 8, weight: .bold))
+                    .font(.system(size: 7.5, weight: .bold))
             }
-            .padding(.horizontal, 8)
-            .frame(minWidth: 76)
-            .frame(height: 22)
-            .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .font(.system(size: fontSize, weight: .medium))
+            .foregroundStyle(
+                showsCalendar || hasActiveDateFilter
+                    ? DesignColor.doing
+                    : Color.black.opacity(0.58)
+            )
+            .padding(.horizontal, 3)
+            .frame(minWidth: 42, maxWidth: maximumWidth)
+            .frame(height: controlHeight)
+            .contentShape(Rectangle())
         }
-        .buttonStyle(FooterChipButtonStyle(isSelected: showsCalendar || hasActiveDateFilter, isHovered: isDateFilterHovering))
-        .fixedSize()
+        .buttonStyle(PlainFooterControlButtonStyle(isHovered: isDateFilterHovering))
         .onHover { isDateFilterHovering = $0 }
         .pointingHandCursor()
+    }
+
+    private var compactDivider: some View {
+        Rectangle()
+            .fill(Color.black.opacity(0.10))
+            .frame(width: 0.5, height: 15)
     }
 
     private var calendarPanel: some View {
@@ -418,15 +1044,19 @@ struct RequirementPanelView: View {
         .padding(.bottom, 9)
     }
 
-    private var settingsMenu: some View {
+    private func settingsMenu(
+        size: CGSize,
+        hoverShape: NativeIconMenuHoverShape = .roundedRectangle(cornerRadius: 6)
+    ) -> some View {
         NativeIconMenuButton(
             kind: .settings,
             contents: settingsMenuContents,
-            size: CGSize(width: 24, height: 22),
+            size: size,
             tintAlpha: 0.84,
-            help: "设置"
+            help: "设置",
+            hoverShape: hoverShape
         )
-        .frame(width: 24, height: 22)
+        .frame(width: size.width, height: size.height)
     }
 
     private var settingsMenuContents: [NativeMenuContent] {
@@ -498,6 +1128,30 @@ struct RequirementPanelView: View {
         withAnimation(.snappy(duration: 0.18)) {
             isAdding = false
         }
+    }
+
+    private func expandSearch() {
+        withAnimation(.snappy(duration: 0.20)) {
+            isSearchExpanded = true
+        }
+
+        DispatchQueue.main.async {
+            isSearchFocused = true
+        }
+    }
+
+    private func toggleSearch() {
+        guard isSearchExpanded else {
+            expandSearch()
+            return
+        }
+
+        withAnimation(.snappy(duration: 0.20)) {
+            searchText = ""
+            isSearchExpanded = false
+            showsCalendar = false
+        }
+        isSearchFocused = false
     }
 
     private func cancelAdding() {
@@ -682,6 +1336,22 @@ struct RequirementPanelView: View {
 private struct CalendarDay: Identifiable {
     let id: String
     let date: Date?
+}
+
+private struct BottomOverlayHeightPreferenceKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
+private struct ModernTopOverlayHeightPreferenceKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
 }
 
 private struct ScrollIndicatorHider: NSViewRepresentable {
@@ -906,6 +1576,53 @@ private struct PlainTextEditor: NSViewRepresentable {
     }
 }
 
+private struct FloatingIconButtonStyle: ButtonStyle {
+    let diameter: CGFloat
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .modifier(
+                FloatingIconFeedbackModifier(
+                    diameter: diameter,
+                    isPressed: configuration.isPressed
+                )
+            )
+    }
+}
+
+private struct FloatingIconFeedbackModifier: ViewModifier {
+    @Environment(\.isEnabled) private var isEnabled
+    @State private var isHovering = false
+
+    let diameter: CGFloat
+    let isPressed: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .background {
+                Circle()
+                    .fill(Color.black.opacity(feedbackOpacity))
+                    .frame(width: diameter, height: diameter)
+                    .allowsHitTesting(false)
+            }
+            .onHover { isHovering = isEnabled && $0 }
+            .animation(.easeOut(duration: 0.12), value: isHovering)
+            .animation(.easeOut(duration: 0.08), value: isPressed)
+    }
+
+    private var feedbackOpacity: Double {
+        guard isEnabled else {
+            return 0
+        }
+
+        if isPressed {
+            return 0.10
+        }
+
+        return isHovering ? 0.06 : 0
+    }
+}
+
 private struct HeaderSegmentButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
 
@@ -963,32 +1680,12 @@ private struct HeaderAddButtonStyle: ButtonStyle {
     }
 }
 
-private struct FooterChipButtonStyle: ButtonStyle {
-    var isSelected = false
+private struct PlainFooterControlButtonStyle: ButtonStyle {
     var isHovered = false
 
     func makeBody(configuration: Configuration) -> some View {
-        let backgroundOpacity = if isSelected {
-            0.07
-        } else if configuration.isPressed {
-            0.10
-        } else if isHovered {
-            0.07
-        } else {
-            0.04
-        }
-
         configuration.label
-            .font(.system(size: 10.5, weight: .medium))
-            .foregroundStyle(isSelected ? DesignColor.doing : Color.black.opacity(0.65))
-            .background(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(isSelected ? DesignColor.doing.opacity(backgroundOpacity) : Color.black.opacity(backgroundOpacity))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .strokeBorder(isSelected ? DesignColor.doing.opacity(0.25) : Color.black.opacity(0.11), lineWidth: 0.5)
-            )
+            .opacity(configuration.isPressed ? 0.54 : (isHovered ? 0.78 : 1))
     }
 }
 
@@ -1050,6 +1747,23 @@ private struct StatusSegmentBar: View {
             RoundedRectangle(cornerRadius: 6, style: .continuous)
                 .fill(Color.black.opacity(0.05))
         )
+    }
+}
+
+private extension RequirementStatusFilter {
+    var compactSystemImage: String {
+        switch self {
+        case .incomplete:
+            "circle"
+        case .active:
+            "play.fill"
+        case .pending:
+            "clock.fill"
+        case .paused:
+            "exclamationmark.triangle.fill"
+        case .completed:
+            "checkmark.circle.fill"
+        }
     }
 }
 

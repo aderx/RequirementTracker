@@ -137,25 +137,50 @@ public struct RequirementPluginSettings: Codable, Equatable, Sendable {
     }
 }
 
+public enum RequirementPanelStyle: String, CaseIterable, Codable, Identifiable, Sendable {
+    case standard = "default"
+    case minimal
+    case modern
+
+    public var id: String { rawValue }
+
+    public var title: String {
+        switch self {
+        case .standard:
+            "默认"
+        case .minimal:
+            "极简"
+        case .modern:
+            "现代"
+        }
+    }
+}
+
 public struct RequirementBaseSettings: Codable, Equatable, Sendable {
+    public var panelStyle: RequirementPanelStyle
     public var panelFilters: RequirementPanelFilterConfiguration
     public var tabSort: RequirementTabSortConfiguration
 
     public init(
+        panelStyle: RequirementPanelStyle = .standard,
         panelFilters: RequirementPanelFilterConfiguration = RequirementPanelFilterConfiguration(),
         tabSort: RequirementTabSortConfiguration = RequirementTabSortConfiguration()
     ) {
+        self.panelStyle = panelStyle
         self.panelFilters = panelFilters
         self.tabSort = tabSort
     }
 
     private enum CodingKeys: String, CodingKey {
+        case panelStyle
         case panelFilters
         case tabSort
     }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        panelStyle = try container.decodeIfPresent(RequirementPanelStyle.self, forKey: .panelStyle)
+            ?? .standard
         panelFilters = try container.decodeIfPresent(RequirementPanelFilterConfiguration.self, forKey: .panelFilters)
             ?? RequirementPanelFilterConfiguration()
         tabSort = try container.decodeIfPresent(RequirementTabSortConfiguration.self, forKey: .tabSort)
@@ -164,6 +189,7 @@ public struct RequirementBaseSettings: Codable, Equatable, Sendable {
 
     public var normalized: RequirementBaseSettings {
         RequirementBaseSettings(
+            panelStyle: panelStyle,
             panelFilters: panelFilters.normalized,
             tabSort: tabSort.normalized
         )

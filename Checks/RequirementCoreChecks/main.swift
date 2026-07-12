@@ -552,6 +552,10 @@ expect(
     toolConfiguration.baseSettings.panelFilters.selection(for: .completed).dateFilter == .all,
     "Tool configuration should default each status tab to all dates"
 )
+expect(
+    toolConfiguration.baseSettings.panelStyle == .standard,
+    "Tool configuration should default to the standard panel style"
+)
 
 var panelFilterConfiguration = RequirementPanelFilterConfiguration()
 panelFilterConfiguration.setSelection(
@@ -572,7 +576,8 @@ let legacySettingsJSON = """
 """.data(using: .utf8)!
 let legacyConfiguration = try JSONDecoder().decode(RequirementToolConfiguration.self, from: legacySettingsJSON)
 expect(
-    legacyConfiguration.baseSettings.panelFilters.selection(for: .incomplete).dateFilter == .all,
+    legacyConfiguration.baseSettings.panelStyle == .standard
+        && legacyConfiguration.baseSettings.panelFilters.selection(for: .incomplete).dateFilter == .all,
     "Tool configuration should decode legacy settings without base settings"
 )
 let partialBaseSettingsJSON = """
@@ -587,8 +592,24 @@ let partialBaseSettingsConfiguration = try JSONDecoder().decode(
     from: partialBaseSettingsJSON
 )
 expect(
-    partialBaseSettingsConfiguration.baseSettings.panelFilters.selection(for: .active).dateFilter == .all,
+    partialBaseSettingsConfiguration.baseSettings.panelStyle == .standard
+        && partialBaseSettingsConfiguration.baseSettings.panelFilters.selection(for: .active).dateFilter == .all,
     "Tool configuration should decode base settings without panel filters"
+)
+let modernPanelSettingsJSON = """
+{
+  "baseSettings": {
+    "panelStyle": "modern"
+  }
+}
+""".data(using: .utf8)!
+let modernPanelConfiguration = try JSONDecoder().decode(
+    RequirementToolConfiguration.self,
+    from: modernPanelSettingsJSON
+)
+expect(
+    modernPanelConfiguration.baseSettings.panelStyle == .modern,
+    "Tool configuration should persist an explicitly selected panel style"
 )
 expect(
     RequirementPluginSettings().normalized.validMRHosts == ["gitlab.zstack.io"],

@@ -67,12 +67,18 @@ enum NativeIconMenuKind {
     case symbol(String)
 }
 
+enum NativeIconMenuHoverShape {
+    case roundedRectangle(cornerRadius: CGFloat)
+    case circle
+}
+
 struct NativeIconMenuButton: NSViewRepresentable {
     let kind: NativeIconMenuKind
     let contents: [NativeMenuContent]
     var size = CGSize(width: 22, height: 20)
     var tintAlpha: CGFloat = 0.45
     var help: String?
+    var hoverShape: NativeIconMenuHoverShape = .roundedRectangle(cornerRadius: 6)
 
     func makeCoordinator() -> Coordinator {
         Coordinator(contents: contents)
@@ -99,6 +105,7 @@ struct NativeIconMenuButton: NSViewRepresentable {
         button.image = Self.image(for: kind)
         button.contentTintColor = NSColor.labelColor.withAlphaComponent(tintAlpha)
         button.toolTip = help
+        button.hoverShape = hoverShape
         button.onPress = { [coordinator = context.coordinator] sender in
             coordinator.showMenu(sender)
         }
@@ -352,6 +359,7 @@ private extension NativeMenuContent {
 final class IconMenuButton: NSButton {
     var buttonSize = CGSize(width: 22, height: 22)
     var onPress: ((IconMenuButton) -> Void)?
+    var hoverShape: NativeIconMenuHoverShape = .roundedRectangle(cornerRadius: 6)
     private var isHovering = false
     private var trackingAreaRef: NSTrackingArea?
 
@@ -414,7 +422,17 @@ final class IconMenuButton: NSButton {
                 height: buttonSize.height
             )
             NSColor.black.withAlphaComponent(isHighlighted ? 0.10 : 0.06).setFill()
-            NSBezierPath(roundedRect: backgroundRect, xRadius: 6, yRadius: 6).fill()
+
+            switch hoverShape {
+            case let .roundedRectangle(cornerRadius):
+                NSBezierPath(
+                    roundedRect: backgroundRect,
+                    xRadius: cornerRadius,
+                    yRadius: cornerRadius
+                ).fill()
+            case .circle:
+                NSBezierPath(ovalIn: backgroundRect).fill()
+            }
         }
 
         super.draw(dirtyRect)
