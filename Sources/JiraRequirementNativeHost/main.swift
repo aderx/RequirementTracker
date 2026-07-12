@@ -56,6 +56,7 @@ private struct RequirementJSONWriter {
         return [
             "ok": true,
             "host": hostName,
+            "protocolVersion": RequirementNativeHostProtocol.currentVersion,
             "settings": [
                 "jiraBaseURL": settings.jiraBaseURL,
                 "mrHosts": settings.validMRHosts,
@@ -72,7 +73,8 @@ private struct RequirementJSONWriter {
             .deletingLastPathComponent()
             .appendingPathComponent("plugin-heartbeat.json")
         let payload: [String: Any] = [
-            "lastSeenAt": ISO8601DateFormatter().string(from: Date())
+            "lastSeenAt": ISO8601DateFormatter().string(from: Date()),
+            "protocolVersion": RequirementNativeHostProtocol.currentVersion
         ]
 
         guard let data = try? JSONSerialization.data(withJSONObject: payload) else {
@@ -102,14 +104,15 @@ private struct RequirementJSONWriter {
             "dataFilePath": dataFileURL.path
         ]
 
-        if let mrURL = record.flatMap({ stringValue($0["mrURL"]) }), !mrURL.isEmpty {
-            response["mrURL"] = RequirementParser.normalizedURL(mrURL)
-            response["hasMR"] = true
-        } else {
-            response["hasMR"] = false
-        }
-
         if let record {
+            let mergeRequests = mergeRequests(in: record)
+            if let latest = mergeRequests.latest {
+                response["mrURL"] = latest
+            }
+            if !mergeRequests.history.isEmpty {
+                response["mrHistory"] = mergeRequests.history
+            }
+            response["hasMR"] = !mergeRequests.allURLs.isEmpty
             response["status"] = currentStatus(of: record).rawValue
             response["stage"] = stringValue(record["stage"]) ?? "pending"
             response["isDone"] = boolValue(record["isDone"]) ?? false
@@ -118,6 +121,8 @@ private struct RequirementJSONWriter {
             copyIfPresent("issueType", from: record, to: &response)
             copyIfPresent("priority", from: record, to: &response)
             copyIfPresent("targetVersion", from: record, to: &response)
+        } else {
+            response["hasMR"] = false
         }
 
         return response
@@ -144,17 +149,20 @@ private struct RequirementJSONWriter {
             }
 
             let recordJiraURL = RequirementParser.normalizedURL(stringValue(record["jiraURL"]) ?? "")
-            let recordMRURL = RequirementParser.normalizedURL(stringValue(record["mrURL"]) ?? "")
-            return recordJiraURL == normalized || recordMRURL == normalized
+            return recordJiraURL == normalized || mergeRequests(in: record).allURLs.contains(normalized)
         }
 
-        return [
+        var response: [String: Any] = [
             "ok": true,
             "host": hostName,
             "exists": record != nil,
             "issueKey": issueKey,
             "dataFilePath": dataFileURL.path
         ]
+        if let record {
+            response["status"] = currentStatus(of: record).rawValue
+        }
+        return response
     }
 
     func upsertJiraRequirement(payload: [String: Any]) throws -> [String: Any] {
@@ -165,7 +173,7 @@ private struct RequirementJSONWriter {
         let capturedAt = stringValue(payload["capturedAt"]) ?? now
         let normalizedJiraURL = jiraURL(from: payload, issueKey: issueKey)
         let startDevelopment = boolValue(payload["startDevelopment"]) ?? false
-        let targetStatus = targetStatus(from: payload, startDevelopment: startDevelopment)
+        let targetStatus = try targetStatusForJira(from: payload, startDevelopment: startDevelopment)
 
         var records = try loadRecords()
         let index = records.firstIndex { matchesIssueKey($0, issueKey: issueKey) }
@@ -237,48 +245,38 @@ private struct RequirementJSONWriter {
             throw HostError.invalidRequest("缺少 mrURL")
         }
 
-        let replaceExisting = boolValue(payload["replaceExisting"]) ?? false
         let formatter = ISO8601DateFormatter()
         let nowDate = Date()
         let now = formatter.string(from: nowDate)
-        let targetStatus = targetStatus(forMRState: stringValue(payload["mrState"]))
+        let targetStatus = try targetStatusForMR(from: payload)
         var records = try loadRecords()
         let index = records.firstIndex { matchesIssueKey($0, issueKey: issueKey) }
 
         let action: String
         var statusUpdated = false
         if let index {
-            let existingMRURL = RequirementParser.normalizedURL(stringValue(records[index]["mrURL"]) ?? "")
-            if !existingMRURL.isEmpty, existingMRURL != normalizedMRURL, !replaceExisting {
-                return [
-                    "ok": true,
-                    "host": hostName,
-                    "action": "needsReplacement",
-                    "issueKey": issueKey,
-                    "jiraURL": normalizedJiraURL,
-                    "mrURL": existingMRURL,
-                    "newMRURL": normalizedMRURL,
-                    "dataFilePath": dataFileURL.path
-                ]
-            }
-
+            var mergeRequests = mergeRequests(in: records[index])
+            let hadMergeRequest = !mergeRequests.allURLs.isEmpty
+            let didRecord = mergeRequests.record(normalizedMRURL)
             records[index]["jiraKey"] = issueKey
             records[index]["jiraURL"] = normalizedJiraURL
-            records[index]["mrURL"] = normalizedMRURL
+            apply(mergeRequests: mergeRequests, to: &records[index])
             records[index]["updatedAt"] = now
             if let targetStatus {
                 statusUpdated = applyTargetStatus(targetStatus, to: &records[index], startDate: nowDate, formatter: formatter)
             }
-            if existingMRURL.isEmpty {
+            if didRecord && !hadMergeRequest {
                 action = "attached"
-            } else if existingMRURL == normalizedMRURL {
-                action = "synced"
+            } else if didRecord {
+                action = "appended"
             } else {
-                action = "replaced"
+                action = "synced"
             }
         } else {
             var record = baseRecord(issueKey: issueKey, jiraURL: normalizedJiraURL, now: now)
-            record["mrURL"] = normalizedMRURL
+            var mergeRequests = RequirementMergeRequestCollection(latest: nil)
+            mergeRequests.record(normalizedMRURL)
+            apply(mergeRequests: mergeRequests, to: &record)
             if let targetStatus {
                 statusUpdated = applyTargetStatus(targetStatus, to: &record, startDate: nowDate, formatter: formatter)
             }
@@ -429,24 +427,62 @@ private struct RequirementJSONWriter {
         response[key] = value
     }
 
-    private func targetStatus(from payload: [String: Any], startDevelopment: Bool) -> RequirementHostStatus? {
-        if let value = stringValue(payload["targetStatus"]),
-           let status = RequirementHostStatus(rawValue: value),
-           status.isProgressStatus {
+    private func targetStatusForJira(
+        from payload: [String: Any],
+        startDevelopment: Bool
+    ) throws -> RequirementHostStatus? {
+        if let value = stringValue(payload["targetStatus"]), !value.isEmpty {
+            guard let status = RequirementHostStatus(rawValue: value) else {
+                throw HostError.invalidRequest("未知需求状态：\(value)")
+            }
+            guard status == .active || status == .done else {
+                throw HostError.invalidRequest("Jira 页面不允许直接转为 \(value)")
+            }
             return status
         }
 
         return startDevelopment ? .active : nil
     }
 
-    private func targetStatus(forMRState state: String?) -> RequirementHostStatus? {
-        switch state?.lowercased() {
-        case "open":
-            return .tested
-        case "merged":
-            return .merged
-        default:
+    private func targetStatusForMR(from payload: [String: Any]) throws -> RequirementHostStatus? {
+        guard let value = stringValue(payload["targetStatus"]), !value.isEmpty else {
             return nil
+        }
+
+        let state = stringValue(payload["mrState"])?.lowercased()
+        guard let status = RequirementHostStatus(rawValue: value) else {
+            throw HostError.invalidRequest("未知需求状态：\(value)")
+        }
+        guard
+            (state == "open" && status == .tested)
+                || (state == "merged" && status == .merged)
+        else {
+            throw HostError.invalidRequest("MR 状态 \(state ?? "unknown") 不允许转为 \(value)")
+        }
+        return status
+    }
+
+    private func mergeRequests(in record: [String: Any]) -> RequirementMergeRequestCollection {
+        RequirementMergeRequestCollection(
+            latest: stringValue(record["mrURL"]),
+            history: stringArray(record["mrHistory"])
+        )
+    }
+
+    private func apply(
+        mergeRequests: RequirementMergeRequestCollection,
+        to record: inout [String: Any]
+    ) {
+        if let latest = mergeRequests.latest {
+            record["mrURL"] = latest
+        } else {
+            record.removeValue(forKey: "mrURL")
+        }
+
+        if mergeRequests.history.isEmpty {
+            record.removeValue(forKey: "mrHistory")
+        } else {
+            record["mrHistory"] = mergeRequests.history
         }
     }
 
@@ -767,6 +803,14 @@ private func stringValue(_ value: Any?) -> String? {
 
     return String(describing: value)
         .trimmingCharacters(in: .whitespacesAndNewlines)
+}
+
+private func stringArray(_ value: Any?) -> [String] {
+    guard let values = value as? [Any] else {
+        return []
+    }
+
+    return values.compactMap(stringValue)
 }
 
 private func boolValue(_ value: Any?) -> Bool? {

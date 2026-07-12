@@ -39,6 +39,7 @@ cat > "$MANIFEST_PATH" <<JSON
   "name": "$HOST_NAME",
   "description": "RequirementTracker Jira capture native host",
   "path": "$HOST_PATH",
+  "protocol_version": 2,
   "type": "stdio",
   "allowed_origins": [
     "chrome-extension://$EXTENSION_ID/"

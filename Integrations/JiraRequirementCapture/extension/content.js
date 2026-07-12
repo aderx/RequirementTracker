@@ -47,14 +47,17 @@
     }
 
     if (isMRPage(pageURL, mrHosts)) {
-      const jiraURL = findLinkedJiraURL(jiraBaseURL);
+      const linkedJiraURL = findLinkedJiraURL(jiraBaseURL);
+      const titleIssueKey = linkedJiraURL ? "" : findTitleJiraKey();
+      const issueKey = linkedJiraURL ? jiraKeyFromText(linkedJiraURL) : titleIssueKey;
+      const jiraURL = linkedJiraURL || (issueKey ? jiraURLForKey(jiraBaseURL, issueKey) : "");
       return {
         pageType: "mr",
         payload: compactPayload({
           mrURL: canonicalMRURL(pageURL),
           mrState: extractMRState(),
           jiraURL,
-          issueKey: jiraURL ? jiraKeyFromText(jiraURL) : "",
+          issueKey,
           capturedAt: new Date().toISOString()
         })
       };
@@ -142,6 +145,34 @@
     }
 
     return "";
+  }
+
+  function findTitleJiraKey() {
+    const selectors = [
+      "[data-testid='issuable-title']",
+      "[data-testid*='issuable-title']",
+      ".issuable-title",
+      "h1"
+    ];
+
+    for (const selector of selectors) {
+      const title = textFromSelector(selector);
+      const key = hashPrefixedJiraKey(title);
+      if (key) {
+        return key;
+      }
+    }
+
+    return hashPrefixedJiraKey(document.title);
+  }
+
+  function hashPrefixedJiraKey(value) {
+    return String(value || "").match(/#\s*([A-Z][A-Z0-9]+-\d+)\b/i)?.[1]?.toUpperCase() || "";
+  }
+
+  function jiraURLForKey(jiraBaseURL, issueKey) {
+    const baseURL = normalizedURL(jiraBaseURL);
+    return (baseURL.endsWith("/") ? baseURL : baseURL + "/") + issueKey;
   }
 
   function extractMRState() {

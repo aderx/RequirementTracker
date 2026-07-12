@@ -462,9 +462,7 @@ struct RequirementRowView: View {
             text: $draftMR,
             canSave: canSave
         ) {
-            store.update(id: requirement.id) { requirement in
-                requirement.mrURL = draftMR
-            }
+            store.recordMergeRequestURL(id: requirement.id, url: draftMR)
 
             if advancesAfterMRSave {
                 store.advance(id: requirement.id)

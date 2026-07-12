@@ -51,6 +51,63 @@ public enum RequirementDateFilter: String, CaseIterable, Codable, Identifiable, 
     }
 }
 
+public enum RequirementOverviewSortMode: String, CaseIterable, Codable, Identifiable, Sendable {
+    case createdAt
+    case updatedAt
+
+    public var id: String { rawValue }
+
+    public var title: String {
+        switch self {
+        case .createdAt:
+            "按创建时间排序"
+        case .updatedAt:
+            "按最后更新时间排序"
+        }
+    }
+}
+
+public struct RequirementOverviewMetadataFilter: Equatable, Sendable {
+    public var issueType: String?
+    public var priority: String?
+    public var targetVersion: String?
+
+    public init(
+        issueType: String? = nil,
+        priority: String? = nil,
+        targetVersion: String? = nil
+    ) {
+        self.issueType = Self.normalized(issueType)
+        self.priority = Self.normalized(priority)
+        self.targetVersion = Self.normalized(targetVersion)
+    }
+
+    public var isEmpty: Bool {
+        issueType == nil && priority == nil && targetVersion == nil
+    }
+
+    private static func normalized(_ value: String?) -> String? {
+        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : trimmed
+    }
+}
+
+public struct RequirementOverviewMetadataOptions: Equatable, Sendable {
+    public var issueTypes: [String]
+    public var priorities: [String]
+    public var targetVersions: [String]
+
+    public init(
+        issueTypes: [String] = [],
+        priorities: [String] = [],
+        targetVersions: [String] = []
+    ) {
+        self.issueTypes = issueTypes
+        self.priorities = priorities
+        self.targetVersions = targetVersions
+    }
+}
+
 public struct RequirementDateRange: Equatable, Sendable {
     public var start: Date?
     public var end: Date?
@@ -219,6 +276,63 @@ public enum RequirementQuery {
         requirements.sorted(by: sortComparator)
     }
 
+    public static func sortedForOverview(
+        _ requirements: [Requirement],
+        by mode: RequirementOverviewSortMode
+    ) -> [Requirement] {
+        requirements.sorted { lhs, rhs in
+            let lhsDate = mode == .createdAt ? lhs.createdAt : lhs.updatedAt
+            let rhsDate = mode == .createdAt ? rhs.createdAt : rhs.updatedAt
+            if lhsDate != rhsDate {
+                return lhsDate > rhsDate
+            }
+
+            let lhsFallbackDate = mode == .createdAt ? lhs.activityDate : lhs.createdAt
+            let rhsFallbackDate = mode == .createdAt ? rhs.activityDate : rhs.createdAt
+            if lhsFallbackDate != rhsFallbackDate {
+                return lhsFallbackDate > rhsFallbackDate
+            }
+
+            return lhs.jiraKey < rhs.jiraKey
+        }
+    }
+
+    public static func filteredForOverview(
+        _ requirements: [Requirement],
+        status: RequirementTimelineStatus?
+    ) -> [Requirement] {
+        guard let status else {
+            return requirements
+        }
+
+        return requirements.filter { $0.currentTimelineStatus == status }
+    }
+
+    public static func filteredForOverview(
+        _ requirements: [Requirement],
+        metadata: RequirementOverviewMetadataFilter
+    ) -> [Requirement] {
+        guard !metadata.isEmpty else {
+            return requirements
+        }
+
+        return requirements.filter { requirement in
+            matchesOverviewMetadata(requirement.issueType, selection: metadata.issueType)
+                && matchesOverviewMetadata(requirement.priority, selection: metadata.priority)
+                && matchesOverviewMetadata(requirement.targetVersion, selection: metadata.targetVersion)
+        }
+    }
+
+    public static func overviewMetadataOptions(
+        for requirements: [Requirement]
+    ) -> RequirementOverviewMetadataOptions {
+        RequirementOverviewMetadataOptions(
+            issueTypes: overviewMetadataValues(in: requirements, keyPath: \.issueType),
+            priorities: overviewMetadataValues(in: requirements, keyPath: \.priority),
+            targetVersions: overviewMetadataValues(in: requirements, keyPath: \.targetVersion)
+        )
+    }
+
     public static func sorted(
         _ requirements: [Requirement],
         dateFilter: RequirementDateFilter,
@@ -313,6 +427,29 @@ public enum RequirementQuery {
             isExceptional(requirement)
         case .completed:
             requirement.isMerged
+        }
+    }
+
+    private static func matchesOverviewMetadata(_ value: String?, selection: String?) -> Bool {
+        guard let selection else {
+            return true
+        }
+
+        return value?.trimmingCharacters(in: .whitespacesAndNewlines) == selection
+    }
+
+    private static func overviewMetadataValues(
+        in requirements: [Requirement],
+        keyPath: KeyPath<Requirement, String?>
+    ) -> [String] {
+        let values = Set(requirements.compactMap { requirement -> String? in
+            let value = requirement[keyPath: keyPath]?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return value.isEmpty ? nil : value
+        })
+
+        return values.sorted { lhs, rhs in
+            lhs.localizedStandardCompare(rhs) == .orderedAscending
         }
     }
 

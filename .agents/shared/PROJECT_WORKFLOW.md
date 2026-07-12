@@ -32,6 +32,7 @@ This file is the single project-level workflow source for Codex, Claude Code, an
 
 ## Development Loop
 
+- Once the requested behavior and required context are clear, proceed directly to implementation and start the development build for user testing. Do not create separate design/specification documents, add a design-review gate, or repeatedly ask for confirmation unless a material ambiguity remains or the user explicitly requests that workflow.
 - Implement the smallest effective change for the requested behavior.
 - Do not broaden the scope without explaining why the broader change is required.
 - After code changes, start the development build for user verification.

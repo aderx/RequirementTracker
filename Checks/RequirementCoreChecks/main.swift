@@ -85,6 +85,7 @@ let titledRequirementJSON = """
   "id": "00000000-0000-0000-0000-000000000001",
   "jiraKey": "ZSTAC-70121",
   "jiraURL": "http://jira.zstack.io/browse/ZSTAC-70121",
+  "mrURL": "http://gitlab.zstack.io/demo/-/merge_requests/1",
   "title": "修复浏览器插件写入",
   "note": "",
   "pauseReason": "",
@@ -132,6 +133,73 @@ expect(
     encodedTitledRequirement.contains("\"title\":\"修复浏览器插件写入\""),
     "Requirement should encode Jira title back to JSON"
 )
+expect(
+    decodedTitledRequirement.mrHistory.isEmpty
+        && decodedTitledRequirement.allMRURLs == [
+            "http://gitlab.zstack.io/demo/-/merge_requests/1"
+        ],
+    "Legacy single-MR records should decode with no history"
+)
+expect(
+    !encodedTitledRequirement.contains("\"mrHistory\""),
+    "Single-MR records should omit empty MR history"
+)
+
+var multiMRRequirement = decodedTitledRequirement
+multiMRRequirement.recordMergeRequestURL(
+    "http://gitlab.zstack.io/demo/-/merge_requests/2?diff_id=1#note_2"
+)
+expect(
+    multiMRRequirement.mrURL == "http://gitlab.zstack.io/demo/-/merge_requests/2"
+        && multiMRRequirement.mrHistory == [
+            "http://gitlab.zstack.io/demo/-/merge_requests/1"
+        ],
+    "A new MR should become latest and move the old latest into history"
+)
+
+multiMRRequirement.recordMergeRequestURL(
+    "http://gitlab.zstack.io/demo/-/merge_requests/1"
+)
+expect(
+    multiMRRequirement.allMRURLs == [
+        "http://gitlab.zstack.io/demo/-/merge_requests/2",
+        "http://gitlab.zstack.io/demo/-/merge_requests/1"
+    ],
+    "Recording an existing historical MR should not duplicate or reorder it"
+)
+
+multiMRRequirement.recordMergeRequestURL(
+    "http://gitlab.zstack.io/demo/-/merge_requests/3"
+)
+expect(
+    multiMRRequirement.allMRURLs == [
+        "http://gitlab.zstack.io/demo/-/merge_requests/3",
+        "http://gitlab.zstack.io/demo/-/merge_requests/2",
+        "http://gitlab.zstack.io/demo/-/merge_requests/1"
+    ],
+    "MR URLs should remain newest-first"
+)
+
+let encodedMultiMRRequirement = String(
+    data: try requirementEncoder.encode(multiMRRequirement),
+    encoding: .utf8
+) ?? ""
+expect(
+    encodedMultiMRRequirement.contains("\"mrHistory\":[")
+        && encodedMultiMRRequirement.contains("merge_requests\\/2")
+        && encodedMultiMRRequirement.contains("merge_requests\\/1"),
+    "Multiple-MR records should encode historical URLs"
+)
+
+multiMRRequirement.mrURL = nil
+multiMRRequirement.normalizeMergeRequestURLs()
+expect(
+    multiMRRequirement.mrURL == "http://gitlab.zstack.io/demo/-/merge_requests/2"
+        && multiMRRequirement.mrHistory == [
+            "http://gitlab.zstack.io/demo/-/merge_requests/1"
+        ],
+    "Normalization should promote the newest history item when latest is empty"
+)
 
 expect(
     RequirementParser.mrIdentifier(
@@ -166,6 +234,14 @@ expect(
     RequirementExternalUpdateNotification.name.rawValue == "com.aderx.requirementtracker.requirementsDidChange",
     "External writes should share a stable distributed notification name"
 )
+expect(
+    RequirementNativeHostProtocol.currentVersion == 2
+        && !RequirementNativeHostProtocol.isCompatible(nil)
+        && !RequirementNativeHostProtocol.isCompatible(1)
+        && RequirementNativeHostProtocol.isCompatible(2)
+        && RequirementNativeHostProtocol.isCompatible(3),
+    "Native Host protocol compatibility should reject missing or older versions"
+)
 
 expect(
     RequirementStatusFilter.allCases.map(\.title) == ["未完成", "开发中", "待开发", "异常", "已完成"],
@@ -195,6 +271,114 @@ let sorted = RequirementQuery.sorted([completedOlder, pending, completedNewer, p
 expect(
     sorted.map(\.jiraKey) == ["ZSTAC-1", "ZSTAC-3", "ZSTAC-5", "ZSTAC-2", "ZSTAC-4"],
     "Sorting should keep non-merged development items first, then pending, then exceptional items"
+)
+
+var overviewCreatedNewest = requirement(
+    "ZSTAC-101",
+    stage: .active,
+    createdAt: base.addingTimeInterval(300)
+)
+overviewCreatedNewest.updatedAt = base.addingTimeInterval(300)
+var overviewUpdatedNewest = requirement(
+    "ZSTAC-102",
+    stage: .active,
+    createdAt: base.addingTimeInterval(100)
+)
+overviewUpdatedNewest.updatedAt = base.addingTimeInterval(400)
+var overviewMiddle = requirement(
+    "ZSTAC-103",
+    stage: .active,
+    createdAt: base.addingTimeInterval(200)
+)
+overviewMiddle.updatedAt = base.addingTimeInterval(200)
+let overviewSortInput = [overviewUpdatedNewest, overviewMiddle, overviewCreatedNewest]
+
+expect(
+    RequirementQuery.sortedForOverview(overviewSortInput, by: .createdAt).map(\.jiraKey)
+        == ["ZSTAC-101", "ZSTAC-103", "ZSTAC-102"],
+    "Overview should default to newest creation time first"
+)
+expect(
+    RequirementQuery.sortedForOverview(overviewSortInput, by: .updatedAt).map(\.jiraKey)
+        == ["ZSTAC-102", "ZSTAC-101", "ZSTAC-103"],
+    "Overview should optionally sort by newest update time first"
+)
+
+let overviewStatusInput = [
+    requirement("ZSTAC-201", stage: .pending, createdAt: base),
+    requirement("ZSTAC-202", stage: .active, createdAt: base),
+    requirement("ZSTAC-203", stage: .completed, isDone: true, createdAt: base),
+    requirement("ZSTAC-204", stage: .completed, isDone: true, isTested: true, createdAt: base),
+    requirement(
+        "ZSTAC-205",
+        stage: .completed,
+        isDone: true,
+        isTested: true,
+        isMerged: true,
+        createdAt: base
+    ),
+    requirement("ZSTAC-206", stage: .paused, createdAt: base),
+    requirement("ZSTAC-207", stage: .stopped, createdAt: base)
+]
+let overviewStatusExpectations: [(RequirementTimelineStatus, String)] = [
+    (.pending, "ZSTAC-201"),
+    (.active, "ZSTAC-202"),
+    (.done, "ZSTAC-203"),
+    (.tested, "ZSTAC-204"),
+    (.merged, "ZSTAC-205"),
+    (.paused, "ZSTAC-206"),
+    (.stopped, "ZSTAC-207")
+]
+for (status, jiraKey) in overviewStatusExpectations {
+    expect(
+        RequirementQuery.filteredForOverview(overviewStatusInput, status: status).map(\.jiraKey) == [jiraKey],
+        "Overview status filter should keep only \(status.title) requirements"
+    )
+}
+expect(
+    RequirementQuery.filteredForOverview(overviewStatusInput, status: nil).map(\.jiraKey)
+        == overviewStatusInput.map(\.jiraKey),
+    "Overview all filter should clear status filtering"
+)
+
+var overviewMetadataA = requirement("ZSTAC-301", stage: .active, createdAt: base)
+overviewMetadataA.issueType = " 改进 "
+overviewMetadataA.priority = "P1"
+overviewMetadataA.targetVersion = "5.5.28"
+var overviewMetadataB = requirement("ZSTAC-302", stage: .active, createdAt: base)
+overviewMetadataB.issueType = "故障"
+overviewMetadataB.priority = "P0"
+overviewMetadataB.targetVersion = "5.5.28"
+var overviewMetadataC = requirement("ZSTAC-303", stage: .active, createdAt: base)
+overviewMetadataC.issueType = "改进"
+overviewMetadataC.priority = "P1"
+overviewMetadataC.targetVersion = "5.5.38"
+let overviewMetadataInput = [overviewMetadataA, overviewMetadataB, overviewMetadataC]
+let overviewMetadataOptions = RequirementQuery.overviewMetadataOptions(for: overviewMetadataInput)
+
+expect(
+    overviewMetadataOptions.issueTypes == ["改进", "故障"]
+        && overviewMetadataOptions.priorities == ["P0", "P1"]
+        && overviewMetadataOptions.targetVersions == ["5.5.28", "5.5.38"],
+    "Overview metadata options should trim, deduplicate, and sort values from all requirements"
+)
+expect(
+    RequirementQuery.filteredForOverview(
+        overviewMetadataInput,
+        metadata: RequirementOverviewMetadataFilter(
+            issueType: "改进",
+            priority: "P1",
+            targetVersion: "5.5.38"
+        )
+    ).map(\.jiraKey) == ["ZSTAC-303"],
+    "Overview metadata filters should combine Jira type, priority, and version"
+)
+expect(
+    RequirementQuery.filteredForOverview(
+        overviewMetadataInput,
+        metadata: RequirementOverviewMetadataFilter()
+    ).map(\.jiraKey) == overviewMetadataInput.map(\.jiraKey),
+    "Empty overview metadata filters should preserve all requirements"
 )
 
 var calendar = Calendar(identifier: .gregorian)
@@ -256,6 +440,10 @@ historyRequirement.recordStatus(.tested, at: referenceDate.addingTimeInterval(12
 expect(
     historyRequirement.statusHistory.map(\.status) == [.pending, .done, .tested],
     "Status history should append new statuses after old statuses"
+)
+expect(
+    historyRequirement.statusHistoryNewestFirst.map(\.status) == [.tested, .done, .pending],
+    "Overview status history should expose newest events first"
 )
 
 let directMergeCandidate = requirement(
@@ -324,6 +512,22 @@ let invalidProject = RequirementScriptProject(
     scripts: [
         RequirementScriptCommand(name: "Noop", script: "")
     ]
+)
+let reorderProjectA = RequirementScriptProject(name: "A", directoryPath: "/tmp/a")
+let reorderProjectB = RequirementScriptProject(name: "B", directoryPath: "/tmp/b")
+let reorderProjectC = RequirementScriptProject(name: "C", directoryPath: "/tmp/c")
+var reorderedProjectConfiguration = RequirementToolConfiguration(
+    scriptProjects: [reorderProjectA, reorderProjectB, reorderProjectC]
+)
+expect(
+    reorderedProjectConfiguration.moveScriptProject(id: reorderProjectB.id, offset: -1)
+        && reorderedProjectConfiguration.scriptProjects.map(\.name) == ["B", "A", "C"],
+    "Script projects should support moving up in settings"
+)
+expect(
+    !reorderedProjectConfiguration.moveScriptProject(id: reorderProjectB.id, offset: -1)
+        && reorderedProjectConfiguration.scriptProjects.map(\.name) == ["B", "A", "C"],
+    "Script project reordering should ignore out-of-range moves"
 )
 let toolConfiguration = RequirementToolConfiguration(
     scriptProjects: [validProject, invalidProject],
