@@ -107,6 +107,10 @@ final class RequirementSettingsStore: ObservableObject {
         lastNotice = "已删除脚本项目"
     }
 
+    func moveScriptProject(id: RequirementScriptProject.ID, offset: Int) {
+        configuration.moveScriptProject(id: id, offset: offset)
+    }
+
     func updateScriptProject(id: RequirementScriptProject.ID, _ transform: (inout RequirementScriptProject) -> Void) {
         guard let index = configuration.scriptProjects.firstIndex(where: { $0.id == id }) else {
             return

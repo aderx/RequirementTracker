@@ -118,6 +118,15 @@ enum RequirementPluginSupport {
             )
         }
 
+        let protocolVersion = manifest["protocol_version"] as? Int
+        guard RequirementNativeHostProtocol.isCompatible(protocolVersion) else {
+            return RequirementNativeHostStatus(
+                isConnected: false,
+                detail: "Native Host 版本过旧，请重新安装",
+                lastSeenAt: lastSeenAt
+            )
+        }
+
         return RequirementNativeHostStatus(
             isConnected: true,
             detail: hostPath,
@@ -198,6 +207,7 @@ enum RequirementPluginSupport {
             "name": RequirementPluginSettings.defaultNativeHostName,
             "description": "RequirementTracker Jira capture native host",
             "path": hostExecutableURL.path,
+            "protocol_version": RequirementNativeHostProtocol.currentVersion,
             "type": "stdio",
             "allowed_origins": [
                 "chrome-extension://\(extensionID)/"

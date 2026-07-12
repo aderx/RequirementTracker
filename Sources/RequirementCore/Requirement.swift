@@ -100,11 +100,70 @@ public struct RequirementStatusEvent: Identifiable, Codable, Equatable, Sendable
     }
 }
 
+public struct RequirementMergeRequestCollection: Equatable, Sendable {
+    public private(set) var latest: String?
+    public private(set) var history: [String]
+
+    public init(latest: String?, history: [String] = []) {
+        self.latest = latest
+        self.history = history
+        normalize()
+    }
+
+    public var allURLs: [String] {
+        [latest].compactMap { $0 } + history
+    }
+
+    @discardableResult
+    public mutating func record(_ rawURL: String) -> Bool {
+        let newURL = RequirementParser.normalizedURL(rawURL)
+        guard !newURL.isEmpty, !allURLs.contains(newURL) else {
+            return false
+        }
+
+        if let latest {
+            history.insert(latest, at: 0)
+        }
+        latest = newURL
+        return true
+    }
+
+    private mutating func normalize() {
+        var seen = Set<String>()
+        var normalizedLatest = latest.map(RequirementParser.normalizedURL)
+        if normalizedLatest?.isEmpty == true {
+            normalizedLatest = nil
+        }
+        if let normalizedLatest {
+            seen.insert(normalizedLatest)
+        }
+
+        var normalizedHistory: [String] = []
+        for rawURL in history {
+            let url = RequirementParser.normalizedURL(rawURL)
+            guard !url.isEmpty, !seen.contains(url) else {
+                continue
+            }
+
+            seen.insert(url)
+            normalizedHistory.append(url)
+        }
+
+        if normalizedLatest == nil, !normalizedHistory.isEmpty {
+            normalizedLatest = normalizedHistory.removeFirst()
+        }
+
+        latest = normalizedLatest
+        history = normalizedHistory
+    }
+}
+
 public struct Requirement: Identifiable, Codable, Equatable, Sendable {
     public var id: UUID
     public var jiraKey: String
     public var jiraURL: String
     public var mrURL: String?
+    public var mrHistory: [String]
     public var title: String
     public var note: String
     public var pauseReason: String
@@ -127,6 +186,7 @@ public struct Requirement: Identifiable, Codable, Equatable, Sendable {
         jiraKey: String,
         jiraURL: String,
         mrURL: String? = nil,
+        mrHistory: [String] = [],
         title: String = "",
         note: String = "",
         pauseReason: String = "",
@@ -147,6 +207,7 @@ public struct Requirement: Identifiable, Codable, Equatable, Sendable {
         self.jiraKey = jiraKey
         self.jiraURL = jiraURL
         self.mrURL = mrURL
+        self.mrHistory = mrHistory
         self.title = title
         self.note = note
         self.pauseReason = pauseReason
@@ -170,6 +231,7 @@ public struct Requirement: Identifiable, Codable, Equatable, Sendable {
             updatedAt: updatedAt,
             completedAt: completedAt
         )
+        normalizeMergeRequestURLs()
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -177,6 +239,7 @@ public struct Requirement: Identifiable, Codable, Equatable, Sendable {
         case jiraKey
         case jiraURL
         case mrURL
+        case mrHistory
         case title
         case note
         case pauseReason
@@ -200,6 +263,7 @@ public struct Requirement: Identifiable, Codable, Equatable, Sendable {
         jiraKey = try container.decode(String.self, forKey: .jiraKey)
         jiraURL = try container.decode(String.self, forKey: .jiraURL)
         mrURL = try container.decodeIfPresent(String.self, forKey: .mrURL)
+        mrHistory = try container.decodeIfPresent([String].self, forKey: .mrHistory) ?? []
         title = try container.decodeIfPresent(String.self, forKey: .title) ?? ""
         note = try container.decode(String.self, forKey: .note)
         pauseReason = try container.decode(String.self, forKey: .pauseReason)
@@ -227,6 +291,7 @@ public struct Requirement: Identifiable, Codable, Equatable, Sendable {
                 completedAt: completedAt
             )
             : decodedHistory
+        normalizeMergeRequestURLs()
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -235,6 +300,9 @@ public struct Requirement: Identifiable, Codable, Equatable, Sendable {
         try container.encode(jiraKey, forKey: .jiraKey)
         try container.encode(jiraURL, forKey: .jiraURL)
         try container.encodeIfPresent(mrURL, forKey: .mrURL)
+        if !mrHistory.isEmpty {
+            try container.encode(mrHistory, forKey: .mrHistory)
+        }
         try container.encode(title, forKey: .title)
         try container.encode(note, forKey: .note)
         try container.encode(pauseReason, forKey: .pauseReason)
@@ -296,6 +364,23 @@ public struct Requirement: Identifiable, Codable, Equatable, Sendable {
         !(mrURL ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
+    public var allMRURLs: [String] {
+        RequirementMergeRequestCollection(latest: mrURL, history: mrHistory).allURLs
+    }
+
+    public mutating func recordMergeRequestURL(_ rawURL: String) {
+        var collection = RequirementMergeRequestCollection(latest: mrURL, history: mrHistory)
+        collection.record(rawURL)
+        mrURL = collection.latest
+        mrHistory = collection.history
+    }
+
+    public mutating func normalizeMergeRequestURLs() {
+        let collection = RequirementMergeRequestCollection(latest: mrURL, history: mrHistory)
+        mrURL = collection.latest
+        mrHistory = collection.history
+    }
+
     public var canMarkMergedDirectly: Bool {
         !isMerged && stage != .paused && stage != .stopped
     }
@@ -352,6 +437,10 @@ public struct Requirement: Identifiable, Codable, Equatable, Sendable {
         }
 
         return .pending
+    }
+
+    public var statusHistoryNewestFirst: [RequirementStatusEvent] {
+        Array(statusHistory.reversed())
     }
 
     private static func legacyStatusHistory(

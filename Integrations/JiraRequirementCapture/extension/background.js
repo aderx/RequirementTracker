@@ -3,7 +3,9 @@
 // - 不支持的页面：不显示角标
 // - 可添加（支持的 Jira / MR 页面但尚未记录）：橙色「+」
 // - 已记录：绿色「↻」
+// - 已完成的 Jira / MR 记录：绿色「✓」
 const HOST_NAME = "com.aderx.requirementtracker.jira_capture";
+const REQUIRED_NATIVE_HOST_PROTOCOL_VERSION = 2;
 const FALLBACK_SETTINGS = {
   jiraBaseURL: "http://jira.zstack.io/browse/",
   mrHosts: ["gitlab.zstack.io"]
@@ -12,11 +14,13 @@ const SETTINGS_TTL_MS = 5 * 60 * 1000;
 
 const BADGE_STYLES = {
   addable: { text: "+", color: "#FF9500" },
-  recorded: { text: "↻", color: "#1F9D54" }
+  recorded: { text: "↻", color: "#1F9D54" },
+  completed: { text: "✓", color: "#1F9D54" }
 };
 
 let cachedSettings = null;
 let cachedSettingsAt = 0;
+let cachedHostCompatible = false;
 
 chrome.runtime.onInstalled.addListener(refreshActiveTab);
 chrome.runtime.onStartup.addListener(refreshActiveTab);
@@ -67,6 +71,9 @@ async function resolveState(url) {
   if (pageType === "unsupported") {
     return "unsupported";
   }
+  if (!cachedHostCompatible) {
+    return "unsupported";
+  }
 
   try {
     const response = await sendNativeMessage({
@@ -74,6 +81,9 @@ async function resolveState(url) {
       payload: { url: canonicalPageURL(url) }
     });
     if (response?.ok && response.exists) {
+      if (response.status === "merged") {
+        return "completed";
+      }
       return "recorded";
     }
   } catch {
@@ -132,6 +142,7 @@ async function loadSettings() {
   try {
     const response = await sendNativeMessage({ type: "getPluginSettings", payload: {} });
     if (response?.ok) {
+      cachedHostCompatible = Number(response.protocolVersion || 0) >= REQUIRED_NATIVE_HOST_PROTOCOL_VERSION;
       cachedSettings = { ...FALLBACK_SETTINGS, ...(response.settings || {}) };
       cachedSettingsAt = now;
       return cachedSettings;
@@ -140,6 +151,7 @@ async function loadSettings() {
     // 忽略，用回退配置。
   }
 
+  cachedHostCompatible = false;
   cachedSettings = cachedSettings || FALLBACK_SETTINGS;
   cachedSettingsAt = now;
   return cachedSettings;

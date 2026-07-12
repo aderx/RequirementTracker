@@ -174,6 +174,12 @@ final class RequirementStore: ObservableObject {
         lastNotice = "已标为已完成"
     }
 
+    func recordMergeRequestURL(id: Requirement.ID, url: String) {
+        update(id: id) { requirement in
+            requirement.recordMergeRequestURL(url)
+        }
+    }
+
     func delete(id: Requirement.ID) {
         requirements.removeAll { $0.id == id }
         lastNotice = "已删除需求"
@@ -278,7 +284,7 @@ final class RequirementStore: ObservableObject {
         }
 
         requirements[index].title = requirements[index].title.trimmingCharacters(in: .whitespacesAndNewlines)
-        requirements[index].mrURL = requirements[index].mrURL?.nilIfBlank
+        requirements[index].normalizeMergeRequestURLs()
     }
 
     func reloadAfterExternalUpdate(issueKey: String?) {
@@ -342,13 +348,5 @@ final class RequirementStore: ObservableObject {
         return applicationSupport
             .appendingPathComponent("RequirementTracker", isDirectory: true)
             .appendingPathComponent("requirements.json")
-    }
-
-}
-
-private extension String {
-    var nilIfBlank: String? {
-        let value = trimmingCharacters(in: .whitespacesAndNewlines)
-        return value.isEmpty ? nil : value
     }
 }

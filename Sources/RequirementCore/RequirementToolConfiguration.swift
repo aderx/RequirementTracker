@@ -47,6 +47,27 @@ public struct RequirementToolConfiguration: Codable, Equatable, Sendable {
             .filter(\.isValid)
     }
 
+    @discardableResult
+    public mutating func moveScriptProject(
+        id: RequirementScriptProject.ID,
+        offset: Int
+    ) -> Bool {
+        guard
+            offset != 0,
+            let index = scriptProjects.firstIndex(where: { $0.id == id })
+        else {
+            return false
+        }
+
+        let target = index + offset
+        guard scriptProjects.indices.contains(target) else {
+            return false
+        }
+
+        scriptProjects.swapAt(index, target)
+        return true
+    }
+
     public var normalized: RequirementToolConfiguration {
         RequirementToolConfiguration(
             baseSettings: baseSettings.normalized,

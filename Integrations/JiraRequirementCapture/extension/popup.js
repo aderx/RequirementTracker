@@ -1,4 +1,5 @@
 const HOST_NAME = "com.aderx.requirementtracker.jira_capture";
+const REQUIRED_NATIVE_HOST_PROTOCOL_VERSION = 2;
 const DEFAULT_DELAY_SECONDS = 5;
 const FALLBACK_SETTINGS = {
   jiraBaseURL: "http://jira.zstack.io/browse/",
@@ -96,7 +97,7 @@ async function handlePageResult(result, hostError) {
   }
 
   if (hostError) {
-    showNativeHostError();
+    showNativeHostError(hostError);
     return;
   }
 
@@ -140,7 +141,7 @@ async function handleJiraPage(payload) {
   }
 
   if (inspect.exists) {
-    const next = nextStatus(inspect.status);
+    const next = jiraNextStatus(inspect.status);
     renderSummary([
       { label: "需求", value: issueKey, copyText: inspect.jiraURL || jiraURL },
       { label: "标题", value: title },
@@ -222,7 +223,7 @@ async function handleMRPage(payload) {
   await attachMRWithInspection(payload);
 }
 
-async function attachMRWithInspection(payload, replaceExisting = false) {
+async function attachMRWithInspection(payload) {
   clearTimers();
   hideManualInput();
   setActions([]);
@@ -248,43 +249,31 @@ async function attachMRWithInspection(payload, replaceExisting = false) {
     throw new Error(inspect?.error || "查询需求记录失败");
   }
 
-  const existingMR = normalizedURL(inspect.mrURL || "");
   const newMR = normalizedURL(payload.mrURL || "");
+  const recordedMRs = [
+    inspect.mrURL,
+    ...(Array.isArray(inspect.mrHistory) ? inspect.mrHistory : [])
+  ]
+    .map(normalizedURL)
+    .filter(Boolean);
+  const isRecorded = recordedMRs.includes(newMR);
   const targetStatus = mrTargetStatus(payload.mrState);
   const willAdvance = inspect.exists
     ? statusRank(targetStatus) > statusRank(inspect.status)
     : Boolean(targetStatus);
 
-  if (existingMR && existingMR !== newMR && !replaceExisting) {
-    setView({
-      tone: "subtle",
-      icon: "◇",
-      title: "替换已有 MR？",
-      message: "这个需求已保存过另一个 MR 地址"
-    });
-    renderSummary([
-      { label: "需求", value: target.issueKey, copyText: inspect.jiraURL || target.jiraURL },
-      { label: "已保存", value: displayURL(existingMR) },
-      { label: "新 MR", value: displayURL(newMR) }
-    ]);
-
-    setActions([
-      button("替换", "primary-button", () => attachMRWithInspection(payload, true))
-    ]);
-    return;
-  }
-
-  if (existingMR === newMR && !willAdvance) {
+  if (isRecorded && !willAdvance) {
+    const isTerminalCompletion = payload.mrState === "merged" && inspect.status === "merged";
     renderSummary([
       { label: "需求", value: target.issueKey, copyText: inspect.jiraURL || target.jiraURL },
       { label: "MR 状态", value: mrStateName(payload.mrState) || "未知" },
       { label: "记录状态", value: statusName(inspect.status) || "未知" }
     ]);
     setView({
-      tone: "subtle",
-      icon: "=",
-      title: "MR 已记录",
-      message: "没有需要同步的变化"
+      tone: isTerminalCompletion ? "success" : "subtle",
+      icon: isTerminalCompletion ? "✓" : "=",
+      title: isTerminalCompletion ? "需求已完成" : "MR 已记录",
+      message: isTerminalCompletion ? "MR 与需求均为已合并状态" : "没有需要同步的变化"
     });
 
     const closeButton = button("关闭", "text-button muted", closePopup);
@@ -293,13 +282,30 @@ async function attachMRWithInspection(payload, replaceExisting = false) {
     return;
   }
 
-  await attachMR({
-    issueKey: target.issueKey,
-    jiraURL: target.jiraURL,
-    mrURL: newMR,
-    mrState: payload.mrState,
-    replaceExisting
+  renderSummary([
+    { label: "需求", value: target.issueKey, copyText: inspect.jiraURL || target.jiraURL },
+    { label: "MR 状态", value: mrStateName(payload.mrState) || "未知" },
+    { label: "记录状态", value: statusName(inspect.status) || "未记录" }
+  ]);
+  setView({
+    tone: "blue",
+    icon: isRecorded ? "=" : "+",
+    title: isRecorded ? "同步 MR 状态" : "关联 MR",
+    message: ""
   });
+  const requestedTargetStatus = willAdvance ? targetStatus : "";
+  const actionLabel = requestedTargetStatus
+    ? "转为" + statusName(requestedTargetStatus)
+    : "保存 MR";
+  setActions([
+    button(actionLabel, "primary-button", () => attachMR({
+      issueKey: target.issueKey,
+      jiraURL: target.jiraURL,
+      mrURL: newMR,
+      mrState: payload.mrState,
+      targetStatus: requestedTargetStatus
+    }))
+  ]);
 }
 
 async function attachMR(payload) {
@@ -323,18 +329,13 @@ async function attachMR(payload) {
     throw new Error(response?.error || "保存 MR 失败");
   }
 
-  if (response.action === "needsReplacement") {
-    await attachMRWithInspection(payload, false);
-    return;
-  }
-
   requestBadgeRefresh();
 
   const issueKey = response.issueKey || payload.issueKey;
   const actionText = {
     created: `已创建 ${issueKey} 并保存 MR`,
     attached: `MR 已保存到 ${issueKey}`,
-    replaced: "MR 地址已替换",
+    appended: "新 MR 已保存",
     synced: "MR 状态已同步"
   }[response.action] || "需求记录已更新";
 
@@ -387,14 +388,14 @@ function showUnsupported(message = "") {
   scheduleClose(DEFAULT_DELAY_SECONDS, closeButton);
 }
 
-function showNativeHostError() {
+function showNativeHostError(message = "") {
   hideSummary();
   hideManualInput();
   setView({
     tone: "error",
     icon: "x",
     title: "未连接到 App",
-    message: "请先打开需求记录 App，并在设置的插件配置中安装 Native Host"
+    message: message || "请先打开需求记录 App，并在设置的插件配置中安装 Native Host"
   });
 
   const closeButton = button("关闭", "text-button", closePopup);
@@ -436,6 +437,10 @@ async function loadPluginSettings() {
     if (!response?.ok) {
       throw new Error(response?.error || "读取插件配置失败");
     }
+    const protocolVersion = Number(response.protocolVersion || 0);
+    if (protocolVersion < REQUIRED_NATIVE_HOST_PROTOCOL_VERSION) {
+      throw new Error("Native Host 版本过旧，请在 App 设置中重新安装");
+    }
 
     return {
       settings: {
@@ -460,13 +465,15 @@ function statusRank(status) {
   return STATUS_FLOW.indexOf(String(status || "").toLowerCase());
 }
 
-function nextStatus(status) {
-  const rank = statusRank(status);
-  if (rank < 0 || rank >= STATUS_FLOW.length - 1) {
+function jiraNextStatus(status) {
+  switch (String(status || "").toLowerCase()) {
+  case "pending":
+    return "active";
+  case "active":
+    return "done";
+  default:
     return "";
   }
-
-  return STATUS_FLOW[rank + 1];
 }
 
 function mrTargetStatus(state) {

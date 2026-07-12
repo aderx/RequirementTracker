@@ -10,47 +10,68 @@ struct RequirementOverviewView: View {
     @State private var selectedID: Requirement.ID?
     @State private var selectedFilter: OverviewStatusFilter = .all
     @State private var selectedDateFilter: RequirementDateFilter = .all
+    @State private var expandedToolbarPanel: OverviewToolbarPanel?
     @State private var searchText = ""
+    @State private var selectedIssueType = ""
+    @State private var selectedPriority = ""
+    @State private var selectedTargetVersion = ""
     @State private var editingDraft: OverviewDraft?
     @State private var isShowingConfirmation = false
     @State private var sidebarWidth: CGFloat = 330
+    @AppStorage("RequirementOverview.sortMode") private var overviewSortModeRawValue = RequirementOverviewSortMode.createdAt.rawValue
+
+    private var overviewSortMode: RequirementOverviewSortMode {
+        RequirementOverviewSortMode(rawValue: overviewSortModeRawValue) ?? .createdAt
+    }
 
     private var sortedRequirements: [Requirement] {
-        store.requirements.sorted { lhs, rhs in
-            if lhs.createdAt != rhs.createdAt {
-                return lhs.createdAt > rhs.createdAt
-            }
-
-            if lhs.activityDate != rhs.activityDate {
-                return lhs.activityDate > rhs.activityDate
-            }
-
-            return lhs.jiraKey < rhs.jiraKey
-        }
+        RequirementQuery.sortedForOverview(store.requirements, by: overviewSortMode)
     }
 
     private var statusFilteredRequirements: [Requirement] {
-        dateScopedRequirements.filter { selectedFilter.matches($0) }
+        RequirementQuery.filteredForOverview(
+            dateScopedRequirements,
+            status: selectedFilter.timelineStatus
+        )
+    }
+
+    private var overviewMetadataFilter: RequirementOverviewMetadataFilter {
+        RequirementOverviewMetadataFilter(
+            issueType: selectedIssueType,
+            priority: selectedPriority,
+            targetVersion: selectedTargetVersion
+        )
+    }
+
+    private var overviewMetadataOptions: RequirementOverviewMetadataOptions {
+        RequirementQuery.overviewMetadataOptions(for: store.requirements)
+    }
+
+    private var metadataFilteredRequirements: [Requirement] {
+        RequirementQuery.filteredForOverview(
+            statusFilteredRequirements,
+            metadata: overviewMetadataFilter
+        )
     }
 
     private var visibleRequirements: [Requirement] {
         let query = normalized(searchText)
         guard !query.isEmpty else {
-            return statusFilteredRequirements
+            return metadataFilteredRequirements
         }
 
         let queryParts = query.split(whereSeparator: \.isWhitespace).map(String.init)
-        return statusFilteredRequirements.filter { requirement in
-            let searchableText = [
-                requirement.jiraURL,
-                requirement.mrURL ?? "",
+        return metadataFilteredRequirements.filter { requirement in
+            let searchableText = ([
+                requirement.jiraURL
+            ] + requirement.allMRURLs + [
                 requirement.title,
                 requirement.note,
                 requirement.pauseReason,
                 requirement.issueType ?? "",
                 requirement.priority ?? "",
                 requirement.targetVersion ?? ""
-            ]
+            ])
             .joined(separator: " ")
             .foldedForSearch
 
@@ -156,16 +177,26 @@ struct RequirementOverviewView: View {
         .onChange(of: searchText) { _ in
             ensureSelection()
         }
+        .onChange(of: selectedIssueType) { _ in
+            ensureSelection()
+        }
+        .onChange(of: selectedPriority) { _ in
+            ensureSelection()
+        }
+        .onChange(of: selectedTargetVersion) { _ in
+            ensureSelection()
+        }
         .animation(.snappy(duration: 0.16), value: isShowingConfirmation)
+        .animation(.easeInOut(duration: 0.15), value: expandedToolbarPanel)
     }
 
     private var sidebar: some View {
         VStack(spacing: 0) {
             statsGrid
 
-            searchBar
+            overviewToolbar
 
-            ScrollView(.vertical, showsIndicators: false) {
+            ScrollView(.vertical, showsIndicators: true) {
                 LazyVStack(spacing: 4) {
                     if visibleRequirements.isEmpty {
                         OverviewListEmptyState(
@@ -190,8 +221,6 @@ struct RequirementOverviewView: View {
                 }
                 .padding(8)
             }
-            .scrollIndicators(.hidden)
-            .background(OverviewScrollIndicatorHider())
         }
         .background(Color.white.opacity(0.24))
     }
@@ -203,38 +232,17 @@ struct RequirementOverviewView: View {
             OverviewStatTile(
                 filter: .all,
                 value: stats.total,
-                tint: DesignColor.textPrimary,
+                tint: OverviewStatusFilter.all.tint,
                 isSelected: selectedFilter == .all,
                 isPrimary: true
             ) {
                 selectedFilter = .all
             }
+            .frame(width: 72)
 
-            OverviewStatTile(
-                filter: .active,
-                value: stats.active,
-                tint: DesignColor.doing,
-                isSelected: selectedFilter == .active
-            ) {
-                selectedFilter = .active
-            }
-
-            OverviewStatTile(
-                filter: .completed,
-                value: stats.completed,
-                tint: DesignColor.merged,
-                isSelected: selectedFilter == .completed
-            ) {
-                selectedFilter = .completed
-            }
-
-            OverviewStatTile(
-                filter: .exceptional,
-                value: stats.exceptional,
-                tint: DesignColor.stopped,
-                isSelected: selectedFilter == .exceptional
-            ) {
-                selectedFilter = .exceptional
+            VStack(spacing: 5) {
+                overviewStatusFilterRow(OverviewStatusFilter.firstRow, stats: stats)
+                overviewStatusFilterRow(OverviewStatusFilter.secondRow, stats: stats)
             }
         }
         .padding(.horizontal, 14)
@@ -246,59 +254,201 @@ struct RequirementOverviewView: View {
         }
     }
 
-    private var searchBar: some View {
-        HStack(spacing: 8) {
-            Menu {
-                ForEach(RequirementDateFilter.allCases) { filter in
-                    Button {
-                        selectedDateFilter = filter
-                    } label: {
-                        Label(filter.overviewTitle, systemImage: selectedDateFilter == filter ? "checkmark" : "calendar")
-                    }
+    private func overviewStatusFilterRow(
+        _ filters: [OverviewStatusFilter],
+        stats: OverviewStats
+    ) -> some View {
+        HStack(spacing: 5) {
+            ForEach(filters) { filter in
+                OverviewStatTile(
+                    filter: filter,
+                    value: stats.value(for: filter),
+                    tint: filter.tint,
+                    isSelected: selectedFilter == filter
+                ) {
+                    selectedFilter = filter
                 }
-            } label: {
-                Image(systemName: "calendar")
-                    .font(.system(size: 12, weight: .semibold))
             }
-            .buttonStyle(OverviewIconButtonStyle(isSelected: selectedDateFilter != .all))
-            .help(selectedDateFilter == .all ? "选择时间范围" : "时间范围：\(selectedDateFilter.overviewTitle)")
-            .pointingHandCursor()
-
-            HStack(spacing: 6) {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Color.black.opacity(0.35))
-
-                TextField("搜索 Jira / MR / 备注 / 原因", text: $searchText)
-                    .font(.system(size: 11.5))
-                    .textFieldStyle(.plain)
-            }
-            .padding(.horizontal, 9)
-            .frame(maxWidth: .infinity)
-            .frame(height: 28)
-            .background(Color.white.opacity(0.72), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .strokeBorder(Color.black.opacity(0.10), lineWidth: 0.5)
-            )
-
-            Button {
-                searchText = ""
-            } label: {
-                Image(systemName: "arrow.counterclockwise")
-                    .font(.system(size: 11, weight: .bold))
-            }
-            .buttonStyle(OverviewIconButtonStyle(isSelected: false))
-            .disabled(searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            .opacity(searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.45 : 1)
-            .pointingHandCursor(!searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
+    }
+
+    private var overviewToolbar: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 6) {
+                Menu {
+                    ForEach(RequirementDateFilter.allCases) { filter in
+                        Button {
+                            selectedDateFilter = filter
+                        } label: {
+                            Label(
+                                filter.overviewTitle,
+                                systemImage: selectedDateFilter == filter ? "checkmark" : "calendar"
+                            )
+                        }
+                    }
+                } label: {
+                    Image(systemName: "calendar")
+                        .font(.system(size: 10, weight: .semibold))
+                }
+                .buttonStyle(
+                    OverviewIconButtonStyle(
+                        isSelected: selectedDateFilter != .all,
+                        width: 24,
+                        height: 20
+                    )
+                )
+                .help(selectedDateFilter == .all ? "选择时间范围" : "时间范围：\(selectedDateFilter.overviewTitle)")
+                .pointingHandCursor()
+
+                Menu {
+                    ForEach(RequirementOverviewSortMode.allCases) { mode in
+                        Button {
+                            overviewSortModeRawValue = mode.rawValue
+                        } label: {
+                            Label(
+                                mode.title,
+                                systemImage: overviewSortMode == mode
+                                    ? "checkmark"
+                                    : (mode == .createdAt ? "calendar" : "clock.arrow.circlepath")
+                            )
+                        }
+                    }
+                } label: {
+                    Image(systemName: "arrow.up.arrow.down")
+                        .font(.system(size: 9.5, weight: .semibold))
+                }
+                .buttonStyle(
+                    OverviewIconButtonStyle(
+                        isSelected: overviewSortMode == .updatedAt,
+                        width: 24,
+                        height: 20
+                    )
+                )
+                .help("排序：\(overviewSortMode.title)")
+                .pointingHandCursor()
+
+                Spacer(minLength: 8)
+
+                Button {
+                    toggleToolbarPanel(.jiraFilters)
+                } label: {
+                    Image(systemName: "line.3.horizontal.decrease")
+                        .font(.system(size: 9.5, weight: .semibold))
+                }
+                .buttonStyle(
+                    OverviewIconButtonStyle(
+                        isSelected: expandedToolbarPanel == .jiraFilters || !overviewMetadataFilter.isEmpty,
+                        width: 24,
+                        height: 20
+                    )
+                )
+                .help(overviewMetadataFilter.isEmpty ? "Jira 属性筛选" : "Jira 属性筛选（已启用）")
+                .pointingHandCursor()
+
+                Button {
+                    toggleToolbarPanel(.search)
+                } label: {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 9.5, weight: .semibold))
+                }
+                .buttonStyle(
+                    OverviewIconButtonStyle(
+                        isSelected: expandedToolbarPanel == .search || !normalized(searchText).isEmpty,
+                        width: 24,
+                        height: 20
+                    )
+                )
+                .help(normalized(searchText).isEmpty ? "搜索" : "搜索（已启用）")
+                .pointingHandCursor()
+            }
+            .padding(.horizontal, 10)
+            .frame(height: 32)
+
+            expandedOverviewToolbarContent
+        }
         .overlay(alignment: .bottom) {
             Rectangle()
                 .fill(Color.black.opacity(0.06))
                 .frame(height: 0.5)
+        }
+    }
+
+    @ViewBuilder
+    private var expandedOverviewToolbarContent: some View {
+        if expandedToolbarPanel == .search {
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(Color.black.opacity(0.34))
+
+                TextField("搜索 Jira / MR / 标题 / 备注 / 原因", text: $searchText)
+                    .font(.system(size: 11))
+                    .textFieldStyle(.plain)
+
+                if !normalized(searchText).isEmpty {
+                    Button {
+                        searchText = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 10))
+                            .foregroundStyle(Color.black.opacity(0.32))
+                    }
+                    .buttonStyle(.plain)
+                    .help("清除搜索")
+                    .pointingHandCursor()
+                }
+            }
+            .padding(.horizontal, 8)
+            .frame(height: 25)
+            .background(Color.white.opacity(0.72), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .strokeBorder(Color.black.opacity(0.10), lineWidth: 0.5)
+            )
+            .padding(.horizontal, 10)
+            .padding(.bottom, 6)
+            .transition(.move(edge: .top).combined(with: .opacity))
+        } else if expandedToolbarPanel == .jiraFilters {
+            HStack(spacing: 5) {
+                OverviewMetadataFilterMenu(
+                    title: "类型",
+                    selection: $selectedIssueType,
+                    options: overviewMetadataOptions.issueTypes
+                )
+
+                OverviewMetadataFilterMenu(
+                    title: "优先级",
+                    selection: $selectedPriority,
+                    options: overviewMetadataOptions.priorities
+                )
+
+                OverviewMetadataFilterMenu(
+                    title: "版本",
+                    selection: $selectedTargetVersion,
+                    options: overviewMetadataOptions.targetVersions
+                )
+
+                if !overviewMetadataFilter.isEmpty {
+                    Button {
+                        clearOverviewMetadataFilters()
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 8.5, weight: .bold))
+                    }
+                    .buttonStyle(
+                        OverviewIconButtonStyle(
+                            isSelected: false,
+                            width: 22,
+                            height: 20
+                        )
+                    )
+                    .help("清除 Jira 筛选")
+                    .pointingHandCursor()
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.bottom, 6)
+            .transition(.move(edge: .top).combined(with: .opacity))
         }
     }
 
@@ -405,8 +555,16 @@ struct RequirementOverviewView: View {
                         OverviewLinkValue(text: requirement.jiraURL)
                     }
 
-                    OverviewDetailRow(label: "MR") {
-                        OverviewLinkValue(text: requirement.mrURL ?? "", emptyText: "暂无")
+                    OverviewDetailRow(label: "MR", alignment: .top, labelTopPadding: 1) {
+                        if requirement.allMRURLs.isEmpty {
+                            OverviewLinkValue(text: "", emptyText: "暂无")
+                        } else {
+                            VStack(alignment: .leading, spacing: 7) {
+                                ForEach(requirement.allMRURLs, id: \.self) { mrURL in
+                                    OverviewLinkValue(text: mrURL)
+                                }
+                            }
+                        }
                     }
 
                     OverviewDetailRow(label: "备注", alignment: .top, labelTopPadding: 1) {
@@ -422,7 +580,6 @@ struct RequirementOverviewView: View {
                 .padding(20)
             }
             .scrollIndicators(.hidden)
-            .background(OverviewScrollIndicatorHider())
         }
     }
 
@@ -732,6 +889,18 @@ struct RequirementOverviewView: View {
         isShowingConfirmation = false
     }
 
+    private func toggleToolbarPanel(_ panel: OverviewToolbarPanel) {
+        withAnimation(.easeInOut(duration: 0.15)) {
+            expandedToolbarPanel = expandedToolbarPanel == panel ? nil : panel
+        }
+    }
+
+    private func clearOverviewMetadataFilters() {
+        selectedIssueType = ""
+        selectedPriority = ""
+        selectedTargetVersion = ""
+    }
+
     private func matchesSelectedDateFilter(_ requirement: Requirement) -> Bool {
         let calendar = Calendar.current
 
@@ -790,9 +959,15 @@ struct RequirementOverviewView: View {
         }
 
         let reason = draft.reason.trimmingCharacters(in: .whitespacesAndNewlines)
+        let draftMRURL = draft.mrURL.trimmingCharacters(in: .whitespacesAndNewlines)
         store.update(id: selectedRequirement.id) { requirement in
             requirement.jiraURL = draft.jiraURL.trimmingCharacters(in: .whitespacesAndNewlines)
-            requirement.mrURL = draft.mrURL.trimmingCharacters(in: .whitespacesAndNewlines)
+            if draftMRURL.isEmpty {
+                requirement.mrURL = nil
+                requirement.normalizeMergeRequestURLs()
+            } else {
+                requirement.recordMergeRequestURL(draftMRURL)
+            }
             requirement.note = draft.note.trimmingCharacters(in: .whitespacesAndNewlines)
             draft.status.apply(to: &requirement, reason: reason, now: Date())
         }
@@ -913,7 +1088,7 @@ struct RequirementOverviewView: View {
     }
 
     private func overviewTimelineEntries(for requirement: Requirement) -> [OverviewTimelineEntry] {
-        requirement.statusHistory.map {
+        requirement.statusHistoryNewestFirst.map {
             OverviewTimelineEntry(
                 id: $0.id,
                 status: OverviewStatusOption(status: $0.status),
@@ -946,58 +1121,91 @@ struct RequirementOverviewView: View {
     }
 }
 
+private enum OverviewToolbarPanel {
+    case jiraFilters
+    case search
+}
+
 private enum OverviewStatusFilter: String, CaseIterable, Identifiable {
     case all
+    case pending
     case active
-    case completed
-    case exceptional
+    case done
+    case tested
+    case merged
+    case paused
+    case stopped
 
     var id: String { rawValue }
+
+    static let firstRow: [OverviewStatusFilter] = [.pending, .active, .done, .tested]
+    static let secondRow: [OverviewStatusFilter] = [.merged, .paused, .stopped]
 
     var title: String {
         switch self {
         case .all:
             "全部"
+        case .pending:
+            "待开发"
         case .active:
             "开发中"
-        case .completed:
-            "已完成"
-        case .exceptional:
-            "异常"
+        case .done:
+            "开发完成"
+        case .tested:
+            "已自测"
+        case .merged:
+            "已合并"
+        case .paused:
+            "已暂停"
+        case .stopped:
+            "已停止"
         }
     }
 
-    func matches(_ requirement: Requirement) -> Bool {
-        let status = OverviewStatusOption(requirement: requirement)
-
+    var timelineStatus: RequirementTimelineStatus? {
         switch self {
         case .all:
-            return true
+            nil
+        case .pending:
+            .pending
         case .active:
-            return status == .active
-        case .completed:
-            return [.done, .tested, .merged].contains(status)
-        case .exceptional:
-            return [.paused, .stopped].contains(status)
+            .active
+        case .done:
+            .done
+        case .tested:
+            .tested
+        case .merged:
+            .merged
+        case .paused:
+            .paused
+        case .stopped:
+            .stopped
         }
+    }
+
+    var tint: Color {
+        guard let timelineStatus else {
+            return DesignColor.textPrimary
+        }
+
+        return OverviewStatusOption(status: timelineStatus).tint
     }
 }
 
 private struct OverviewStats {
+    private let requirements: [Requirement]
     let total: Int
-    let active: Int
-    let completed: Int
-    let exceptional: Int
 
     init(requirements: [Requirement]) {
+        self.requirements = requirements
         total = requirements.count
-        active = requirements.filter { OverviewStatusOption(requirement: $0) == .active }.count
-        completed = requirements.filter {
-            [.done, .tested, .merged].contains(OverviewStatusOption(requirement: $0))
-        }.count
-        exceptional = requirements.filter {
-            [.paused, .stopped].contains(OverviewStatusOption(requirement: $0))
-        }.count
+    }
+
+    func value(for filter: OverviewStatusFilter) -> Int {
+        RequirementQuery.filteredForOverview(
+            requirements,
+            status: filter.timelineStatus
+        ).count
     }
 }
 
@@ -1256,8 +1464,6 @@ private struct OverviewSplitDivider: View {
                     isCursorPushed = false
                 }
             }
-            .scrollIndicators(.hidden)
-            .background(OverviewScrollIndicatorHider())
         }
     }
 
@@ -1272,6 +1478,8 @@ private struct OverviewRequirementListRow: View {
     }
 
     var body: some View {
+        let title = requirement.title.trimmingCharacters(in: .whitespacesAndNewlines)
+
         VStack(alignment: .leading, spacing: 5) {
             HStack(spacing: 6) {
                 Text("#\(index)")
@@ -1294,6 +1502,12 @@ private struct OverviewRequirementListRow: View {
 
                 OverviewStatusBadge(status: status)
             }
+
+            Text(title.isEmpty ? "暂无标题" : title)
+                .font(.system(size: 10.5, weight: .medium))
+                .foregroundStyle(Color.black.opacity(title.isEmpty ? 0.34 : 0.62))
+                .lineLimit(1)
+                .truncationMode(.tail)
 
             Text(summaryText)
                 .font(.system(size: 10))
@@ -1438,25 +1652,51 @@ private struct OverviewStatTile: View {
 
     var body: some View {
         Button(action: action) {
-            VStack(spacing: 1) {
-                Text("\(value)")
-                    .font(.system(size: 16, weight: .bold))
-                    .foregroundStyle(tint)
+            Group {
+                if isPrimary {
+                    VStack(spacing: 1) {
+                        Text("\(value)")
+                            .font(.system(size: 16, weight: .bold, design: .rounded))
+                            .foregroundStyle(tint)
+                            .monospacedDigit()
 
-                Text(filter.title)
-                    .font(.system(size: 9.5, weight: isSelected ? .semibold : .regular))
-                    .foregroundStyle(isPrimary ? Color.black.opacity(0.55) : tint)
-                    .lineLimit(1)
+                        Text(filter.title)
+                            .font(.system(size: 9.5, weight: isSelected ? .semibold : .regular))
+                            .foregroundStyle(Color.black.opacity(0.55))
+                            .lineLimit(1)
+                    }
+                } else {
+                    HStack(spacing: 3) {
+                        Text(filter.title)
+                            .font(.system(size: 9, weight: isSelected ? .semibold : .medium))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.72)
+
+                        Text("\(value)")
+                            .font(.system(size: 12.5, weight: .bold, design: .rounded))
+                            .monospacedDigit()
+                            .fixedSize(horizontal: true, vertical: false)
+                    }
+                    .foregroundStyle(tint)
+                    .padding(.horizontal, 4)
+                }
             }
             .frame(maxWidth: .infinity)
-            .frame(height: 42)
+            .frame(height: isPrimary ? 46 : 21)
             .background(
-                (isPrimary ? Color.black.opacity(0.03) : tint.opacity(0.07)),
+                isPrimary
+                    ? Color.black.opacity(0.03)
+                    : tint.opacity(isSelected ? 0.15 : 0.07),
                 in: RoundedRectangle(cornerRadius: 8, style: .continuous)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .strokeBorder(isSelected ? DesignColor.doing.opacity(0.35) : Color.clear, lineWidth: 1.2)
+                    .strokeBorder(
+                        isSelected
+                            ? (isPrimary ? DesignColor.doing : tint).opacity(0.42)
+                            : Color.clear,
+                        lineWidth: 1.2
+                    )
             )
             .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
@@ -1467,13 +1707,15 @@ private struct OverviewStatTile: View {
 
 private struct OverviewIconButtonStyle: ButtonStyle {
     let isSelected: Bool
+    var width: CGFloat = 34
+    var height: CGFloat = 24
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(size: 11, weight: .semibold))
             .foregroundStyle(isSelected ? DesignColor.doing : Color.black.opacity(0.56))
-            .frame(width: 34)
-            .frame(height: 24)
+            .frame(width: width)
+            .frame(height: height)
             .background(
                 (isSelected ? DesignColor.doing.opacity(0.10) : Color.black.opacity(configuration.isPressed ? 0.07 : 0.035)),
                 in: RoundedRectangle(cornerRadius: 6, style: .continuous)
@@ -1481,6 +1723,75 @@ private struct OverviewIconButtonStyle: ButtonStyle {
             .overlay(
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
                     .strokeBorder(isSelected ? DesignColor.doing.opacity(0.25) : Color.black.opacity(0.10), lineWidth: 0.5)
+            )
+    }
+}
+
+private struct OverviewMetadataFilterMenu: View {
+    let title: String
+    @Binding var selection: String
+    let options: [String]
+
+    var body: some View {
+        Menu {
+            Button {
+                selection = ""
+            } label: {
+                Label("全部\(title)", systemImage: selection.isEmpty ? "checkmark" : "circle")
+            }
+
+            if !options.isEmpty {
+                Divider()
+            }
+
+            ForEach(options, id: \.self) { option in
+                Button {
+                    selection = option
+                } label: {
+                    Label(option, systemImage: selection == option ? "checkmark" : "circle")
+                }
+            }
+        } label: {
+            HStack(spacing: 3) {
+                Text(selection.isEmpty ? title : selection)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+
+                Spacer(minLength: 1)
+
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 7.5, weight: .semibold))
+            }
+            .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(OverviewMetadataFilterButtonStyle(isSelected: !selection.isEmpty))
+        .help(selection.isEmpty ? "筛选\(title)" : "\(title)：\(selection)")
+        .pointingHandCursor()
+    }
+}
+
+private struct OverviewMetadataFilterButtonStyle: ButtonStyle {
+    let isSelected: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 9.5, weight: isSelected ? .semibold : .medium))
+            .foregroundStyle(isSelected ? DesignColor.doing : Color.black.opacity(0.54))
+            .padding(.horizontal, 6)
+            .frame(maxWidth: .infinity)
+            .frame(height: 20)
+            .background(
+                isSelected
+                    ? DesignColor.doing.opacity(0.10)
+                    : Color.black.opacity(configuration.isPressed ? 0.07 : 0.035),
+                in: RoundedRectangle(cornerRadius: 5, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    .strokeBorder(
+                        isSelected ? DesignColor.doing.opacity(0.24) : Color.black.opacity(0.09),
+                        lineWidth: 0.5
+                    )
             )
     }
 }
@@ -1628,106 +1939,6 @@ private struct OverviewTextValue: View {
                 .lineSpacing(2)
                 .textSelection(.enabled)
         }
-    }
-}
-
-private struct OverviewScrollIndicatorHider: NSViewRepresentable {
-    func makeNSView(context: Context) -> OverviewHiderAttachmentView {
-        OverviewHiderAttachmentView()
-    }
-
-    func updateNSView(_ view: OverviewHiderAttachmentView, context: Context) {
-        view.refresh()
-    }
-}
-
-/// 强制收缩滚动条宽度为 0，避免滚动条可见/不可见但仍占位。
-private final class OverviewHiddenScroller: NSScroller {
-    override class func scrollerWidth(
-        for controlSize: NSControl.ControlSize,
-        scrollerStyle: NSScroller.Style
-    ) -> CGFloat {
-        0
-    }
-
-    override func draw(_ dirtyRect: NSRect) {}
-    override func drawKnob() {}
-    override func drawKnobSlot(in slotRect: NSRect, highlight flag: Bool) {}
-}
-
-private final class OverviewHiderAttachmentView: NSView {
-    private var isObserving = false
-
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        startObservingIfNeeded()
-        refresh()
-    }
-
-    override func viewDidMoveToSuperview() {
-        super.viewDidMoveToSuperview()
-        refresh()
-    }
-
-    override func layout() {
-        super.layout()
-        refresh()
-    }
-
-    func refresh() {
-        guard let contentView = window?.contentView else {
-            return
-        }
-        hideScrollers(in: contentView)
-    }
-
-    private func startObservingIfNeeded() {
-        guard !isObserving else {
-            return
-        }
-        isObserving = true
-
-        let center = NotificationCenter.default
-        for name in [
-            NSScrollView.willStartLiveScrollNotification,
-            NSScrollView.didLiveScrollNotification,
-            NSScrollView.didEndLiveScrollNotification
-        ] {
-            center.addObserver(self, selector: #selector(handleScroll(_:)), name: name, object: nil)
-        }
-    }
-
-    @objc private func handleScroll(_ notification: Notification) {
-        guard
-            let scrollView = notification.object as? NSScrollView,
-            scrollView.window === window
-        else {
-            return
-        }
-        hideScrollers(in: scrollView)
-    }
-
-    private func hideScrollers(in view: NSView) {
-        if let scrollView = view as? NSScrollView {
-            scrollView.scrollerStyle = .overlay
-            scrollView.autohidesScrollers = true
-            scrollView.hasHorizontalScroller = false
-            scrollView.hasVerticalScroller = false
-            if !(scrollView.verticalScroller is OverviewHiddenScroller) {
-                scrollView.verticalScroller = OverviewHiddenScroller()
-            }
-            if !(scrollView.horizontalScroller is OverviewHiddenScroller) {
-                scrollView.horizontalScroller = OverviewHiddenScroller()
-            }
-        }
-
-        for subview in view.subviews {
-            hideScrollers(in: subview)
-        }
-    }
-
-    deinit {
-        NotificationCenter.default.removeObserver(self)
     }
 }
 

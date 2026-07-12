@@ -89,6 +89,7 @@ function createPopupSandbox() {
     `${popupSource}
 globalThis.__popup = {
   elements,
+  handlePageResult,
   handleJiraPage,
   handleMRPage,
   attachMRWithInspection,
@@ -97,6 +98,7 @@ globalThis.__popup = {
   setStatus,
   showSuccess,
   showUnsupported,
+  loadPluginSettings,
   clearTimers,
   setNativeMessageStub(stub) { sendNativeMessage = stub; }
 };`,
@@ -123,6 +125,23 @@ async function testUnsupportedCountdownLivesOnCloseButton() {
   assert.equal(popup.elements.actions.children.length, 1);
   assert.equal(popup.elements.actions.children[0].textContent, "关闭（5s）");
   assert.equal(popup.elements.countdownText.textContent, "");
+}
+
+async function testIncompatibleNativeHostIsRejectedAtStartup() {
+  const popup = createPopupSandbox();
+  popup.setNativeMessageStub(async () => ({
+    ok: true,
+    settings: {}
+  }));
+
+  const result = await popup.loadPluginSettings();
+
+  assert.match(result.hostError, /Native Host.*版本过旧/);
+  await popup.handlePageResult(
+    { pageType: "jira", payload: {} },
+    result.hostError
+  );
+  assert.match(popup.elements.statusText.textContent, /Native Host.*版本过旧/);
 }
 
 async function testExistingJiraOffersNextStatusButton() {
@@ -173,6 +192,21 @@ async function testMergedJiraHasOnlyUpdateButton() {
   assert.equal(popup.elements.actions.children[0].textContent, "更新信息");
 }
 
+async function testDoneAndTestedJiraCannotAdvance() {
+  for (const status of ["done", "tested"]) {
+    const popup = createPopupSandbox();
+    popup.setNativeMessageStub(async () => ({ ok: true, exists: true, status }));
+
+    await popup.handleJiraPage({
+      issueKey: "ZSTAC-12345",
+      title: "需求标题"
+    });
+
+    assert.equal(popup.elements.actions.children.length, 1);
+    assert.equal(popup.elements.actions.children[0].textContent, "更新信息");
+  }
+}
+
 async function testNewJiraOffersAddButtons() {
   const popup = createPopupSandbox();
   popup.setNativeMessageStub(async () => ({ ok: true, exists: false }));
@@ -189,7 +223,7 @@ async function testNewJiraOffersAddButtons() {
   assert.equal(popup.elements.countdownText.textContent, "");
 }
 
-async function testMergedMRSyncsStatusAutomatically() {
+async function testMergedMRRequiresButtonBeforeStatusSync() {
   const popup = createPopupSandbox();
   const sent = [];
   popup.setNativeMessageStub(async (message) => {
@@ -221,12 +255,98 @@ async function testMergedMRSyncsStatusAutomatically() {
     issueKey: "ZSTAC-12345"
   });
 
-  assert.ok(sent.some((message) => message.type === "attachMergeRequest"));
+  assert.ok(!sent.some((message) => message.type === "attachMergeRequest"));
+  assert.equal(popup.elements.actions.children.length, 1);
+  assert.equal(popup.elements.actions.children[0].textContent, "转为已合并");
+
+  await popup.elements.actions.children[0].onclick();
+
+  const attachMessage = sent.find((message) => message.type === "attachMergeRequest");
+  assert.equal(attachMessage.payload.targetStatus, "merged");
   assert.equal(popup.elements.titleText.textContent, "完成");
   assert.equal(popup.elements.statusText.textContent, "MR 状态已同步，需求已转为已合并");
 }
 
-async function testRecordedMRWithoutChangeDoesNotWrite() {
+async function testOpenMRRequiresButtonBeforeStatusSync() {
+  const popup = createPopupSandbox();
+  const sent = [];
+  popup.setNativeMessageStub(async (message) => {
+    sent.push(message);
+    if (message.type === "inspectRequirement") {
+      return {
+        ok: true,
+        exists: true,
+        status: "active",
+        mrURL: "http://gitlab.zstack.io/g/p/-/merge_requests/1"
+      };
+    }
+    return {
+      ok: true,
+      action: "attached",
+      issueKey: "ZSTAC-12345",
+      statusUpdated: true,
+      targetStatus: "tested"
+    };
+  });
+
+  await popup.handleMRPage({
+    mrURL: "http://gitlab.zstack.io/g/p/-/merge_requests/2",
+    mrState: "open",
+    jiraURL: "http://jira.zstack.io/browse/ZSTAC-12345",
+    issueKey: "ZSTAC-12345"
+  });
+
+  assert.ok(!sent.some((message) => message.type === "attachMergeRequest"));
+  assert.equal(popup.elements.actions.children.length, 1);
+  assert.equal(popup.elements.actions.children[0].textContent, "转为已自测");
+
+  await popup.elements.actions.children[0].onclick();
+
+  const attachMessage = sent.find((message) => message.type === "attachMergeRequest");
+  assert.equal(attachMessage.payload.targetStatus, "tested");
+  assert.equal(attachMessage.payload.replaceExisting, undefined);
+}
+
+async function testNewMRWithoutAvailableTransitionOffersSaveOnly() {
+  const popup = createPopupSandbox();
+  const sent = [];
+  popup.setNativeMessageStub(async (message) => {
+    sent.push(message);
+    if (message.type === "inspectRequirement") {
+      return {
+        ok: true,
+        exists: true,
+        status: "merged",
+        mrURL: "http://gitlab.zstack.io/g/p/-/merge_requests/1",
+        mrHistory: []
+      };
+    }
+    return {
+      ok: true,
+      action: "attached",
+      issueKey: "ZSTAC-12345",
+      statusUpdated: false
+    };
+  });
+
+  await popup.handleMRPage({
+    mrURL: "http://gitlab.zstack.io/g/p/-/merge_requests/2",
+    mrState: "open",
+    jiraURL: "http://jira.zstack.io/browse/ZSTAC-12345",
+    issueKey: "ZSTAC-12345"
+  });
+
+  assert.equal(popup.elements.actions.children.length, 1);
+  assert.equal(popup.elements.actions.children[0].textContent, "保存 MR");
+  assert.ok(!sent.some((message) => message.type === "attachMergeRequest"));
+
+  await popup.elements.actions.children[0].onclick();
+
+  const attachMessage = sent.find((message) => message.type === "attachMergeRequest");
+  assert.equal(attachMessage.payload.targetStatus, "");
+}
+
+async function testRecordedMergedMRShowsTerminalCompletion() {
   const popup = createPopupSandbox();
   const sent = [];
   popup.setNativeMessageStub(async (message) => {
@@ -235,7 +355,8 @@ async function testRecordedMRWithoutChangeDoesNotWrite() {
       ok: true,
       exists: true,
       status: "merged",
-      mrURL: "http://gitlab.zstack.io/g/p/-/merge_requests/1"
+      mrURL: "http://gitlab.zstack.io/g/p/-/merge_requests/2",
+      mrHistory: ["http://gitlab.zstack.io/g/p/-/merge_requests/1"]
     };
   });
 
@@ -247,7 +368,10 @@ async function testRecordedMRWithoutChangeDoesNotWrite() {
   });
 
   assert.ok(!sent.some((message) => message.type === "attachMergeRequest"));
-  assert.equal(popup.elements.titleText.textContent, "MR 已记录");
+  assert.equal(popup.elements.titleText.textContent, "需求已完成");
+  assert.equal(popup.elements.statusText.textContent, "MR 与需求均为已合并状态");
+  assert.equal(popup.elements.statusIcon.textContent, "✓");
+  assert.equal(popup.elements.iconFrame.className, "icon-frame success");
   assert.equal(popup.elements.actions.children.length, 1);
   assert.equal(popup.elements.actions.children[0].textContent, "关闭（5s）");
 
@@ -256,27 +380,6 @@ async function testRecordedMRWithoutChangeDoesNotWrite() {
   assert.equal(rows[1].value, "已合并");
   assert.equal(rows[2].label, "记录状态");
   assert.equal(rows[2].value, "已合并");
-}
-
-async function testReplacePromptHasSingleReplaceButton() {
-  const popup = createPopupSandbox();
-  popup.setNativeMessageStub(async () => ({
-    ok: true,
-    exists: true,
-    status: "active",
-    mrURL: "http://gitlab.zstack.io/g/p/-/merge_requests/1"
-  }));
-
-  await popup.handleMRPage({
-    mrURL: "http://gitlab.zstack.io/g/p/-/merge_requests/2",
-    mrState: "open",
-    jiraURL: "http://jira.zstack.io/browse/ZSTAC-12345",
-    issueKey: "ZSTAC-12345"
-  });
-
-  assert.equal(popup.elements.titleText.textContent, "替换已有 MR？");
-  assert.equal(popup.elements.actions.children.length, 1);
-  assert.equal(popup.elements.actions.children[0].textContent, "替换");
 }
 
 async function testSuccessAutoClosesWithCountdown() {
@@ -290,13 +393,16 @@ async function testSuccessAutoClosesWithCountdown() {
 
 async function run() {
   await testUnsupportedCountdownLivesOnCloseButton();
+  await testIncompatibleNativeHostIsRejectedAtStartup();
   await testExistingJiraOffersNextStatusButton();
   await testExistingActiveJiraOffersDoneButton();
   await testMergedJiraHasOnlyUpdateButton();
+  await testDoneAndTestedJiraCannotAdvance();
   await testNewJiraOffersAddButtons();
-  await testMergedMRSyncsStatusAutomatically();
-  await testRecordedMRWithoutChangeDoesNotWrite();
-  await testReplacePromptHasSingleReplaceButton();
+  await testMergedMRRequiresButtonBeforeStatusSync();
+  await testOpenMRRequiresButtonBeforeStatusSync();
+  await testNewMRWithoutAvailableTransitionOffersSaveOnly();
+  await testRecordedMergedMRShowsTerminalCompletion();
   await testSuccessAutoClosesWithCountdown();
 }
 
