@@ -1,6 +1,7 @@
 import AppKit
 import RequirementCore
 import SwiftUI
+import WidgetKit
 
 @main
 struct RequirementTrackerApp: App {
@@ -43,6 +44,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApplication.shared.applicationIconImage = Self.sharedAppIcon
         NSApplication.shared.setActivationPolicy(.accessory)
+        WidgetCenter.shared.reloadAllTimelines()
 
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         statusItem = item
@@ -409,7 +411,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private static var appVersion: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
-            ?? "1.11.0"
+            ?? "1.12.0"
     }
 
     private static var githubURL: String? {

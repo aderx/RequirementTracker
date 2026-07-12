@@ -29,6 +29,17 @@ Run the development version:
 swift run RequirementTracker
 ```
 
+The Notification Center calendar widgets require a bundled app extension, so use the
+development bundle when testing them:
+
+```bash
+Scripts/package-app.sh debug
+open ".build/widget-preview/需求记录 Dev.app"
+```
+
+After launching the development app once, add either `完整月历` or `全年日历`
+from the macOS widget gallery. Both widgets support the large and extra-large families.
+
 ## Local Data
 
 Runtime data is stored outside the repository:

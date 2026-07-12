@@ -1,0 +1,272 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		A10000000000000000000001 /* CalendarGrid.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000001 /* CalendarGrid.swift */; };
+		A10000000000000000000002 /* CalendarWidgetBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000002 /* CalendarWidgetBundle.swift */; };
+		A10000000000000000000003 /* CalendarWidgetComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000003 /* CalendarWidgetComponents.swift */; };
+		A10000000000000000000004 /* CalendarWidgetEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000004 /* CalendarWidgetEnvironment.swift */; };
+		A10000000000000000000005 /* MonthCalendarWidgetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000005 /* MonthCalendarWidgetView.swift */; };
+		A10000000000000000000006 /* YearCalendarWidgetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000006 /* YearCalendarWidgetView.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		A20000000000000000000001 /* CalendarGrid.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = CalendarGrid.swift; path = ../Sources/RequirementCalendarCore/CalendarGrid.swift; sourceTree = SOURCE_ROOT; };
+		A20000000000000000000002 /* CalendarWidgetBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = CalendarWidgetBundle.swift; path = ../Sources/RequirementCalendarWidget/CalendarWidgetBundle.swift; sourceTree = SOURCE_ROOT; };
+		A20000000000000000000003 /* CalendarWidgetComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = CalendarWidgetComponents.swift; path = ../Sources/RequirementCalendarWidget/CalendarWidgetComponents.swift; sourceTree = SOURCE_ROOT; };
+		A20000000000000000000004 /* CalendarWidgetEnvironment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = CalendarWidgetEnvironment.swift; path = ../Sources/RequirementCalendarWidget/CalendarWidgetEnvironment.swift; sourceTree = SOURCE_ROOT; };
+		A20000000000000000000005 /* MonthCalendarWidgetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = MonthCalendarWidgetView.swift; path = ../Sources/RequirementCalendarWidget/MonthCalendarWidgetView.swift; sourceTree = SOURCE_ROOT; };
+		A20000000000000000000006 /* YearCalendarWidgetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = YearCalendarWidgetView.swift; path = ../Sources/RequirementCalendarWidget/YearCalendarWidgetView.swift; sourceTree = SOURCE_ROOT; };
+		A20000000000000000000007 /* RequirementCalendarWidget-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; name = RequirementCalendarWidget-Info.plist; path = ../BundleSupport/RequirementCalendarWidget-Info.plist; sourceTree = SOURCE_ROOT; };
+		A20000000000000000000008 /* RequirementCalendarWidget.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; name = RequirementCalendarWidget.entitlements; path = ../BundleSupport/RequirementCalendarWidget.entitlements; sourceTree = SOURCE_ROOT; };
+		A20000000000000000000009 /* RequirementCalendarWidget.appex */ = {isa = PBXFileReference; explicitFileType = wrapper.app-extension; includeInIndex = 0; path = RequirementCalendarWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		A30000000000000000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		A40000000000000000000001 = {
+			isa = PBXGroup;
+			children = (
+				A40000000000000000000002 /* Sources */,
+				A40000000000000000000003 /* Bundle Support */,
+				A40000000000000000000004 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		A40000000000000000000002 /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				A20000000000000000000001 /* CalendarGrid.swift */,
+				A20000000000000000000002 /* CalendarWidgetBundle.swift */,
+				A20000000000000000000003 /* CalendarWidgetComponents.swift */,
+				A20000000000000000000004 /* CalendarWidgetEnvironment.swift */,
+				A20000000000000000000005 /* MonthCalendarWidgetView.swift */,
+				A20000000000000000000006 /* YearCalendarWidgetView.swift */,
+			);
+			name = Sources;
+			sourceTree = "<group>";
+		};
+		A40000000000000000000003 /* Bundle Support */ = {
+			isa = PBXGroup;
+			children = (
+				A20000000000000000000007 /* RequirementCalendarWidget-Info.plist */,
+				A20000000000000000000008 /* RequirementCalendarWidget.entitlements */,
+			);
+			name = "Bundle Support";
+			sourceTree = "<group>";
+		};
+		A40000000000000000000004 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				A20000000000000000000009 /* RequirementCalendarWidget.appex */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		A50000000000000000000001 /* RequirementCalendarWidget */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A90000000000000000000002 /* Build configuration list for PBXNativeTarget "RequirementCalendarWidget" */;
+			buildPhases = (
+				A70000000000000000000001 /* Sources */,
+				A30000000000000000000001 /* Frameworks */,
+				A60000000000000000000001 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = RequirementCalendarWidget;
+			productName = RequirementCalendarWidget;
+			productReference = A20000000000000000000009 /* RequirementCalendarWidget.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		A80000000000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2660;
+				LastUpgradeCheck = 2660;
+				TargetAttributes = {
+					A50000000000000000000001 = {
+						CreatedOnToolsVersion = 26.0;
+					};
+				};
+			};
+			buildConfigurationList = A90000000000000000000001 /* Build configuration list for PBXProject "RequirementCalendarWidget" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = zh_CN;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				zh_CN,
+				en,
+				Base,
+			);
+			mainGroup = A40000000000000000000001;
+			productRefGroup = A40000000000000000000004 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				A50000000000000000000001 /* RequirementCalendarWidget */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		A60000000000000000000001 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		A70000000000000000000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10000000000000000000001 /* CalendarGrid.swift in Sources */,
+				A10000000000000000000002 /* CalendarWidgetBundle.swift in Sources */,
+				A10000000000000000000003 /* CalendarWidgetComponents.swift in Sources */,
+				A10000000000000000000004 /* CalendarWidgetEnvironment.swift in Sources */,
+				A10000000000000000000005 /* MonthCalendarWidgetView.swift in Sources */,
+				A10000000000000000000006 /* YearCalendarWidgetView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		AA0000000000000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_DEBUG_DYLIB = NO;
+				ENABLE_TESTABILITY = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+		};
+			name = Debug;
+		};
+		AA0000000000000000000002 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				COPY_PHASE_STRIP = YES;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+			};
+			name = Release;
+		};
+		AA0000000000000000000003 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = ../BundleSupport/RequirementCalendarWidget.entitlements;
+				CODE_SIGNING_ALLOWED = NO;
+				CODE_SIGNING_REQUIRED = NO;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1.12.0;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = ../BundleSupport/RequirementCalendarWidget-Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.12.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.xfu-work.RequirementTracker.CalendarWidget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		AA0000000000000000000004 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = ../BundleSupport/RequirementCalendarWidget.entitlements;
+				CODE_SIGNING_ALLOWED = NO;
+				CODE_SIGNING_REQUIRED = NO;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1.12.0;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = ../BundleSupport/RequirementCalendarWidget-Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.12.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.xfu-work.RequirementTracker.CalendarWidget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		A90000000000000000000001 /* Build configuration list for PBXProject "RequirementCalendarWidget" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AA0000000000000000000001 /* Debug */,
+				AA0000000000000000000002 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A90000000000000000000002 /* Build configuration list for PBXNativeTarget "RequirementCalendarWidget" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AA0000000000000000000003 /* Debug */,
+				AA0000000000000000000004 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = A80000000000000000000001 /* Project object */;
+}

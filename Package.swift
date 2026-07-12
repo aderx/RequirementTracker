@@ -14,6 +14,7 @@ let package = Package(
     ],
     targets: [
         .target(name: "RequirementCore"),
+        .target(name: "RequirementCalendarCore"),
         .executableTarget(
             name: "RequirementTracker",
             dependencies: ["RequirementCore"],
@@ -27,7 +28,7 @@ let package = Package(
         ),
         .executableTarget(
             name: "RequirementCoreChecks",
-            dependencies: ["RequirementCore"],
+            dependencies: ["RequirementCore", "RequirementCalendarCore"],
             path: "Checks/RequirementCoreChecks"
         )
     ]
