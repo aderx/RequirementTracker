@@ -79,6 +79,7 @@ struct NativeIconMenuButton: NSViewRepresentable {
     var tintAlpha: CGFloat = 0.45
     var help: String?
     var hoverShape: NativeIconMenuHoverShape = .roundedRectangle(cornerRadius: 6)
+    var hoverBackgroundSize: CGSize?
 
     func makeCoordinator() -> Coordinator {
         Coordinator(contents: contents)
@@ -106,6 +107,7 @@ struct NativeIconMenuButton: NSViewRepresentable {
         button.contentTintColor = NSColor.labelColor.withAlphaComponent(tintAlpha)
         button.toolTip = help
         button.hoverShape = hoverShape
+        button.hoverBackgroundSize = hoverBackgroundSize
         button.onPress = { [coordinator = context.coordinator] sender in
             coordinator.showMenu(sender)
         }
@@ -360,6 +362,7 @@ final class IconMenuButton: NSButton {
     var buttonSize = CGSize(width: 22, height: 22)
     var onPress: ((IconMenuButton) -> Void)?
     var hoverShape: NativeIconMenuHoverShape = .roundedRectangle(cornerRadius: 6)
+    var hoverBackgroundSize: CGSize?
     private var isHovering = false
     private var trackingAreaRef: NSTrackingArea?
 
@@ -415,11 +418,12 @@ final class IconMenuButton: NSButton {
 
     override func draw(_ dirtyRect: NSRect) {
         if isHovering || isHighlighted {
+            let backgroundSize = hoverBackgroundSize ?? buttonSize
             let backgroundRect = NSRect(
-                x: bounds.midX - buttonSize.width / 2,
-                y: bounds.midY - buttonSize.height / 2,
-                width: buttonSize.width,
-                height: buttonSize.height
+                x: bounds.midX - backgroundSize.width / 2,
+                y: bounds.midY - backgroundSize.height / 2,
+                width: backgroundSize.width,
+                height: backgroundSize.height
             )
             NSColor.black.withAlphaComponent(isHighlighted ? 0.10 : 0.06).setFill()
 

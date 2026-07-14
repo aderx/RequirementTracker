@@ -796,18 +796,19 @@ struct RequirementPanelView: View {
                 }
 
                 HStack(spacing: 8) {
-                    modernSearchCluster
-                        .glassEffect(.regular.interactive(), in: Capsule())
+                    nativeModernSearchControl
                         .glassEffectID("modern-search", in: modernGlassNamespace)
 
                     Spacer(minLength: 8)
 
                     settingsMenu(
                         size: CGSize(width: 34, height: 34),
-                        hoverShape: .circle
+                        hoverShape: .circle,
+                        hoverBackgroundSize: CGSize(width: 28, height: 28)
                     )
                         .glassEffect(.regular.interactive(), in: Circle())
                         .glassEffectID("modern-more", in: modernGlassNamespace)
+                        .pointingHandCursor()
                 }
                 .padding(.horizontal, 10)
             }
@@ -835,19 +836,14 @@ struct RequirementPanelView: View {
             }
 
             HStack(spacing: 8) {
-                modernSearchCluster
-                    .background(.ultraThinMaterial, in: Capsule())
-                    .overlay(
-                        Capsule()
-                            .strokeBorder(Color.white.opacity(0.52), lineWidth: 0.6)
-                    )
-                    .shadow(color: Color.black.opacity(0.08), radius: 8, y: 3)
+                fallbackModernSearchControl
 
                 Spacer(minLength: 8)
 
                 settingsMenu(
                     size: CGSize(width: 34, height: 34),
-                    hoverShape: .circle
+                    hoverShape: .circle,
+                    hoverBackgroundSize: CGSize(width: 28, height: 28)
                 )
                     .background(.ultraThinMaterial, in: Circle())
                     .overlay(
@@ -855,12 +851,48 @@ struct RequirementPanelView: View {
                             .strokeBorder(Color.white.opacity(0.52), lineWidth: 0.6)
                     )
                     .shadow(color: Color.black.opacity(0.08), radius: 8, y: 3)
+                    .pointingHandCursor()
             }
             .padding(.horizontal, 10)
         }
         .padding(.top, 6)
         .padding(.bottom, 8)
         .frame(maxWidth: .infinity)
+    }
+
+    @available(macOS 26.0, *)
+    @ViewBuilder
+    private var nativeModernSearchControl: some View {
+        if isSearchExpanded {
+            modernSearchCluster
+                .glassEffect(.regular.interactive(), in: Capsule())
+        } else {
+            modernSearchCluster
+                .frame(width: 34, height: 34)
+                .glassEffect(.regular.interactive(), in: Circle())
+        }
+    }
+
+    @ViewBuilder
+    private var fallbackModernSearchControl: some View {
+        if isSearchExpanded {
+            modernSearchCluster
+                .background(.ultraThinMaterial, in: Capsule())
+                .overlay(
+                    Capsule()
+                        .strokeBorder(Color.white.opacity(0.52), lineWidth: 0.6)
+                )
+                .shadow(color: Color.black.opacity(0.08), radius: 8, y: 3)
+        } else {
+            modernSearchCluster
+                .frame(width: 34, height: 34)
+                .background(.ultraThinMaterial, in: Circle())
+                .overlay(
+                    Circle()
+                        .strokeBorder(Color.white.opacity(0.52), lineWidth: 0.6)
+                )
+                .shadow(color: Color.black.opacity(0.08), radius: 8, y: 3)
+        }
     }
 
     private var modernSearchCluster: some View {
@@ -871,10 +903,10 @@ struct RequirementPanelView: View {
                 Image(systemName: isSearchExpanded ? "xmark" : "magnifyingglass")
                     .font(.system(size: 11.5, weight: .semibold))
                     .foregroundStyle(isSearchExpanded ? DesignColor.doing : Color.black.opacity(0.62))
-                    .frame(width: 26, height: 30)
+                    .frame(width: 32, height: 32)
                     .contentShape(Circle())
             }
-            .buttonStyle(FloatingIconButtonStyle(diameter: 24))
+            .buttonStyle(FloatingIconButtonStyle(diameter: 28))
             .help(isSearchExpanded ? "关闭搜索" : "搜索")
             .pointingHandCursor()
 
@@ -1046,7 +1078,8 @@ struct RequirementPanelView: View {
 
     private func settingsMenu(
         size: CGSize,
-        hoverShape: NativeIconMenuHoverShape = .roundedRectangle(cornerRadius: 6)
+        hoverShape: NativeIconMenuHoverShape = .roundedRectangle(cornerRadius: 6),
+        hoverBackgroundSize: CGSize? = nil
     ) -> some View {
         NativeIconMenuButton(
             kind: .settings,
@@ -1054,7 +1087,8 @@ struct RequirementPanelView: View {
             size: size,
             tintAlpha: 0.84,
             help: "设置",
-            hoverShape: hoverShape
+            hoverShape: hoverShape,
+            hoverBackgroundSize: hoverBackgroundSize
         )
         .frame(width: size.width, height: size.height)
     }
@@ -1109,12 +1143,29 @@ struct RequirementPanelView: View {
     }
 
     private var quickLinkMenuContents: [NativeMenuContent] {
-        settingsStore.validQuickLinks.map { link in
-            .item(
-                NativeMenuItemDescriptor(title: link.name, systemImage: "link") {
-                    openQuickLink(link)
-                }
-            )
+        settingsStore.validQuickLinkItems.map { item in
+            switch item {
+            case let .link(link):
+                return .item(
+                    NativeMenuItemDescriptor(title: link.name, systemImage: "link") {
+                        openQuickLink(link)
+                    }
+                )
+            case let .group(group):
+                return .submenu(
+                    NativeSubmenuDescriptor(
+                        title: group.name,
+                        systemImage: "folder",
+                        contents: group.links.map { link in
+                            .item(
+                                NativeMenuItemDescriptor(title: link.name, systemImage: "link") {
+                                    openQuickLink(link)
+                                }
+                            )
+                        }
+                    )
+                )
+            }
         }
     }
 

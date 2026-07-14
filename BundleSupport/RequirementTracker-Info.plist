@@ -19,14 +19,31 @@
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.12.0</string>
+    <string>1.13.0</string>
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLName</key>
+            <string>com.xfu-work.RequirementTracker</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>requirementtracker</string>
+            </array>
+        </dict>
+    </array>
     <key>CFBundleVersion</key>
-    <string>1.12.0</string>
+    <string>1.13.0</string>
     <key>LSMinimumSystemVersion</key>
     <string>13.0</string>
     <key>LSUIElement</key>
     <true/>
     <key>NSHighResolutionCapable</key>
     <true/>
+    <key>NSCalendarsFullAccessUsageDescription</key>
+    <string>用于在日历小组件中展示节假日和日程。</string>
+    <key>NSCalendarsUsageDescription</key>
+    <string>用于在日历小组件中展示节假日和日程。</string>
+    <key>NSAppleEventsUsageDescription</key>
+    <string>用于从小组件打开系统日历并定位到你选择的日期。</string>
 </dict>
 </plist>

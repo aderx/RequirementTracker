@@ -118,6 +118,7 @@ private struct RequirementJSONWriter {
             response["isDone"] = boolValue(record["isDone"]) ?? false
             response["isTested"] = boolValue(record["isTested"]) ?? false
             response["isMerged"] = boolValue(record["isMerged"]) ?? false
+            copyIfPresent("pauseReason", from: record, to: &response)
             copyIfPresent("issueType", from: record, to: &response)
             copyIfPresent("priority", from: record, to: &response)
             copyIfPresent("targetVersion", from: record, to: &response)

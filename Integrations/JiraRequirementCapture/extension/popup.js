@@ -29,6 +29,9 @@ const elements = {
   iconFrame: document.getElementById("iconFrame"),
   statusIcon: document.getElementById("statusIcon"),
   summaryPanel: document.getElementById("summaryPanel"),
+  statusReasonPanel: document.getElementById("statusReasonPanel"),
+  statusReasonLabel: document.getElementById("statusReasonLabel"),
+  statusReasonText: document.getElementById("statusReasonText"),
   manualPanel: document.getElementById("manualPanel"),
   manualJiraInput: document.getElementById("manualJiraInput"),
   actions: document.getElementById("actions"),
@@ -116,6 +119,7 @@ async function handlePageResult(result, hostError) {
 
 async function handleJiraPage(payload) {
   hideManualInput();
+  hideStatusReason();
   const issueKey = payload.issueKey || payload.jiraKey || "未识别";
   const title = payload.title || "暂无标题";
   const jiraURL = payload.jiraURL || jiraPayloadFromValue(issueKey).jiraURL;
@@ -142,17 +146,24 @@ async function handleJiraPage(payload) {
 
   if (inspect.exists) {
     const next = jiraNextStatus(inspect.status);
-    renderSummary([
+    const status = String(inspect.status || "").toLowerCase();
+    const statusReason = String(inspect.pauseReason || "").trim();
+    const summaryRows = [
       { label: "需求", value: issueKey, copyText: inspect.jiraURL || jiraURL },
       { label: "标题", value: title },
       { label: "记录状态", value: statusName(inspect.status) || "未知" }
-    ]);
-    setView({
-      tone: "subtle",
-      icon: "=",
-      title: "需求已记录",
-      message: ""
-    });
+    ];
+    renderSummary(summaryRows);
+
+    if (status === "paused") {
+      showStatusReason("paused", statusReason);
+      setView({ tone: "warning", icon: "pause", title: "需求已暂停", message: "" });
+    } else if (status === "stopped") {
+      showStatusReason("stopped", statusReason);
+      setView({ tone: "error", icon: "stop", title: "需求已停止", message: "" });
+    } else {
+      setView({ tone: "subtle", icon: "=", title: "需求已记录", message: "" });
+    }
 
     const actions = [
       button("更新信息", "secondary-button", () => saveJira(payload))
@@ -523,9 +534,12 @@ function resetContent() {
 }
 
 function setView({ tone, icon, title, message }) {
+  const stateIcon = icon === "pause" || icon === "stop";
   elements.iconFrame.className = `icon-frame ${tone || "blue"}`;
-  elements.statusIcon.className = icon.length > 1 ? "icon-symbol compact" : "icon-symbol";
-  elements.statusIcon.textContent = icon;
+  elements.statusIcon.className = stateIcon
+    ? `icon-symbol state-icon ${icon}`
+    : (icon.length > 1 ? "icon-symbol compact" : "icon-symbol");
+  elements.statusIcon.textContent = stateIcon ? "" : icon;
   elements.titleText.textContent = title;
   setStatus(message || "");
 }
@@ -559,6 +573,19 @@ function renderSummary(rows) {
   }
 }
 
+function showStatusReason(status, reason) {
+  const isPaused = status === "paused";
+  elements.statusReasonPanel.className = `reason-card ${isPaused ? "paused" : "stopped"}`;
+  elements.statusReasonLabel.textContent = isPaused ? "暂停原因" : "停止原因";
+  elements.statusReasonText.textContent = reason || "未填写";
+}
+
+function hideStatusReason() {
+  elements.statusReasonPanel.className = "reason-card hidden";
+  elements.statusReasonLabel.textContent = "";
+  elements.statusReasonText.textContent = "";
+}
+
 /// 复制按钮：点击后把 text 写入剪贴板，并给出短暂的“已复制”反馈。
 function copyButtonFor(text) {
   const element = document.createElement("button");
@@ -584,6 +611,7 @@ function copyButtonFor(text) {
 
 function hideSummary() {
   elements.summaryPanel.classList.add("hidden");
+  hideStatusReason();
 }
 
 function hideManualInput() {

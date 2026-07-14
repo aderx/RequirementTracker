@@ -108,6 +108,21 @@ function run() {
     assert.equal(historicalInspection.ok, true);
     assert.equal(historicalInspection.exists, true);
     assert.equal(historicalInspection.status, "merged");
+
+    record.stage = "paused";
+    record.pauseReason = "等待后端接口";
+    record.isDone = false;
+    record.isTested = false;
+    record.isMerged = false;
+    fs.writeFileSync(dataFile, JSON.stringify([record]));
+
+    const pausedInspection = sendNativeMessage(dataFile, {
+      type: "inspectRequirement",
+      payload: { issueKey, jiraURL }
+    });
+    assert.equal(pausedInspection.ok, true);
+    assert.equal(pausedInspection.status, "paused");
+    assert.equal(pausedInspection.pauseReason, "等待后端接口");
   } finally {
     fs.rmSync(directory, { recursive: true, force: true });
   }

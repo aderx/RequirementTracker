@@ -360,6 +360,11 @@ public struct Requirement: Identifiable, Codable, Equatable, Sendable {
         completedAt ?? updatedAt
     }
 
+    /// 卡片状态行展示的是“当前状态何时发生”，不应被后续标题、Jira 字段等元数据刷新覆盖。
+    public var currentStatusDate: Date {
+        statusHistory.last { $0.status == currentTimelineStatus }?.date ?? activityDate
+    }
+
     public var hasMergeRequestURL: Bool {
         !(mrURL ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
