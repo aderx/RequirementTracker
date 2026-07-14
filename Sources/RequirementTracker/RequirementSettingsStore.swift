@@ -28,8 +28,12 @@ final class RequirementSettingsStore: ObservableObject {
         configuration.validScriptProjects
     }
 
-    var validQuickLinks: [RequirementQuickLink] {
-        configuration.validQuickLinks
+    var validQuickLinkItems: [RequirementQuickLinkItem] {
+        configuration.validQuickLinkItems
+    }
+
+    var quickLinkGroups: [RequirementQuickLinkGroup] {
+        configuration.quickLinkGroups
     }
 
     var panelStyle: RequirementPanelStyle {
@@ -157,34 +161,61 @@ final class RequirementSettingsStore: ObservableObject {
     }
 
     func addQuickLink() {
-        configuration.quickLinks.append(
-            RequirementQuickLink(name: "新链接", url: "")
+        configuration.quickLinkItems.append(
+            .link(RequirementQuickLink(name: "新链接", url: ""))
+        )
+    }
+
+    func addQuickLinkGroup() {
+        configuration.quickLinkItems.append(
+            .group(RequirementQuickLinkGroup(name: "新分组"))
         )
     }
 
     func deleteQuickLink(id: RequirementQuickLink.ID) {
-        configuration.quickLinks.removeAll { $0.id == id }
+        configuration.deleteQuickLink(id: id)
     }
 
     func moveQuickLink(id: RequirementQuickLink.ID, offset: Int) {
-        guard let index = configuration.quickLinks.firstIndex(where: { $0.id == id }) else {
-            return
-        }
+        configuration.moveQuickLink(id: id, offset: offset)
+    }
 
-        let target = index + offset
-        guard configuration.quickLinks.indices.contains(target) else {
-            return
-        }
+    func moveQuickLinkItem(id: UUID, offset: Int) {
+        configuration.moveQuickLinkItem(id: id, offset: offset)
+    }
 
-        configuration.quickLinks.swapAt(index, target)
+    func moveQuickLink(id: RequirementQuickLink.ID, toGroupID groupID: RequirementQuickLinkGroup.ID?) {
+        configuration.moveQuickLink(id: id, toGroupID: groupID)
     }
 
     func updateQuickLink(id: RequirementQuickLink.ID, _ transform: (inout RequirementQuickLink) -> Void) {
-        guard let index = configuration.quickLinks.firstIndex(where: { $0.id == id }) else {
+        configuration.updateQuickLink(id: id, transform)
+    }
+
+    func quickLink(id: RequirementQuickLink.ID) -> RequirementQuickLink? {
+        configuration.quickLink(id: id)
+    }
+
+    func quickLinkGroup(id: RequirementQuickLinkGroup.ID) -> RequirementQuickLinkGroup? {
+        configuration.quickLinkGroup(id: id)
+    }
+
+    func quickLinkGroupID(containing linkID: RequirementQuickLink.ID) -> RequirementQuickLinkGroup.ID? {
+        configuration.quickLinkGroupID(containing: linkID)
+    }
+
+    func updateQuickLinkGroup(
+        id: RequirementQuickLinkGroup.ID,
+        _ transform: (inout RequirementQuickLinkGroup) -> Void
+    ) {
+        configuration.updateQuickLinkGroup(id: id, transform)
+    }
+
+    func dissolveQuickLinkGroup(id: RequirementQuickLinkGroup.ID) {
+        guard configuration.dissolveQuickLinkGroup(id: id) else {
             return
         }
-
-        transform(&configuration.quickLinks[index])
+        lastNotice = "分组已解散，内部链接已移到不分组"
     }
 
     private func save() {

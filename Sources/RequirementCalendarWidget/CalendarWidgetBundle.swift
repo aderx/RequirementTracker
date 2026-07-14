@@ -4,18 +4,37 @@ import WidgetKit
 
 struct CalendarWidgetEntry: TimelineEntry {
     let date: Date
+    let state: CalendarWidgetState
+    let events: CalendarEventSnapshot
 }
 
 struct CalendarWidgetTimelineProvider: TimelineProvider {
+    let scope: CalendarWidgetScope
+
     func placeholder(in context: Context) -> CalendarWidgetEntry {
-        CalendarWidgetEntry(date: Date())
+        let now = Date()
+        return CalendarWidgetEntry(
+            date: now,
+            state: CalendarWidgetStateStore.read(now: now),
+            events: .preview(now: now)
+        )
     }
 
     func getSnapshot(
         in context: Context,
         completion: @escaping (CalendarWidgetEntry) -> Void
     ) {
-        completion(CalendarWidgetEntry(date: Date()))
+        let now = Date()
+        let state = CalendarWidgetStateStore.read(now: now)
+        completion(
+            CalendarWidgetEntry(
+                date: now,
+                state: state,
+                events: context.isPreview
+                    ? .preview(now: state.selectedDate)
+                    : CalendarWidgetEventLoader.load(for: state, scope: scope)
+            )
+        )
     }
 
     func getTimeline(
@@ -24,15 +43,23 @@ struct CalendarWidgetTimelineProvider: TimelineProvider {
     ) {
         let now = Date()
         let calendar = Calendar.autoupdatingCurrent
+        let state = CalendarWidgetStateStore.read(now: now)
         let nextMidnight = calendar.date(
             byAdding: .day,
             value: 1,
             to: calendar.startOfDay(for: now)
         ) ?? now.addingTimeInterval(24 * 60 * 60)
+        let nextRefresh = min(nextMidnight, now.addingTimeInterval(15 * 60))
         completion(
             Timeline(
-                entries: [CalendarWidgetEntry(date: now)],
-                policy: .after(nextMidnight)
+                entries: [
+                    CalendarWidgetEntry(
+                        date: now,
+                        state: state,
+                        events: CalendarWidgetEventLoader.load(for: state, scope: scope)
+                    )
+                ],
+                policy: .after(nextRefresh)
             )
         )
     }
@@ -40,36 +67,32 @@ struct CalendarWidgetTimelineProvider: TimelineProvider {
 
 @available(macOS 14.0, *)
 struct MonthCalendarWidget: Widget {
-    private let kind = "com.xfu-work.RequirementTracker.calendar.month"
-
     var body: some WidgetConfiguration {
         StaticConfiguration(
-            kind: kind,
-            provider: CalendarWidgetTimelineProvider()
+            kind: CalendarWidgetKind.month,
+            provider: CalendarWidgetTimelineProvider(scope: .month)
         ) { entry in
             MonthCalendarWidgetView(entry: entry)
                 .calendarWidgetBackground()
         }
         .configurationDisplayName("完整月历")
-        .description("用大尺寸卡片显示本月的完整日期，并高亮今天和周末。")
+        .description("切换月份、选择日期，并查看系统日历中的节假日与日程。")
         .supportedFamilies([.systemLarge, .systemExtraLarge])
     }
 }
 
 @available(macOS 14.0, *)
 struct YearCalendarWidget: Widget {
-    private let kind = "com.xfu-work.RequirementTracker.calendar.year"
-
     var body: some WidgetConfiguration {
         StaticConfiguration(
-            kind: kind,
-            provider: CalendarWidgetTimelineProvider()
+            kind: CalendarWidgetKind.year,
+            provider: CalendarWidgetTimelineProvider(scope: .year)
         ) { entry in
             YearCalendarWidgetView(entry: entry)
                 .calendarWidgetBackground()
         }
         .configurationDisplayName("全年日历")
-        .description("在一张大尺寸卡片中查看今年的 12 个月。")
+        .description("切换年份，并在全年视图中查看有日程的日期。")
         .supportedFamilies([.systemLarge, .systemExtraLarge])
     }
 }

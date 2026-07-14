@@ -129,6 +129,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         )
     }
 
+    func application(_ application: NSApplication, open urls: [URL]) {
+        for url in urls {
+            guard let selectedDate = CalendarDeepLink.selectedDate(from: url) else {
+                continue
+            }
+            SystemCalendarLauncher.openDay(selectedDate)
+        }
+    }
+
     @objc
     private func requirementsDidChangeExternally(_ notification: Notification) {
         let issueKey = notification.userInfo?["issueKey"] as? String
@@ -411,7 +420,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private static var appVersion: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
-            ?? "1.12.0"
+            ?? "1.13.0"
     }
 
     private static var githubURL: String? {

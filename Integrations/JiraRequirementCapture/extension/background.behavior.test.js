@@ -10,6 +10,10 @@ function eventStub() {
 }
 
 function createBackground(nativeStub) {
+  const actionCalls = {
+    badgeTexts: [],
+    icons: []
+  };
   const sandbox = {
     URL,
     console,
@@ -28,7 +32,12 @@ function createBackground(nativeStub) {
         query() {}
       },
       action: {
-        setBadgeText() {},
+        setIcon(details) {
+          actionCalls.icons.push(details);
+        },
+        setBadgeText(details) {
+          actionCalls.badgeTexts.push(details);
+        },
         setBadgeBackgroundColor() {},
         setBadgeTextColor() {}
       }
@@ -38,6 +47,7 @@ function createBackground(nativeStub) {
   const exposure = [
     "globalThis.__background = {",
     "  BADGE_STYLES,",
+    "  applyBadge,",
     "  resolveState,",
     "  setNativeMessageStub(stub) { sendNativeMessage = stub; }",
     "};"
@@ -45,6 +55,7 @@ function createBackground(nativeStub) {
   vm.createContext(sandbox);
   vm.runInContext(backgroundSource + "\n" + exposure, sandbox);
   sandbox.__background.setNativeMessageStub(nativeStub);
+  sandbox.__background.actionCalls = actionCalls;
   return sandbox.__background;
 }
 
@@ -91,6 +102,28 @@ async function testIncompleteJiraUsesRecordedBadge() {
   );
 }
 
+async function testPausedAndStoppedJiraUseDedicatedBadges() {
+  for (const status of ["paused", "stopped"]) {
+    const background = createBackground(nativeStubFor({ exists: true, status }));
+    assert.equal(
+      await background.resolveState("http://jira.zstack.io/browse/ZSTAC-12345"),
+      status
+    );
+  }
+
+  const background = createBackground(nativeStubFor({ exists: true, status: "paused" }));
+  assert.equal(background.BADGE_STYLES.paused?.text, "Ⅱ");
+  assert.equal(background.BADGE_STYLES.stopped?.text, "■");
+  assert.notEqual(background.BADGE_STYLES.paused?.color, background.BADGE_STYLES.stopped?.color);
+
+  background.applyBadge(42, "paused");
+  assert.equal(background.actionCalls.badgeTexts.at(-1)?.text, "Ⅱ");
+  assert.equal(background.actionCalls.icons.at(-1)?.path?.[16], "icons/icon-16.png");
+
+  background.applyBadge(42, "stopped");
+  assert.equal(background.actionCalls.badgeTexts.at(-1)?.text, "■");
+}
+
 async function testMergedRequirementMRPageUsesCompletedBadge() {
   const background = createBackground(nativeStubFor({ exists: true, status: "merged" }));
   assert.equal(
@@ -123,6 +156,7 @@ async function run() {
   await testBadgeStylesDifferentiateCompletion();
   await testMergedJiraUsesCompletedBadge();
   await testIncompleteJiraUsesRecordedBadge();
+  await testPausedAndStoppedJiraUseDedicatedBadges();
   await testMergedRequirementMRPageUsesCompletedBadge();
   await testUnrecordedPageUsesAddableBadge();
   await testIncompatibleNativeHostClearsBadge();

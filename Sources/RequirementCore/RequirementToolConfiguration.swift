@@ -4,18 +4,19 @@ public struct RequirementToolConfiguration: Codable, Equatable, Sendable {
     public var baseSettings: RequirementBaseSettings
     public var pluginSettings: RequirementPluginSettings
     public var scriptProjects: [RequirementScriptProject]
-    public var quickLinks: [RequirementQuickLink]
+    public var quickLinkItems: [RequirementQuickLinkItem]
 
     public init(
         baseSettings: RequirementBaseSettings = RequirementBaseSettings(),
         pluginSettings: RequirementPluginSettings = RequirementPluginSettings(),
         scriptProjects: [RequirementScriptProject] = [],
-        quickLinks: [RequirementQuickLink] = []
+        quickLinks: [RequirementQuickLink] = [],
+        quickLinkItems: [RequirementQuickLinkItem]? = nil
     ) {
         self.baseSettings = baseSettings
         self.pluginSettings = pluginSettings
         self.scriptProjects = scriptProjects
-        self.quickLinks = quickLinks
+        self.quickLinkItems = quickLinkItems ?? quickLinks.map(RequirementQuickLinkItem.link)
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -23,6 +24,7 @@ public struct RequirementToolConfiguration: Codable, Equatable, Sendable {
         case pluginSettings
         case scriptProjects
         case quickLinks
+        case quickLinkItems
     }
 
     public init(from decoder: Decoder) throws {
@@ -32,7 +34,22 @@ public struct RequirementToolConfiguration: Codable, Equatable, Sendable {
         pluginSettings = try container.decodeIfPresent(RequirementPluginSettings.self, forKey: .pluginSettings)
             ?? RequirementPluginSettings()
         scriptProjects = try container.decodeIfPresent([RequirementScriptProject].self, forKey: .scriptProjects) ?? []
-        quickLinks = try container.decodeIfPresent([RequirementQuickLink].self, forKey: .quickLinks) ?? []
+        if let decodedItems = try container.decodeIfPresent([RequirementQuickLinkItem].self, forKey: .quickLinkItems) {
+            quickLinkItems = decodedItems
+        } else {
+            let legacyLinks = try container.decodeIfPresent([RequirementQuickLink].self, forKey: .quickLinks) ?? []
+            quickLinkItems = legacyLinks.map(RequirementQuickLinkItem.link)
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(baseSettings, forKey: .baseSettings)
+        try container.encode(pluginSettings, forKey: .pluginSettings)
+        try container.encode(scriptProjects, forKey: .scriptProjects)
+        try container.encode(quickLinkItems, forKey: .quickLinkItems)
+        // 保留扁平镜像，旧版 App 降级后仍能读取全部链接，只会丢失分组展示。
+        try container.encode(quickLinks, forKey: .quickLinks)
     }
 
     public var validScriptProjects: [RequirementScriptProject] {
@@ -42,9 +59,19 @@ public struct RequirementToolConfiguration: Codable, Equatable, Sendable {
     }
 
     public var validQuickLinks: [RequirementQuickLink] {
-        quickLinks
-            .map(\.normalized)
-            .filter(\.isValid)
+        validQuickLinkItems.flatMap(\.links)
+    }
+
+    public var validQuickLinkItems: [RequirementQuickLinkItem] {
+        quickLinkItems.compactMap(\.validMenuItem)
+    }
+
+    public var quickLinks: [RequirementQuickLink] {
+        quickLinkItems.flatMap(\.links)
+    }
+
+    public var quickLinkGroups: [RequirementQuickLinkGroup] {
+        quickLinkItems.compactMap(\.group)
     }
 
     @discardableResult
@@ -68,12 +95,183 @@ public struct RequirementToolConfiguration: Codable, Equatable, Sendable {
         return true
     }
 
+    @discardableResult
+    public mutating func moveQuickLinkItem(id: UUID, offset: Int) -> Bool {
+        guard
+            offset != 0,
+            let index = quickLinkItems.firstIndex(where: { $0.id == id })
+        else {
+            return false
+        }
+
+        let target = index + offset
+        guard quickLinkItems.indices.contains(target) else {
+            return false
+        }
+
+        quickLinkItems.swapAt(index, target)
+        return true
+    }
+
+    @discardableResult
+    public mutating func moveQuickLink(id: RequirementQuickLink.ID, offset: Int) -> Bool {
+        if let index = quickLinkItems.firstIndex(where: { $0.link?.id == id }) {
+            let target = index + offset
+            guard quickLinkItems.indices.contains(target) else {
+                return false
+            }
+
+            quickLinkItems.swapAt(index, target)
+            return true
+        }
+
+        for itemIndex in quickLinkItems.indices {
+            guard var group = quickLinkItems[itemIndex].group,
+                  group.moveLink(id: id, offset: offset)
+            else {
+                continue
+            }
+
+            quickLinkItems[itemIndex] = .group(group)
+            return true
+        }
+
+        return false
+    }
+
+    public func quickLink(id: RequirementQuickLink.ID) -> RequirementQuickLink? {
+        quickLinkItems.lazy.compactMap { item in
+            if let link = item.link, link.id == id {
+                return link
+            }
+            return item.group?.links.first { $0.id == id }
+        }.first
+    }
+
+    public func quickLinkGroup(id: RequirementQuickLinkGroup.ID) -> RequirementQuickLinkGroup? {
+        quickLinkGroups.first { $0.id == id }
+    }
+
+    public func quickLinkGroupID(containing linkID: RequirementQuickLink.ID) -> RequirementQuickLinkGroup.ID? {
+        quickLinkGroups.first { group in
+            group.links.contains { $0.id == linkID }
+        }?.id
+    }
+
+    @discardableResult
+    public mutating func updateQuickLink(
+        id: RequirementQuickLink.ID,
+        _ transform: (inout RequirementQuickLink) -> Void
+    ) -> Bool {
+        for itemIndex in quickLinkItems.indices {
+            if var link = quickLinkItems[itemIndex].link, link.id == id {
+                transform(&link)
+                quickLinkItems[itemIndex] = .link(link)
+                return true
+            }
+
+            guard var group = quickLinkItems[itemIndex].group,
+                  let linkIndex = group.links.firstIndex(where: { $0.id == id })
+            else {
+                continue
+            }
+
+            transform(&group.links[linkIndex])
+            quickLinkItems[itemIndex] = .group(group)
+            return true
+        }
+
+        return false
+    }
+
+    @discardableResult
+    public mutating func updateQuickLinkGroup(
+        id: RequirementQuickLinkGroup.ID,
+        _ transform: (inout RequirementQuickLinkGroup) -> Void
+    ) -> Bool {
+        guard let index = quickLinkItems.firstIndex(where: { $0.group?.id == id }),
+              var group = quickLinkItems[index].group
+        else {
+            return false
+        }
+
+        transform(&group)
+        quickLinkItems[index] = .group(group)
+        return true
+    }
+
+    @discardableResult
+    public mutating func deleteQuickLink(id: RequirementQuickLink.ID) -> Bool {
+        removeQuickLink(id: id) != nil
+    }
+
+    @discardableResult
+    public mutating func moveQuickLink(
+        id: RequirementQuickLink.ID,
+        toGroupID groupID: RequirementQuickLinkGroup.ID?
+    ) -> Bool {
+        let currentGroupID = quickLinkGroupID(containing: id)
+        guard currentGroupID != groupID else {
+            return false
+        }
+        if let groupID, quickLinkGroup(id: groupID) == nil {
+            return false
+        }
+        guard let link = removeQuickLink(id: id) else {
+            return false
+        }
+
+        if let groupID,
+           let index = quickLinkItems.firstIndex(where: { $0.group?.id == groupID }),
+           var group = quickLinkItems[index].group {
+            group.links.append(link)
+            quickLinkItems[index] = .group(group)
+        } else {
+            quickLinkItems.append(.link(link))
+        }
+        return true
+    }
+
+    @discardableResult
+    public mutating func dissolveQuickLinkGroup(id: RequirementQuickLinkGroup.ID) -> Bool {
+        guard let index = quickLinkItems.firstIndex(where: { $0.group?.id == id }),
+              let group = quickLinkItems[index].group
+        else {
+            return false
+        }
+
+        quickLinkItems.remove(at: index)
+        quickLinkItems.insert(contentsOf: group.links.map(RequirementQuickLinkItem.link), at: index)
+        return true
+    }
+
+    private mutating func removeQuickLink(id: RequirementQuickLink.ID) -> RequirementQuickLink? {
+        for itemIndex in quickLinkItems.indices {
+            if let link = quickLinkItems[itemIndex].link, link.id == id {
+                quickLinkItems.remove(at: itemIndex)
+                return link
+            }
+
+            guard var group = quickLinkItems[itemIndex].group,
+                  let linkIndex = group.links.firstIndex(where: { $0.id == id })
+            else {
+                continue
+            }
+
+            let link = group.links.remove(at: linkIndex)
+            quickLinkItems[itemIndex] = .group(group)
+            return link
+        }
+
+        return nil
+    }
+
     public var normalized: RequirementToolConfiguration {
         RequirementToolConfiguration(
             baseSettings: baseSettings.normalized,
             pluginSettings: pluginSettings.normalized,
             scriptProjects: scriptProjects.map(\.normalized),
-            quickLinks: quickLinks.map(\.normalized)
+            quickLinkItems: quickLinkItems.map(\.normalized)
         )
     }
 }
@@ -560,6 +758,144 @@ public struct RequirementQuickLink: Identifiable, Codable, Equatable, Sendable {
         }
 
         return true
+    }
+}
+
+public struct RequirementQuickLinkGroup: Identifiable, Codable, Equatable, Sendable {
+    public var id: UUID
+    public var name: String
+    public var links: [RequirementQuickLink]
+
+    public init(
+        id: UUID = UUID(),
+        name: String,
+        links: [RequirementQuickLink] = []
+    ) {
+        self.id = id
+        self.name = name
+        self.links = links
+    }
+
+    public var normalized: RequirementQuickLinkGroup {
+        RequirementQuickLinkGroup(
+            id: id,
+            name: name.trimmed,
+            links: links.map(\.normalized)
+        )
+    }
+
+    public var validLinks: [RequirementQuickLink] {
+        links.map(\.normalized).filter(\.isValid)
+    }
+
+    @discardableResult
+    public mutating func moveLink(id: RequirementQuickLink.ID, offset: Int) -> Bool {
+        guard
+            offset != 0,
+            let index = links.firstIndex(where: { $0.id == id })
+        else {
+            return false
+        }
+
+        let target = index + offset
+        guard links.indices.contains(target) else {
+            return false
+        }
+
+        links.swapAt(index, target)
+        return true
+    }
+}
+
+public enum RequirementQuickLinkItem: Identifiable, Codable, Equatable, Sendable {
+    case link(RequirementQuickLink)
+    case group(RequirementQuickLinkGroup)
+
+    public var id: UUID {
+        switch self {
+        case let .link(link):
+            link.id
+        case let .group(group):
+            group.id
+        }
+    }
+
+    public var link: RequirementQuickLink? {
+        guard case let .link(link) = self else {
+            return nil
+        }
+        return link
+    }
+
+    public var group: RequirementQuickLinkGroup? {
+        guard case let .group(group) = self else {
+            return nil
+        }
+        return group
+    }
+
+    public var links: [RequirementQuickLink] {
+        switch self {
+        case let .link(link):
+            [link]
+        case let .group(group):
+            group.links
+        }
+    }
+
+    public var normalized: RequirementQuickLinkItem {
+        switch self {
+        case let .link(link):
+            .link(link.normalized)
+        case let .group(group):
+            .group(group.normalized)
+        }
+    }
+
+    public var validMenuItem: RequirementQuickLinkItem? {
+        switch normalized {
+        case let .link(link):
+            return link.isValid ? RequirementQuickLinkItem.link(link) : nil
+        case let .group(group):
+            let links = group.validLinks
+            guard !group.name.trimmed.isEmpty, !links.isEmpty else {
+                return nil
+            }
+            return .group(RequirementQuickLinkGroup(id: group.id, name: group.name, links: links))
+        }
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case type
+        case link
+        case group
+    }
+
+    private enum ItemType: String, Codable {
+        case link
+        case group
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        switch try container.decode(ItemType.self, forKey: .type) {
+        case .link:
+            self = .link(try container.decode(RequirementQuickLink.self, forKey: .link))
+        case .group:
+            self = .group(try container.decode(RequirementQuickLinkGroup.self, forKey: .group))
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        switch self {
+        case let .link(link):
+            try container.encode(ItemType.link, forKey: .type)
+            try container.encode(link, forKey: .link)
+        case let .group(group):
+            try container.encode(ItemType.group, forKey: .type)
+            try container.encode(group, forKey: .group)
+        }
     }
 }
 

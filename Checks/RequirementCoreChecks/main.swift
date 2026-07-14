@@ -446,6 +446,24 @@ expect(
     historyRequirement.statusHistoryNewestFirst.map(\.status) == [.tested, .done, .pending],
     "Overview status history should expose newest events first"
 )
+let stoppedAt = makeDate(year: 2026, month: 6, day: 23)
+let metadataUpdatedAt = makeDate(year: 2026, month: 7, day: 13)
+let stoppedRequirement = Requirement(
+    jiraKey: "ZSTAC-84695",
+    jiraURL: "http://jira.zstack.io/browse/ZSTAC-84695",
+    stage: .stopped,
+    createdAt: stoppedAt,
+    updatedAt: metadataUpdatedAt,
+    statusHistory: [
+        RequirementStatusEvent(status: .pending, date: stoppedAt),
+        RequirementStatusEvent(status: .stopped, date: stoppedAt)
+    ]
+)
+expect(
+    stoppedRequirement.activityDate == metadataUpdatedAt
+        && stoppedRequirement.currentStatusDate == stoppedAt,
+    "Card status dates should use the matching status event instead of later metadata updates"
+)
 
 let directMergeCandidate = requirement(
     "ZSTAC-13",
@@ -549,6 +567,65 @@ expect(
     toolConfiguration.validQuickLinks.map(\.name) == ["Jira"],
     "Tool configuration should expose only valid links"
 )
+
+let ungroupedLinkA = RequirementQuickLink(name: "A", url: "https://example.com/a")
+let groupedLinkB = RequirementQuickLink(name: "B", url: "https://example.com/b")
+let ungroupedLinkC = RequirementQuickLink(name: "C", url: "https://example.com/c")
+let quickLinkGroup = RequirementQuickLinkGroup(name: "常用", links: [groupedLinkB])
+var groupedQuickLinkConfiguration = RequirementToolConfiguration(
+    quickLinkItems: [
+        .link(ungroupedLinkA),
+        .group(quickLinkGroup),
+        .link(ungroupedLinkC)
+    ]
+)
+expect(
+    groupedQuickLinkConfiguration.validQuickLinkItems.map(\.id)
+        == [ungroupedLinkA.id, quickLinkGroup.id, ungroupedLinkC.id],
+    "Quick-link groups and ungrouped links should share one ordered top-level list"
+)
+expect(
+    groupedQuickLinkConfiguration.moveQuickLinkItem(id: quickLinkGroup.id, offset: -1)
+        && groupedQuickLinkConfiguration.quickLinkItems.map(\.id)
+            == [quickLinkGroup.id, ungroupedLinkA.id, ungroupedLinkC.id],
+    "Quick-link groups should move freely among ungrouped links"
+)
+expect(
+    groupedQuickLinkConfiguration.moveQuickLink(id: ungroupedLinkA.id, toGroupID: quickLinkGroup.id)
+        && groupedQuickLinkConfiguration.quickLinkGroup(id: quickLinkGroup.id)?.links.map(\.id)
+            == [groupedLinkB.id, ungroupedLinkA.id],
+    "An ungrouped quick link should be movable into a group"
+)
+expect(
+    groupedQuickLinkConfiguration.moveQuickLink(id: ungroupedLinkA.id, offset: -1)
+        && groupedQuickLinkConfiguration.quickLinkGroup(id: quickLinkGroup.id)?.links.map(\.id)
+            == [ungroupedLinkA.id, groupedLinkB.id],
+    "Quick links should be reorderable inside a group"
+)
+expect(
+    groupedQuickLinkConfiguration.moveQuickLink(id: ungroupedLinkA.id, toGroupID: nil)
+        && groupedQuickLinkConfiguration.quickLinkItems.last?.id == ungroupedLinkA.id,
+    "A grouped quick link should be movable back to the ungrouped list"
+)
+
+let groupedConfigurationData = try JSONEncoder().encode(groupedQuickLinkConfiguration)
+let decodedGroupedConfiguration = try JSONDecoder().decode(
+    RequirementToolConfiguration.self,
+    from: groupedConfigurationData
+)
+expect(
+    decodedGroupedConfiguration.quickLinkGroup(id: quickLinkGroup.id)?.links.map(\.id) == [groupedLinkB.id]
+        && decodedGroupedConfiguration.quickLinks.map(\.id)
+            == groupedQuickLinkConfiguration.quickLinks.map(\.id),
+    "Quick-link groups should round-trip while retaining the legacy flat link mirror"
+)
+expect(
+    groupedQuickLinkConfiguration.dissolveQuickLinkGroup(id: quickLinkGroup.id)
+        && groupedQuickLinkConfiguration.quickLinkGroups.isEmpty
+        && Set(groupedQuickLinkConfiguration.quickLinks.map(\.id))
+            == Set([ungroupedLinkA.id, groupedLinkB.id, ungroupedLinkC.id]),
+    "Dissolving a quick-link group should preserve every link as ungrouped"
+)
 expect(
     toolConfiguration.baseSettings.panelFilters.selection(for: .completed).dateFilter == .all,
     "Tool configuration should default each status tab to all dates"
@@ -580,6 +657,28 @@ expect(
     legacyConfiguration.baseSettings.panelStyle == .standard
         && legacyConfiguration.baseSettings.panelFilters.selection(for: .incomplete).dateFilter == .all,
     "Tool configuration should decode legacy settings without base settings"
+)
+let legacyQuickLinkID = UUID()
+let legacyQuickLinkSettingsJSON = """
+{
+  "quickLinks": [
+    {
+      "id": "\(legacyQuickLinkID.uuidString)",
+      "name": "Legacy Jira",
+      "url": "https://jira.example.com"
+    }
+  ],
+  "scriptProjects": []
+}
+""".data(using: .utf8)!
+let migratedQuickLinkConfiguration = try JSONDecoder().decode(
+    RequirementToolConfiguration.self,
+    from: legacyQuickLinkSettingsJSON
+)
+expect(
+    migratedQuickLinkConfiguration.quickLinkItems.map(\.id) == [legacyQuickLinkID]
+        && migratedQuickLinkConfiguration.quickLinkGroups.isEmpty,
+    "Legacy flat quick links should migrate in place as ordered ungrouped items"
 )
 let partialBaseSettingsJSON = """
 {
@@ -805,6 +904,40 @@ expect(
 expect(
     CalendarDisplayText.year(year2026.year) == "2026年",
     "Calendar years should render as ungrouped digits"
+)
+
+let july2026 = mondayFirstGrid.month(
+    containing: makeDate(year: 2026, month: 7, day: 14),
+    today: makeDate(year: 2026, month: 7, day: 14)
+)
+let august2026 = mondayFirstGrid.month(
+    containing: makeDate(year: 2026, month: 8, day: 14),
+    today: makeDate(year: 2026, month: 7, day: 14)
+)
+expect(
+    july2026.visibleWeeks.count == 5 && august2026.visibleWeeks.count == 6,
+    "Month widgets should remove only completely empty trailing weeks"
+)
+
+let februaryFromJanuary = CalendarNavigation.movingMonth(
+    from: makeDate(year: 2026, month: 1, day: 31),
+    by: 1,
+    calendar: mondayFirstCalendar
+)
+let nextLeapYearDate = CalendarNavigation.movingYear(
+    from: makeDate(year: 2024, month: 2, day: 29),
+    by: 1,
+    calendar: mondayFirstCalendar
+)
+expect(
+    mondayFirstCalendar.dateComponents([.year, .month, .day], from: februaryFromJanuary)
+        == DateComponents(year: 2026, month: 2, day: 28),
+    "Month navigation should clamp the selected day to the target month"
+)
+expect(
+    mondayFirstCalendar.dateComponents([.year, .month, .day], from: nextLeapYearDate)
+        == DateComponents(year: 2025, month: 2, day: 28),
+    "Year navigation should clamp leap day in a non-leap year"
 )
 
 print("RequirementCoreChecks passed")

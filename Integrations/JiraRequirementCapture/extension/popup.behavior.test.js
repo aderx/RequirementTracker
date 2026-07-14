@@ -179,6 +179,72 @@ async function testExistingActiveJiraOffersDoneButton() {
   assert.equal(popup.elements.actions.children[1].textContent, "转为开发完成");
 }
 
+async function testPausedAndStoppedJiraShowReason() {
+  for (const testCase of [
+    {
+      status: "paused",
+      reason: "等待后端接口",
+      title: "需求已暂停",
+      tone: "warning",
+      icon: "pause",
+      reasonLabel: "暂停原因"
+    },
+    {
+      status: "stopped",
+      reason: "公共组件影响范围过大",
+      title: "需求已停止",
+      tone: "error",
+      icon: "stop",
+      reasonLabel: "停止原因"
+    }
+  ]) {
+    const popup = createPopupSandbox();
+    popup.setNativeMessageStub(async () => ({
+      ok: true,
+      exists: true,
+      status: testCase.status,
+      pauseReason: testCase.reason
+    }));
+
+    await popup.handleJiraPage({
+      issueKey: "ZSTAC-12345",
+      title: "需求标题"
+    });
+
+    assert.equal(popup.elements.titleText.textContent, testCase.title);
+    assert.equal(popup.elements.iconFrame.className, `icon-frame ${testCase.tone}`);
+    assert.equal(popup.elements.statusIcon.className, `icon-symbol state-icon ${testCase.icon}`);
+    assert.equal(popup.elements.statusIcon.textContent, "");
+    assert.equal(popup.elements.actions.children.length, 1);
+    assert.equal(popup.elements.actions.children[0].textContent, "更新信息");
+
+    const rows = summaryRows(popup);
+    assert.equal(rows.length, 3);
+    assert.equal(popup.elements.statusReasonPanel.className, `reason-card ${testCase.status}`);
+    assert.equal(popup.elements.statusReasonLabel.textContent, testCase.reasonLabel);
+    assert.equal(popup.elements.statusReasonText.textContent, testCase.reason);
+  }
+}
+
+async function testPausedJiraAlwaysShowsReasonRow() {
+  const popup = createPopupSandbox();
+  popup.setNativeMessageStub(async () => ({
+    ok: true,
+    exists: true,
+    status: "paused",
+    pauseReason: ""
+  }));
+
+  await popup.handleJiraPage({
+    issueKey: "ZSTAC-12345",
+    title: "需求标题"
+  });
+
+  assert.equal(popup.elements.statusReasonPanel.className, "reason-card paused");
+  assert.equal(popup.elements.statusReasonLabel.textContent, "暂停原因");
+  assert.equal(popup.elements.statusReasonText.textContent, "未填写");
+}
+
 async function testMergedJiraHasOnlyUpdateButton() {
   const popup = createPopupSandbox();
   popup.setNativeMessageStub(async () => ({ ok: true, exists: true, status: "merged" }));
@@ -396,6 +462,8 @@ async function run() {
   await testIncompatibleNativeHostIsRejectedAtStartup();
   await testExistingJiraOffersNextStatusButton();
   await testExistingActiveJiraOffersDoneButton();
+  await testPausedAndStoppedJiraShowReason();
+  await testPausedJiraAlwaysShowsReasonRow();
   await testMergedJiraHasOnlyUpdateButton();
   await testDoneAndTestedJiraCannotAdvance();
   await testNewJiraOffersAddButtons();

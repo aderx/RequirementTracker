@@ -1,9 +1,11 @@
-// 后台 Service Worker：根据当前标签页地址在插件图标上显示原生矩形角标。
-// 图标本身是蓝色的，角标用高对比颜色区分状态：
+// 后台 Service Worker：根据当前标签页地址更新插件图标右下角的原生角标。
+// 主图标始终保持蓝色，角标用高对比颜色和符号区分状态：
 // - 不支持的页面：不显示角标
 // - 可添加（支持的 Jira / MR 页面但尚未记录）：橙色「+」
 // - 已记录：绿色「↻」
 // - 已完成的 Jira / MR 记录：绿色「✓」
+// - 已暂停：琥珀色「Ⅱ」
+// - 已停止：红色「■」
 const HOST_NAME = "com.aderx.requirementtracker.jira_capture";
 const REQUIRED_NATIVE_HOST_PROTOCOL_VERSION = 2;
 const FALLBACK_SETTINGS = {
@@ -11,11 +13,19 @@ const FALLBACK_SETTINGS = {
   mrHosts: ["gitlab.zstack.io"]
 };
 const SETTINGS_TTL_MS = 5 * 60 * 1000;
+const DEFAULT_ACTION_ICONS = {
+  16: "icons/icon-16.png",
+  32: "icons/icon-32.png",
+  48: "icons/icon-48.png",
+  128: "icons/icon-128.png"
+};
 
 const BADGE_STYLES = {
   addable: { text: "+", color: "#FF9500" },
   recorded: { text: "↻", color: "#1F9D54" },
-  completed: { text: "✓", color: "#1F9D54" }
+  completed: { text: "✓", color: "#1F9D54" },
+  paused: { text: "Ⅱ", color: "#F59E0B" },
+  stopped: { text: "■", color: "#D92D43" }
 };
 
 let cachedSettings = null;
@@ -81,6 +91,9 @@ async function resolveState(url) {
       payload: { url: canonicalPageURL(url) }
     });
     if (response?.ok && response.exists) {
+      if (response.status === "paused" || response.status === "stopped") {
+        return response.status;
+      }
       if (response.status === "merged") {
         return "completed";
       }
@@ -159,6 +172,7 @@ async function loadSettings() {
 
 function applyBadge(tabId, state) {
   const style = BADGE_STYLES[state];
+  chrome.action.setIcon({ tabId, path: DEFAULT_ACTION_ICONS }, ignoreError);
   chrome.action.setBadgeText({ tabId, text: style?.text || "" }, ignoreError);
   if (!style) {
     return;

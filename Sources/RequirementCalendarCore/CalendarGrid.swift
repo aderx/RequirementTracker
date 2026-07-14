@@ -16,6 +16,14 @@ public struct CalendarMonth: Equatable {
     public let title: String
     public let weekdaySymbols: [String]
     public let weeks: [[CalendarDay?]]
+
+    public var visibleWeeks: [[CalendarDay?]] {
+        var result = weeks
+        while result.count > 1, result.last?.allSatisfy({ $0 == nil }) == true {
+            result.removeLast()
+        }
+        return result
+    }
 }
 
 public struct CalendarYear: Equatable {
@@ -28,6 +36,65 @@ public struct CalendarYear: Equatable {
 public enum CalendarDisplayText {
     public static func year(_ year: Int) -> String {
         String(year) + "年"
+    }
+}
+
+public enum CalendarNavigation {
+    public static func startOfMonth(
+        containing date: Date,
+        calendar: Calendar = .autoupdatingCurrent
+    ) -> Date {
+        let components = calendar.dateComponents([.era, .year, .month], from: date)
+        return calendar.date(from: components) ?? calendar.startOfDay(for: date)
+    }
+
+    public static func startOfYear(
+        containing date: Date,
+        calendar: Calendar = .autoupdatingCurrent
+    ) -> Date {
+        let components = calendar.dateComponents([.era, .year], from: date)
+        return calendar.date(from: components) ?? startOfMonth(containing: date, calendar: calendar)
+    }
+
+    public static func movingMonth(
+        from date: Date,
+        by offset: Int,
+        calendar: Calendar = .autoupdatingCurrent
+    ) -> Date {
+        let sourceDay = calendar.component(.day, from: date)
+        let sourceMonth = startOfMonth(containing: date, calendar: calendar)
+        guard let targetMonth = calendar.date(byAdding: .month, value: offset, to: sourceMonth),
+              let dayRange = calendar.range(of: .day, in: .month, for: targetMonth)
+        else {
+            return date
+        }
+
+        var components = calendar.dateComponents([.era, .year, .month], from: targetMonth)
+        components.day = min(sourceDay, dayRange.count)
+        return calendar.date(from: components) ?? targetMonth
+    }
+
+    public static func movingYear(
+        from date: Date,
+        by offset: Int,
+        calendar: Calendar = .autoupdatingCurrent
+    ) -> Date {
+        let sourceComponents = calendar.dateComponents([.era, .year, .month, .day], from: date)
+        guard let sourceYear = sourceComponents.year else {
+            return date
+        }
+
+        var targetComponents = sourceComponents
+        targetComponents.year = sourceYear + offset
+        targetComponents.day = 1
+        guard let targetMonth = calendar.date(from: targetComponents),
+              let dayRange = calendar.range(of: .day, in: .month, for: targetMonth)
+        else {
+            return date
+        }
+
+        targetComponents.day = min(sourceComponents.day ?? 1, dayRange.count)
+        return calendar.date(from: targetComponents) ?? targetMonth
     }
 }
 

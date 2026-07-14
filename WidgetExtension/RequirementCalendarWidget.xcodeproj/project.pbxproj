@@ -13,6 +13,8 @@
 		A10000000000000000000004 /* CalendarWidgetEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000004 /* CalendarWidgetEnvironment.swift */; };
 		A10000000000000000000005 /* MonthCalendarWidgetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000005 /* MonthCalendarWidgetView.swift */; };
 		A10000000000000000000006 /* YearCalendarWidgetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000006 /* YearCalendarWidgetView.swift */; };
+		A10000000000000000000007 /* CalendarWidgetData.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000010 /* CalendarWidgetData.swift */; };
+		A10000000000000000000008 /* CalendarWidgetIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000011 /* CalendarWidgetIntents.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -25,6 +27,8 @@
 		A20000000000000000000007 /* RequirementCalendarWidget-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; name = RequirementCalendarWidget-Info.plist; path = ../BundleSupport/RequirementCalendarWidget-Info.plist; sourceTree = SOURCE_ROOT; };
 		A20000000000000000000008 /* RequirementCalendarWidget.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; name = RequirementCalendarWidget.entitlements; path = ../BundleSupport/RequirementCalendarWidget.entitlements; sourceTree = SOURCE_ROOT; };
 		A20000000000000000000009 /* RequirementCalendarWidget.appex */ = {isa = PBXFileReference; explicitFileType = wrapper.app-extension; includeInIndex = 0; path = RequirementCalendarWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		A20000000000000000000010 /* CalendarWidgetData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = CalendarWidgetData.swift; path = ../Sources/RequirementCalendarWidget/CalendarWidgetData.swift; sourceTree = SOURCE_ROOT; };
+		A20000000000000000000011 /* CalendarWidgetIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = CalendarWidgetIntents.swift; path = ../Sources/RequirementCalendarWidget/CalendarWidgetIntents.swift; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -56,6 +60,8 @@
 				A20000000000000000000004 /* CalendarWidgetEnvironment.swift */,
 				A20000000000000000000005 /* MonthCalendarWidgetView.swift */,
 				A20000000000000000000006 /* YearCalendarWidgetView.swift */,
+				A20000000000000000000010 /* CalendarWidgetData.swift */,
+				A20000000000000000000011 /* CalendarWidgetIntents.swift */,
 			);
 			name = Sources;
 			sourceTree = "<group>";
@@ -152,6 +158,8 @@
 				A10000000000000000000004 /* CalendarWidgetEnvironment.swift in Sources */,
 				A10000000000000000000005 /* MonthCalendarWidgetView.swift in Sources */,
 				A10000000000000000000006 /* YearCalendarWidgetView.swift in Sources */,
+				A10000000000000000000007 /* CalendarWidgetData.swift in Sources */,
+				A10000000000000000000008 /* CalendarWidgetIntents.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -197,7 +205,7 @@
 				CODE_SIGNING_ALLOWED = NO;
 				CODE_SIGNING_REQUIRED = NO;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 1.12.0;
+				CURRENT_PROJECT_VERSION = 1.13.0;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = ../BundleSupport/RequirementCalendarWidget-Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -206,7 +214,7 @@
 					"@executable_path/../../../../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 1.12.0;
+				MARKETING_VERSION = 1.13.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.xfu-work.RequirementTracker.CalendarWidget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;
@@ -225,7 +233,7 @@
 				CODE_SIGNING_ALLOWED = NO;
 				CODE_SIGNING_REQUIRED = NO;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 1.12.0;
+				CURRENT_PROJECT_VERSION = 1.13.0;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = ../BundleSupport/RequirementCalendarWidget-Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -234,7 +242,7 @@
 					"@executable_path/../../../../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 1.12.0;
+				MARKETING_VERSION = 1.13.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.xfu-work.RequirementTracker.CalendarWidget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;

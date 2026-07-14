@@ -262,7 +262,7 @@ struct RequirementRowView: View {
                 .lineLimit(1)
                 .fixedSize(horizontal: true, vertical: false)
 
-            Text("· \(relativeDateText(requirement.activityDate))")
+            Text("· \(relativeDateText(requirement.currentStatusDate))")
                 .font(.system(size: 10.5))
                 .foregroundStyle(Color.black.opacity(0.30))
                 .lineLimit(1)

@@ -10,7 +10,7 @@
   <main class="shell">
     <section class="status-card" aria-live="polite">
       <div id="iconFrame" class="icon-frame blue">
-        <span id="statusIcon" class="icon-symbol">✓</span>
+        <span id="statusIcon" class="icon-symbol" aria-hidden="true">✓</span>
       </div>
 
       <h1 id="titleText">需求记录</h1>
@@ -18,6 +18,11 @@
     </section>
 
     <section id="summaryPanel" class="info-card hidden" aria-label="识别结果"></section>
+
+    <section id="statusReasonPanel" class="reason-card hidden" aria-live="polite">
+      <span id="statusReasonLabel" class="reason-label"></span>
+      <span id="statusReasonText" class="reason-value"></span>
+    </section>
 
     <section id="manualPanel" class="manual-card hidden" aria-label="手动输入">
       <input id="manualJiraInput" type="text" placeholder="ZSTAC-12345 或完整 Jira 链接">

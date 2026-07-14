@@ -11,6 +11,7 @@ struct RequirementSettingsView: View {
     @State private var pluginAlertMessage = ""
     @State private var isInstallingNativeHost = false
     @State private var nativeHostStatus: RequirementNativeHostStatus?
+    @StateObject private var calendarAccessManager = CalendarAccessManager()
 
     var body: some View {
         ZStack {
@@ -31,9 +32,13 @@ struct RequirementSettingsView: View {
         .background(TransparentWindowConfigurator())
         .onAppear {
             ensureProjectSelection()
+            calendarAccessManager.refresh()
         }
         .onChange(of: settingsStore.configuration.scriptProjects.map(\.id)) { _ in
             ensureProjectSelection()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            calendarAccessManager.refresh()
         }
         .alert("插件配置", isPresented: Binding(
             get: { !pluginAlertMessage.isEmpty },
@@ -130,6 +135,11 @@ struct RequirementSettingsView: View {
                 )
 
                 panelStyleSelector
+
+                GlassDivider()
+                    .padding(.vertical, 2)
+
+                calendarAccessCard
 
                 GlassDivider()
                     .padding(.vertical, 2)
@@ -234,6 +244,79 @@ struct RequirementSettingsView: View {
                 .accessibilityAddTraits(isSelected ? .isSelected : [])
                 .pointingHandCursor()
             }
+        }
+    }
+
+    private var calendarAccessCard: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(spacing: 10) {
+                Image(systemName: "calendar.badge.clock")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(DesignColor.doing)
+                    .frame(width: 28, height: 28)
+                    .background(DesignColor.doing.opacity(0.09), in: Circle())
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("系统日历")
+                        .font(.system(size: 12.5, weight: .semibold))
+                        .foregroundStyle(DesignColor.textPrimary)
+
+                    Text("允许小组件读取 macOS 日历中的节假日订阅和日程，只用于本机展示。")
+                        .font(.system(size: 9.5))
+                        .foregroundStyle(Color.black.opacity(0.46))
+                }
+
+                Spacer(minLength: 8)
+
+                Label(
+                    calendarAccessManager.statusTitle,
+                    systemImage: calendarAccessManager.statusSystemImage
+                )
+                .font(.system(size: 9.5, weight: .semibold))
+                .foregroundStyle(calendarAccessTint)
+
+                Button {
+                    calendarAccessManager.performPrimaryAction()
+                } label: {
+                    Text(calendarAccessManager.isRequesting ? "请求中…" : calendarAccessManager.actionTitle)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(
+                    calendarAccessManager.isRequesting
+                        || calendarAccessManager.state == .fullAccess
+                        || calendarAccessManager.state == .unavailable
+                )
+                .pointingHandCursor(
+                    !calendarAccessManager.isRequesting
+                        && calendarAccessManager.state != .fullAccess
+                        && calendarAccessManager.state != .unavailable
+                )
+            }
+
+            if let errorMessage = calendarAccessManager.errorMessage {
+                Text(errorMessage)
+                    .font(.system(size: 9.5, weight: .medium))
+                    .foregroundStyle(DesignColor.stopped)
+                    .padding(.leading, 38)
+            }
+        }
+        .padding(10)
+        .background(Color.white.opacity(0.60), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(Color.black.opacity(0.075), lineWidth: 0.6)
+        )
+    }
+
+    private var calendarAccessTint: Color {
+        switch calendarAccessManager.state {
+        case .fullAccess:
+            return .green
+        case .notDetermined:
+            return DesignColor.doing
+        case .denied, .unavailable:
+            return DesignColor.stopped
         }
     }
 
@@ -631,6 +714,15 @@ struct RequirementSettingsView: View {
                 Spacer()
 
                 Button {
+                    settingsStore.addQuickLinkGroup()
+                } label: {
+                    Label("添加分组", systemImage: "folder.badge.plus")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .pointingHandCursor()
+
+                Button {
                     settingsStore.addQuickLink()
                 } label: {
                     Label("添加链接", systemImage: "plus")
@@ -642,46 +734,215 @@ struct RequirementSettingsView: View {
 
             ScrollView(.vertical, showsIndicators: true) {
                 LazyVStack(spacing: 10) {
-                    ForEach(Array(settingsStore.configuration.quickLinks.enumerated()), id: \.element.id) { index, link in
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack(spacing: 9) {
-                                TextField("链接标题", text: quickLinkNameBinding(linkID: link.id))
-                                    .textFieldStyle(.roundedBorder)
-
-                                reorderButtons(
-                                    canMoveUp: index > 0,
-                                    canMoveDown: index < settingsStore.configuration.quickLinks.count - 1,
-                                    onMoveUp: {
-                                        settingsStore.moveQuickLink(id: link.id, offset: -1)
-                                    },
-                                    onMoveDown: {
-                                        settingsStore.moveQuickLink(id: link.id, offset: 1)
-                                    }
-                                )
-
-                                Button(role: .destructive) {
-                                    settingsStore.deleteQuickLink(id: link.id)
-                                } label: {
-                                    Image(systemName: "trash")
-                                }
-                                .buttonStyle(.borderless)
-                                .help("删除链接")
-                                .pointingHandCursor()
-                            }
-
-                            quickLinkURLEditor(linkID: link.id)
+                    if settingsStore.configuration.quickLinkItems.isEmpty {
+                        Text("暂无快捷链接，可添加不分组链接或新分组")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Color.secondary)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 28)
+                    } else {
+                        ForEach(
+                            Array(settingsStore.configuration.quickLinkItems.enumerated()),
+                            id: \.element.id
+                        ) { index, item in
+                            quickLinkTopLevelEditor(
+                                item,
+                                index: index,
+                                count: settingsStore.configuration.quickLinkItems.count
+                            )
                         }
-                        .padding(12)
-                        .background(Color.white.opacity(0.62), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                .strokeBorder(Color.black.opacity(0.075), lineWidth: 0.6)
-                        )
                     }
                 }
             }
         }
         .padding(20)
+    }
+
+    @ViewBuilder
+    private func quickLinkTopLevelEditor(
+        _ item: RequirementQuickLinkItem,
+        index: Int,
+        count: Int
+    ) -> some View {
+        switch item {
+        case let .link(link):
+            quickLinkEditor(
+                link,
+                groupID: nil,
+                canMoveUp: index > 0,
+                canMoveDown: index < count - 1,
+                onMoveUp: {
+                    settingsStore.moveQuickLinkItem(id: link.id, offset: -1)
+                },
+                onMoveDown: {
+                    settingsStore.moveQuickLinkItem(id: link.id, offset: 1)
+                }
+            )
+        case let .group(group):
+            quickLinkGroupEditor(group, index: index, count: count)
+        }
+    }
+
+    private func quickLinkGroupEditor(
+        _ group: RequirementQuickLinkGroup,
+        index: Int,
+        count: Int
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Image(systemName: "folder.fill")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(DesignColor.doing)
+
+                TextField("分组名称", text: quickLinkGroupNameBinding(groupID: group.id))
+                    .textFieldStyle(.roundedBorder)
+
+                reorderButtons(
+                    canMoveUp: index > 0,
+                    canMoveDown: index < count - 1,
+                    onMoveUp: {
+                        settingsStore.moveQuickLinkItem(id: group.id, offset: -1)
+                    },
+                    onMoveDown: {
+                        settingsStore.moveQuickLinkItem(id: group.id, offset: 1)
+                    }
+                )
+
+                Button("解散") {
+                    settingsStore.dissolveQuickLinkGroup(id: group.id)
+                }
+                .buttonStyle(.borderless)
+                .foregroundStyle(DesignColor.stopped)
+                .help("解散分组，内部链接保留为不分组状态")
+                .pointingHandCursor()
+            }
+
+            if group.links.isEmpty {
+                Text("暂无链接，可通过链接右侧的分组菜单移入")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 6)
+            } else {
+                ForEach(Array(group.links.enumerated()), id: \.element.id) { linkIndex, link in
+                    quickLinkEditor(
+                        link,
+                        groupID: group.id,
+                        canMoveUp: linkIndex > 0,
+                        canMoveDown: linkIndex < group.links.count - 1,
+                        onMoveUp: {
+                            settingsStore.moveQuickLink(id: link.id, offset: -1)
+                        },
+                        onMoveDown: {
+                            settingsStore.moveQuickLink(id: link.id, offset: 1)
+                        }
+                    )
+                }
+            }
+        }
+        .padding(12)
+        .background(DesignColor.doing.opacity(0.045), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(DesignColor.doing.opacity(0.14), lineWidth: 0.7)
+        )
+    }
+
+    private func quickLinkEditor(
+        _ link: RequirementQuickLink,
+        groupID: RequirementQuickLinkGroup.ID?,
+        canMoveUp: Bool,
+        canMoveDown: Bool,
+        onMoveUp: @escaping () -> Void,
+        onMoveDown: @escaping () -> Void
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                TextField("链接标题", text: quickLinkNameBinding(linkID: link.id))
+                    .textFieldStyle(.roundedBorder)
+
+                quickLinkGroupMenu(linkID: link.id, currentGroupID: groupID)
+
+                reorderButtons(
+                    canMoveUp: canMoveUp,
+                    canMoveDown: canMoveDown,
+                    onMoveUp: onMoveUp,
+                    onMoveDown: onMoveDown
+                )
+
+                Button(role: .destructive) {
+                    settingsStore.deleteQuickLink(id: link.id)
+                } label: {
+                    Image(systemName: "trash")
+                }
+                .buttonStyle(.borderless)
+                .help("删除链接")
+                .pointingHandCursor()
+            }
+
+            quickLinkURLEditor(linkID: link.id)
+        }
+        .padding(groupID == nil ? 12 : 10)
+        .background(
+            Color.white.opacity(groupID == nil ? 0.62 : 0.74),
+            in: RoundedRectangle(cornerRadius: 9, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .strokeBorder(Color.black.opacity(0.075), lineWidth: 0.6)
+        )
+    }
+
+    private func quickLinkGroupMenu(
+        linkID: RequirementQuickLink.ID,
+        currentGroupID: RequirementQuickLinkGroup.ID?
+    ) -> some View {
+        Menu {
+            Button {
+                settingsStore.moveQuickLink(id: linkID, toGroupID: nil)
+            } label: {
+                Label("不分组", systemImage: currentGroupID == nil ? "checkmark" : "tray")
+            }
+            .disabled(currentGroupID == nil)
+
+            if !settingsStore.quickLinkGroups.isEmpty {
+                Divider()
+
+                ForEach(settingsStore.quickLinkGroups) { group in
+                    Button {
+                        settingsStore.moveQuickLink(id: linkID, toGroupID: group.id)
+                    } label: {
+                        Label(
+                            group.name.isEmpty ? "未命名分组" : group.name,
+                            systemImage: currentGroupID == group.id ? "checkmark" : "folder"
+                        )
+                    }
+                    .disabled(currentGroupID == group.id)
+                }
+            }
+        } label: {
+            Label(
+                quickLinkGroupDisplayName(groupID: currentGroupID),
+                systemImage: currentGroupID == nil ? "tray" : "folder"
+            )
+            .font(.system(size: 11))
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .help("选择所属分组")
+        .pointingHandCursor()
+    }
+
+    private func quickLinkGroupDisplayName(groupID: RequirementQuickLinkGroup.ID?) -> String {
+        guard let groupID,
+              let group = settingsStore.quickLinkGroup(id: groupID)
+        else {
+            return "不分组"
+        }
+
+        let name = group.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return name.isEmpty ? "未命名分组" : name
     }
 
     private var pluginConfigurationView: some View {
@@ -999,7 +1260,7 @@ struct RequirementSettingsView: View {
 
     private func quickLinkNameBinding(linkID: RequirementQuickLink.ID) -> Binding<String> {
         Binding {
-            settingsStore.configuration.quickLinks.first { $0.id == linkID }?.name ?? ""
+            settingsStore.quickLink(id: linkID)?.name ?? ""
         } set: { value in
             settingsStore.updateQuickLink(id: linkID) { link in
                 link.name = value
@@ -1009,10 +1270,20 @@ struct RequirementSettingsView: View {
 
     private func quickLinkURLBinding(linkID: RequirementQuickLink.ID) -> Binding<String> {
         Binding {
-            settingsStore.configuration.quickLinks.first { $0.id == linkID }?.url ?? ""
+            settingsStore.quickLink(id: linkID)?.url ?? ""
         } set: { value in
             settingsStore.updateQuickLink(id: linkID) { link in
                 link.url = value
+            }
+        }
+    }
+
+    private func quickLinkGroupNameBinding(groupID: RequirementQuickLinkGroup.ID) -> Binding<String> {
+        Binding {
+            settingsStore.quickLinkGroup(id: groupID)?.name ?? ""
+        } set: { value in
+            settingsStore.updateQuickLinkGroup(id: groupID) { group in
+                group.name = value
             }
         }
     }

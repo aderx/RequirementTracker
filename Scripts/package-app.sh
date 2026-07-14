@@ -5,6 +5,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 CONFIGURATION="${1:-debug}"
 APP_INFO="$ROOT_DIR/BundleSupport/RequirementTracker-Info.plist"
+APP_ENTITLEMENTS="$ROOT_DIR/BundleSupport/RequirementTracker.entitlements"
 WIDGET_ENTITLEMENTS="$ROOT_DIR/BundleSupport/RequirementCalendarWidget.entitlements"
 WIDGET_PROJECT="$ROOT_DIR/WidgetExtension/RequirementCalendarWidget.xcodeproj"
 WIDGET_DERIVED_DATA="$ROOT_DIR/.build/widget-xcode"
@@ -97,6 +98,7 @@ if [[ "$CONFIGURATION" == "debug" ]]; then
         -c "Set :CFBundleDisplayName 需求记录 Dev" \
         -c "Set :CFBundleName 需求记录 Dev" \
         -c "Set :CFBundleIdentifier com.xfu-work.RequirementTracker.dev" \
+        -c "Set :CFBundleURLTypes:0:CFBundleURLSchemes:0 requirementtracker-dev" \
         "$STAGING_APP/Contents/Info.plist"
     /usr/libexec/PlistBuddy \
         -c "Set :CFBundleDisplayName 需求记录日历 Dev" \
@@ -110,7 +112,11 @@ codesign \
     --sign - \
     --entitlements "$WIDGET_ENTITLEMENTS" \
     "$WIDGET_BUNDLE"
-codesign --force --sign - "$STAGING_APP"
+codesign \
+    --force \
+    --sign - \
+    --entitlements "$APP_ENTITLEMENTS" \
+    "$STAGING_APP"
 
 rm -rf "$OUTPUT_APP"
 mkdir -p "$(dirname "$OUTPUT_APP")"

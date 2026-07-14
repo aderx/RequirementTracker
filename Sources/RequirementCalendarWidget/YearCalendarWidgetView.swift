@@ -11,16 +11,21 @@ struct YearCalendarWidgetView: View {
     let entry: CalendarWidgetEntry
 
     private var year: CalendarYear {
-        CalendarWidgetEnvironment.builder.year(containing: entry.date, today: entry.date)
-    }
-
-    private var currentMonth: Int {
-        CalendarWidgetEnvironment.calendar.component(.month, from: entry.date)
+        CalendarWidgetEnvironment.builder.year(
+            containing: entry.state.displayYear,
+            today: entry.date
+        )
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: family == .systemExtraLarge ? 8 : 5) {
             HStack(alignment: .firstTextBaseline) {
+                Button(intent: ChangeCalendarYearIntent(offset: -1)) {
+                    navigationIcon("chevron.left")
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("上一年")
+
                 Text(verbatim: CalendarDisplayText.year(year.year))
                     .font(
                         .system(
@@ -31,11 +36,24 @@ struct YearCalendarWidgetView: View {
                     )
                     .foregroundStyle(.red)
 
-                Spacer()
+                Button(intent: ChangeCalendarYearIntent(offset: 1)) {
+                    navigationIcon("chevron.right")
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("下一年")
 
-                Text("全年")
-                    .font(.system(size: 11, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.secondary)
+                Spacer(minLength: 4)
+
+                Button(intent: ReturnYearToTodayIntent()) {
+                    Text("今年")
+                        .font(.system(size: 9, weight: .semibold, design: .rounded))
+                        .foregroundStyle(Color.red)
+                        .padding(.horizontal, 7)
+                        .frame(height: 22)
+                        .background(Color.red.opacity(0.09), in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("回到今年")
             }
 
             GeometryReader { geometry in
@@ -54,8 +72,13 @@ struct YearCalendarWidgetView: View {
                     ForEach(year.months, id: \.month) { month in
                         MiniMonthView(
                             month: month,
-                            isCurrentMonth: month.month == currentMonth,
-                            extraLarge: family == .systemExtraLarge
+                            isCurrentMonth: CalendarWidgetEnvironment.calendar.isDate(
+                                month.startDate,
+                                equalTo: entry.date,
+                                toGranularity: .month
+                            ),
+                            extraLarge: family == .systemExtraLarge,
+                            events: entry.events
                         )
                         .frame(height: cellHeight)
                     }
@@ -63,12 +86,21 @@ struct YearCalendarWidgetView: View {
             }
         }
     }
+
+    private func navigationIcon(_ systemName: String) -> some View {
+        Image(systemName: systemName)
+            .font(.system(size: 8, weight: .bold))
+            .foregroundStyle(.secondary)
+            .frame(width: 20, height: 20)
+            .background(Color.primary.opacity(0.045), in: Circle())
+    }
 }
 
 private struct MiniMonthView: View {
     let month: CalendarMonth
     let isCurrentMonth: Bool
     let extraLarge: Bool
+    let events: CalendarEventSnapshot
 
     var body: some View {
         VStack(spacing: extraLarge ? 3 : 1) {
@@ -82,7 +114,7 @@ private struct MiniMonthView: View {
                 )
                 .foregroundStyle(isCurrentMonth ? .red : .primary)
 
-            MiniMonthGrid(month: month)
+            MiniMonthGrid(month: month, events: events)
         }
         .padding(.horizontal, extraLarge ? 4 : 2)
         .padding(.vertical, extraLarge ? 3 : 1)
