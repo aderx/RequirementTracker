@@ -32,7 +32,6 @@ struct RequirementPanelView: View {
     @State private var isSearchExpanded = false
     @State private var bottomOverlayHeight: CGFloat = 0
     @State private var modernTopOverlayHeight: CGFloat = 0
-    @State private var isModernTopActionsExpanded = false
     @FocusState private var isSearchFocused: Bool
     @Namespace private var modernGlassNamespace
 
@@ -104,7 +103,6 @@ struct RequirementPanelView: View {
             withAnimation(.snappy(duration: 0.18)) {
                 showsCalendar = false
                 isSearchExpanded = !searchText.isEmpty
-                isModernTopActionsExpanded = false
 
                 if style != .standard {
                     isAdding = false
@@ -117,7 +115,6 @@ struct RequirementPanelView: View {
             searchText = ""
             isSearchExpanded = false
             isSearchFocused = false
-            isModernTopActionsExpanded = false
             showsCalendar = false
         }
     }
@@ -290,19 +287,17 @@ struct RequirementPanelView: View {
     private func nativeModernTopOverlay(_ items: [Requirement]) -> some View {
         GlassEffectContainer(spacing: 4) {
             HStack(spacing: 6) {
-                modernTitleCluster(items)
-                    .glassEffect(.regular, in: Capsule())
-                    .glassEffectID("modern-title", in: modernGlassNamespace)
+                modernStatusCluster(items)
+                    .glassEffect(.regular.interactive(), in: Capsule())
+                    .glassEffectID("modern-status", in: modernGlassNamespace)
 
                 Spacer(minLength: 6)
 
-                modernTopContentCluster
-                    .glassEffect(.regular.interactive(), in: Capsule())
-                    .glassEffectID("modern-top-content", in: modernGlassNamespace)
-
-                modernTopToggleButton
-                    .glassEffect(.regular.interactive(), in: Circle())
-                    .glassEffectID("modern-top-toggle", in: modernGlassNamespace)
+                if hasModernTopActions {
+                    modernQuickActionsCluster
+                        .glassEffect(.regular.interactive(), in: Capsule())
+                        .glassEffectID("modern-quick-actions", in: modernGlassNamespace)
+                }
             }
             .frame(maxWidth: .infinity)
         }
@@ -313,7 +308,7 @@ struct RequirementPanelView: View {
 
     private func fallbackModernTopOverlay(_ items: [Requirement]) -> some View {
         HStack(spacing: 6) {
-            modernTitleCluster(items)
+            modernStatusCluster(items)
                 .background(.ultraThinMaterial, in: Capsule())
                 .overlay(
                     Capsule()
@@ -323,78 +318,41 @@ struct RequirementPanelView: View {
 
             Spacer(minLength: 6)
 
-            modernTopContentCluster
-                .background(.ultraThinMaterial, in: Capsule())
-                .overlay(
-                    Capsule()
-                        .strokeBorder(Color.white.opacity(0.52), lineWidth: 0.6)
-                )
-                .shadow(color: Color.black.opacity(0.08), radius: 8, y: 3)
-
-            modernTopToggleButton
-                .background(.ultraThinMaterial, in: Circle())
-                .overlay(
-                    Circle()
-                        .strokeBorder(Color.white.opacity(0.52), lineWidth: 0.6)
-                )
-                .shadow(color: Color.black.opacity(0.08), radius: 8, y: 3)
+            if hasModernTopActions {
+                modernQuickActionsCluster
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .overlay(
+                        Capsule()
+                            .strokeBorder(Color.white.opacity(0.52), lineWidth: 0.6)
+                    )
+                    .shadow(color: Color.black.opacity(0.08), radius: 8, y: 3)
+            }
         }
         .padding(.horizontal, 10)
         .padding(.top, 8)
         .frame(maxWidth: .infinity)
     }
 
-    private func modernTitleCluster(_ items: [Requirement]) -> some View {
-        HStack(spacing: 5) {
-            Text("需求记录")
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(DesignColor.textPrimary)
+    private func modernStatusCluster(_ items: [Requirement]) -> some View {
+        HStack(spacing: 0) {
+            ForEach(RequirementStatusFilter.allCases) { filter in
+                modernStatusIconButton(filter)
+            }
+
+            Rectangle()
+                .fill(Color.black.opacity(0.09))
+                .frame(width: 0.6, height: 14)
+                .padding(.horizontal, 4)
 
             Text("\(items.count) 项")
-                .font(.system(size: 10.5))
-                .foregroundStyle(Color.black.opacity(0.38))
-        }
-        .padding(.horizontal, 8)
-        .frame(height: 32)
-        .fixedSize()
-    }
-
-    private var modernTopContentCluster: some View {
-        HStack(spacing: 0) {
-            if isModernTopActionsExpanded {
-                if !scriptMenuContents.isEmpty {
-                    NativeIconMenuButton(
-                        kind: .symbol("terminal"),
-                        contents: scriptMenuContents,
-                        size: CGSize(width: 28, height: 28),
-                        tintAlpha: 0.70,
-                        help: "启动脚本",
-                        hoverShape: .circle
-                    )
-                    .frame(width: 28, height: 28)
-                }
-
-                if !quickLinkMenuContents.isEmpty {
-                    NativeIconMenuButton(
-                        kind: .symbol("link"),
-                        contents: quickLinkMenuContents,
-                        size: CGSize(width: 28, height: 28),
-                        tintAlpha: 0.70,
-                        help: "快速打开链接",
-                        hoverShape: .circle
-                    )
-                    .frame(width: 28, height: 28)
-                }
-            } else {
-                ForEach(RequirementStatusFilter.allCases) { filter in
-                    modernStatusIconButton(filter)
-                }
-            }
+                .font(.system(size: 10.5, weight: .medium))
+                .foregroundStyle(Color.black.opacity(0.42))
+                .padding(.trailing, 6)
+                .fixedSize()
         }
         .padding(.horizontal, 3)
         .frame(height: 32)
         .fixedSize()
-        .animation(.snappy(duration: 0.20), value: isModernTopActionsExpanded)
     }
 
     private func modernStatusIconButton(_ filter: RequirementStatusFilter) -> some View {
@@ -420,31 +378,35 @@ struct RequirementPanelView: View {
         .pointingHandCursor()
     }
 
-    private var modernTopToggleButton: some View {
-        Button {
-            guard hasModernTopActions else {
-                return
+    private var modernQuickActionsCluster: some View {
+        HStack(spacing: 0) {
+            if !scriptMenuContents.isEmpty {
+                NativeIconMenuButton(
+                    kind: .symbol("terminal"),
+                    contents: scriptMenuContents,
+                    size: CGSize(width: 28, height: 28),
+                    tintAlpha: 0.70,
+                    help: "启动脚本",
+                    hoverShape: .circle
+                )
+                .frame(width: 28, height: 28)
             }
 
-            withAnimation(.snappy(duration: 0.20)) {
-                isModernTopActionsExpanded.toggle()
-            }
-        } label: {
-            Image(systemName: isModernTopActionsExpanded ? "xmark" : "ellipsis")
-                .font(.system(size: 11.5, weight: .semibold))
-                .foregroundStyle(
-                    isModernTopActionsExpanded
-                        ? DesignColor.doing
-                        : Color.black.opacity(0.62)
+            if !quickLinkMenuContents.isEmpty {
+                NativeIconMenuButton(
+                    kind: .symbol("link"),
+                    contents: quickLinkMenuContents,
+                    size: CGSize(width: 28, height: 28),
+                    tintAlpha: 0.70,
+                    help: "快速打开链接",
+                    hoverShape: .circle
                 )
-                .frame(width: 32, height: 32)
-                .contentShape(Circle())
+                .frame(width: 28, height: 28)
+            }
         }
-        .buttonStyle(FloatingIconButtonStyle(diameter: 28))
-        .disabled(!hasModernTopActions)
-        .opacity(hasModernTopActions ? 1 : 0.45)
-        .help(isModernTopActionsExpanded ? "关闭操作" : "更多操作")
-        .pointingHandCursor(hasModernTopActions)
+        .padding(.horizontal, 3)
+        .frame(height: 32)
+        .fixedSize()
     }
 
     private var hasModernTopActions: Bool {

@@ -1,9 +1,11 @@
-// 后台 Service Worker：根据当前标签页地址更新插件图标右下角的原生角标。
-// 主图标始终保持蓝色，角标用高对比颜色和符号区分状态：
+// 后台 Service Worker：根据当前标签页地址更新插件图标右下角的浏览器原生角标。
+// 主图标始终保持蓝色，角标沿用 Chrome 的突出位置、粗体白字和圆角底板：
 // - 不支持的页面：不显示角标
 // - 可添加（支持的 Jira / MR 页面但尚未记录）：橙色「+」
-// - 已记录：绿色「↻」
-// - 已完成的 Jira / MR 记录：绿色「✓」
+// - 已记录：生产版绿色「↻」
+// - 开发完成：蓝色「✓」
+// - 已测试：紫色重勾「✔」
+// - 已合并：绿色「⇧」
 // - 已暂停：琥珀色「Ⅱ」
 // - 已停止：红色「■」
 const HOST_NAME = "com.aderx.requirementtracker.jira_capture";
@@ -23,7 +25,9 @@ const DEFAULT_ACTION_ICONS = {
 const BADGE_STYLES = {
   addable: { text: "+", color: "#FF9500" },
   recorded: { text: "↻", color: "#1F9D54" },
-  completed: { text: "✓", color: "#1F9D54" },
+  done: { text: "✓", color: "#1570EF" },
+  tested: { text: "✔", color: "#7F56D9" },
+  merged: { text: "⇧", color: "#1F9D54" },
   paused: { text: "Ⅱ", color: "#F59E0B" },
   stopped: { text: "■", color: "#D92D43" }
 };
@@ -91,11 +95,9 @@ async function resolveState(url) {
       payload: { url: canonicalPageURL(url) }
     });
     if (response?.ok && response.exists) {
-      if (response.status === "paused" || response.status === "stopped") {
-        return response.status;
-      }
-      if (response.status === "merged") {
-        return "completed";
+      const status = String(response.status || "").toLowerCase();
+      if (["done", "tested", "merged", "paused", "stopped"].includes(status)) {
+        return status;
       }
       return "recorded";
     }
@@ -172,14 +174,18 @@ async function loadSettings() {
 
 function applyBadge(tabId, state) {
   const style = BADGE_STYLES[state];
-  chrome.action.setIcon({ tabId, path: DEFAULT_ACTION_ICONS }, ignoreError);
+  chrome.action.setIcon({
+    tabId,
+    path: DEFAULT_ACTION_ICONS
+  }, ignoreError);
   chrome.action.setBadgeText({ tabId, text: style?.text || "" }, ignoreError);
+
   if (!style) {
     return;
   }
 
   chrome.action.setBadgeBackgroundColor({ tabId, color: style.color }, ignoreError);
-  if (chrome.action.setBadgeTextColor) {
+  if (typeof chrome.action.setBadgeTextColor === "function") {
     chrome.action.setBadgeTextColor({ tabId, color: "#FFFFFF" }, ignoreError);
   }
 }

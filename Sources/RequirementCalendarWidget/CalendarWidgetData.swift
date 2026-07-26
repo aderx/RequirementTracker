@@ -26,18 +26,40 @@ enum CalendarWidgetStateStore {
     private enum Key {
         static let displayMonth = "calendarWidget.displayMonth"
         static let selectedDate = "calendarWidget.selectedDate"
+        static let selectionUpdatedAt = "calendarWidget.selectionUpdatedAt"
         static let displayYear = "calendarWidget.displayYear"
     }
 
     static func read(now: Date = Date()) -> CalendarWidgetState {
         let calendar = CalendarWidgetEnvironment.calendar
         let defaults = UserDefaults.standard
-        let selectedDate = storedDate(forKey: Key.selectedDate, defaults: defaults)
+        let storedSelectedDate = storedDate(forKey: Key.selectedDate, defaults: defaults)
             .map(calendar.startOfDay(for:))
-            ?? calendar.startOfDay(for: now)
-        let displayMonth = storedDate(forKey: Key.displayMonth, defaults: defaults)
-            .map { CalendarNavigation.startOfMonth(containing: $0, calendar: calendar) }
-            ?? CalendarNavigation.startOfMonth(containing: selectedDate, calendar: calendar)
+        let shouldResetSelection = storedSelectedDate == nil
+            || CalendarNavigation.shouldResetDailySelection(
+                lastUpdatedAt: storedDate(forKey: Key.selectionUpdatedAt, defaults: defaults),
+                now: now,
+                calendar: calendar
+            )
+        let selectedDate = shouldResetSelection
+            ? calendar.startOfDay(for: now)
+            : storedSelectedDate ?? calendar.startOfDay(for: now)
+        let displayMonth: Date
+
+        if shouldResetSelection {
+            displayMonth = CalendarNavigation.startOfMonth(containing: selectedDate, calendar: calendar)
+            saveMonthSelection(
+                selectedDate,
+                updatedAt: now,
+                defaults: defaults,
+                calendar: calendar
+            )
+        } else {
+            displayMonth = storedDate(forKey: Key.displayMonth, defaults: defaults)
+                .map { CalendarNavigation.startOfMonth(containing: $0, calendar: calendar) }
+                ?? CalendarNavigation.startOfMonth(containing: selectedDate, calendar: calendar)
+        }
+
         let displayYear = storedDate(forKey: Key.displayYear, defaults: defaults)
             .map { CalendarNavigation.startOfYear(containing: $0, calendar: calendar) }
             ?? CalendarNavigation.startOfYear(containing: now, calendar: calendar)
@@ -49,15 +71,15 @@ enum CalendarWidgetStateStore {
         )
     }
 
-    static func selectDate(_ date: Date) {
+    static func selectDate(_ date: Date, now: Date = Date()) {
         let calendar = CalendarWidgetEnvironment.calendar
         let selectedDate = calendar.startOfDay(for: date)
         let defaults = UserDefaults.standard
-        defaults.set(selectedDate.timeIntervalSince1970, forKey: Key.selectedDate)
-        defaults.set(
-            CalendarNavigation.startOfMonth(containing: selectedDate, calendar: calendar)
-                .timeIntervalSince1970,
-            forKey: Key.displayMonth
+        saveMonthSelection(
+            selectedDate,
+            updatedAt: now,
+            defaults: defaults,
+            calendar: calendar
         )
     }
 
@@ -74,7 +96,7 @@ enum CalendarWidgetStateStore {
             by: offset,
             calendar: calendar
         )
-        selectDate(targetDate)
+        selectDate(targetDate, now: now)
     }
 
     static func moveYear(by offset: Int, now: Date = Date()) {
@@ -93,7 +115,7 @@ enum CalendarWidgetStateStore {
     }
 
     static func resetMonthToToday(now: Date = Date()) {
-        selectDate(now)
+        selectDate(now, now: now)
     }
 
     static func resetYearToToday(now: Date = Date()) {
@@ -110,6 +132,21 @@ enum CalendarWidgetStateStore {
             return nil
         }
         return Date(timeIntervalSince1970: defaults.double(forKey: key))
+    }
+
+    private static func saveMonthSelection(
+        _ selectedDate: Date,
+        updatedAt: Date,
+        defaults: UserDefaults,
+        calendar: Calendar
+    ) {
+        defaults.set(selectedDate.timeIntervalSince1970, forKey: Key.selectedDate)
+        defaults.set(updatedAt.timeIntervalSince1970, forKey: Key.selectionUpdatedAt)
+        defaults.set(
+            CalendarNavigation.startOfMonth(containing: selectedDate, calendar: calendar)
+                .timeIntervalSince1970,
+            forKey: Key.displayMonth
+        )
     }
 }
 
