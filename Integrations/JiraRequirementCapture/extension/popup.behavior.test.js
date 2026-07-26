@@ -5,6 +5,7 @@ const vm = require("node:vm");
 
 const popupPath = path.join(__dirname, "popup.js");
 const popupSource = fs.readFileSync(popupPath, "utf8");
+const popupCSS = fs.readFileSync(path.join(__dirname, "popup.css"), "utf8");
 
 function createElement(id = "") {
   const classes = new Set();
@@ -224,6 +225,15 @@ async function testPausedAndStoppedJiraShowReason() {
     assert.equal(popup.elements.statusReasonLabel.textContent, testCase.reasonLabel);
     assert.equal(popup.elements.statusReasonText.textContent, testCase.reason);
   }
+}
+
+async function testStatusToneCSSKeepsLargeIconsWhiteAndReasonCardsAligned() {
+  assert.match(popupCSS, /#statusText\.success\s*\{/);
+  assert.match(popupCSS, /#statusText\.error\s*\{/);
+  assert.doesNotMatch(popupCSS, /(?:^|\n)\.error\s*\{/);
+
+  const stoppedRule = popupCSS.match(/\.reason-card\.stopped\s*\{([^}]*)\}/)?.[1] || "";
+  assert.doesNotMatch(stoppedRule, /box-shadow/);
 }
 
 async function testPausedJiraAlwaysShowsReasonRow() {
@@ -463,6 +473,7 @@ async function run() {
   await testExistingJiraOffersNextStatusButton();
   await testExistingActiveJiraOffersDoneButton();
   await testPausedAndStoppedJiraShowReason();
+  await testStatusToneCSSKeepsLargeIconsWhiteAndReasonCardsAligned();
   await testPausedJiraAlwaysShowsReasonRow();
   await testMergedJiraHasOnlyUpdateButton();
   await testDoneAndTestedJiraCannotAdvance();

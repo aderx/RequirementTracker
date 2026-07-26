@@ -56,6 +56,17 @@ public enum CalendarNavigation {
         return calendar.date(from: components) ?? startOfMonth(containing: date, calendar: calendar)
     }
 
+    public static func shouldResetDailySelection(
+        lastUpdatedAt: Date?,
+        now: Date,
+        calendar: Calendar = .autoupdatingCurrent
+    ) -> Bool {
+        guard let lastUpdatedAt else {
+            return true
+        }
+        return !calendar.isDate(lastUpdatedAt, inSameDayAs: now)
+    }
+
     public static func movingMonth(
         from date: Date,
         by offset: Int,

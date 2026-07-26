@@ -113,7 +113,7 @@ struct MonthCalendarWidgetView: View {
             Spacer(minLength: 4)
 
             Button(intent: ReturnMonthToTodayIntent()) {
-                Text("今天")
+                Text("回到今天")
                     .font(.system(size: 9, weight: .semibold, design: .rounded))
                     .foregroundStyle(Color.red)
                     .padding(.horizontal, 7)

@@ -399,7 +399,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         drawDevelopmentStatusBadge(in: NSRect(origin: .zero, size: size))
         #endif
         image.unlockFocus()
-        image.isTemplate = false
+        // 保留原来的实心卡片造型；透明镂空的勾让模板图随菜单栏自动切换黑白。
+        image.isTemplate = true
         image.accessibilityDescription = statusItemTooltip
         return image
     }
@@ -420,7 +421,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private static var appVersion: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
-            ?? "1.13.0"
+            ?? "1.14.0"
     }
 
     private static var githubURL: String? {
@@ -454,11 +455,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             context,
             rect: CGRect(x: 2.1, y: 5.2, width: 17.8, height: 11.4),
             radius: 2.4,
-            fillColor: NSColor.white.cgColor,
-            strokeColor: NSColor.white.cgColor,
-            lineWidth: 0.1
+            fillColor: NSColor.black.cgColor,
+            strokeColor: nil,
+            lineWidth: 0
         )
 
+        context.saveGState()
+        context.setBlendMode(.clear)
         strokePolyline(
             context,
             points: [
@@ -466,9 +469,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 CGPoint(x: 9.4, y: 13.4),
                 CGPoint(x: 15.2, y: 7.7)
             ],
-            color: NSColor(calibratedWhite: 0.11, alpha: 1).cgColor,
+            color: NSColor.black.cgColor,
             lineWidth: 1.45
         )
+        context.restoreGState()
 
         context.restoreGState()
     }
@@ -482,12 +486,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         )
         let badgePath = NSBezierPath(roundedRect: badgeRect, xRadius: 1.9, yRadius: 1.9)
 
-        NSColor(calibratedRed: 1, green: 149 / 255, blue: 0, alpha: 1).setFill()
+        NSColor.black.setFill()
         badgePath.fill()
-
-        NSColor.white.withAlphaComponent(0.92).setStroke()
-        badgePath.lineWidth = 0.6
-        badgePath.stroke()
 
         let attributes: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 4.5, weight: .bold),
@@ -495,6 +495,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         ]
         let marker = NSString(string: "D")
         let markerSize = marker.size(withAttributes: attributes)
+
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current?.cgContext.setBlendMode(.clear)
         marker.draw(
             at: NSPoint(
                 x: badgeRect.midX - markerSize.width / 2,
@@ -502,6 +505,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             ),
             withAttributes: attributes
         )
+        NSGraphicsContext.restoreGraphicsState()
     }
 
     private static func drawAppIcon(in rect: NSRect) {

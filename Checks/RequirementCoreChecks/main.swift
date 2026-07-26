@@ -939,5 +939,29 @@ expect(
         == DateComponents(year: 2025, month: 2, day: 28),
     "Year navigation should clamp leap day in a non-leap year"
 )
+expect(
+    CalendarNavigation.shouldResetDailySelection(
+        lastUpdatedAt: makeDate(year: 2026, month: 7, day: 25, hour: 23, minute: 59),
+        now: makeDate(year: 2026, month: 7, day: 26),
+        calendar: mondayFirstCalendar
+    ),
+    "A widget date selection should expire when the natural day changes"
+)
+expect(
+    !CalendarNavigation.shouldResetDailySelection(
+        lastUpdatedAt: makeDate(year: 2026, month: 7, day: 26, hour: 1),
+        now: makeDate(year: 2026, month: 7, day: 26, hour: 23, minute: 59),
+        calendar: mondayFirstCalendar
+    ),
+    "A widget date selection should remain stable within the same natural day"
+)
+expect(
+    CalendarNavigation.shouldResetDailySelection(
+        lastUpdatedAt: nil,
+        now: makeDate(year: 2026, month: 7, day: 26),
+        calendar: mondayFirstCalendar
+    ),
+    "A legacy widget selection without an interaction date should reset to today"
+)
 
 print("RequirementCoreChecks passed")
