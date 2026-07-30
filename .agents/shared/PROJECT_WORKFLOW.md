@@ -39,6 +39,7 @@ This file is the single project-level workflow source for Codex, Claude Code, an
 - For this SwiftPM macOS app, the development launch path is:
   - Stop existing development instances of `RequirementTracker`.
   - Run `swift run RequirementTracker`.
+- A launched development App bundle registers its Widget extension with WidgetKit. Keep that registration only while the user is validating the development build.
 - The user validates UI behavior manually. Do not mark the feature complete before the user confirms.
 
 ## Delivery Flow
@@ -73,6 +74,7 @@ This file is the single project-level workflow source for Codex, Claude Code, an
 ## Process Management
 
 - Before installing a production build, terminate all running development and production instances of `RequirementTracker`.
+- Run `Scripts/cleanup-development-app.sh` after development validation. Release packaging also runs it automatically, so the development Widget is removed from PlugInKit and LaunchServices before handoff.
 - Be specific when killing processes. Prefer exact process names or verified PIDs.
 - After installation, start the new production app from `/Applications/需求记录.app`.
 - Do not leave a raw `.build/.../debug/RequirementTracker` process running after handing off a production build.
@@ -96,5 +98,6 @@ This file is the single project-level workflow source for Codex, Claude Code, an
 - Release build was created from `main`.
 - `/Applications/需求记录.app` was replaced, not just `dist/需求记录.app`.
 - Old development and production processes were terminated.
+- The development App and Widget were unregistered after validation; `pluginkit` and process checks show no development residue.
 - New production app was launched from `/Applications`.
 - Merged version branches were retained unless the user explicitly asks to delete them.

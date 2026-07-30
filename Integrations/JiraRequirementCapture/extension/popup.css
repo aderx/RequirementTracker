@@ -93,6 +93,17 @@ input {
   box-shadow: none;
 }
 
+.icon-frame.badge {
+  background: transparent;
+  box-shadow: none;
+}
+
+.badge-icon-canvas {
+  display: block;
+  width: 46px;
+  height: 46px;
+}
+
 .icon-symbol {
   font-size: 27px;
   font-weight: 700;

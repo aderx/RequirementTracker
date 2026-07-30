@@ -41,6 +41,38 @@ enum RequirementPluginSupport {
         }
     }
 
+    static func openExtensionTestPage(extensionID: String) async throws {
+        let extensionID = extensionID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard extensionID.range(of: "^[a-p]{32}$", options: .regularExpression) != nil else {
+            throw PluginSupportError.invalidExtensionID
+        }
+        guard let testPageURL = URL(string: "chrome-extension://\(extensionID)/test.html") else {
+            throw PluginSupportError.invalidExtensionID
+        }
+        guard let chromeURL = NSWorkspace.shared.urlForApplication(
+            withBundleIdentifier: "com.google.Chrome"
+        ) else {
+            throw PluginSupportError.missingChrome
+        }
+
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = true
+        try await withCheckedThrowingContinuation {
+            (continuation: CheckedContinuation<Void, any Error>) in
+            NSWorkspace.shared.open(
+                [testPageURL],
+                withApplicationAt: chromeURL,
+                configuration: configuration
+            ) { _, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else {
+                    continuation.resume(returning: ())
+                }
+            }
+        }
+    }
+
     static func installNativeHost(extensionID: String) async throws -> String {
         let extensionID = extensionID.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !extensionID.isEmpty else {
@@ -289,18 +321,24 @@ enum RequirementPluginSupport {
 
 private enum PluginSupportError: LocalizedError {
     case missingExtensionID
+    case invalidExtensionID
     case missingExtensionDirectory
     case missingInstallerScript
+    case missingChrome
     case installFailed(String)
 
     var errorDescription: String? {
         switch self {
         case .missingExtensionID:
             "请先填写 Chrome 扩展 ID"
+        case .invalidExtensionID:
+            "Chrome 扩展 ID 格式不正确，请从 chrome://extensions 重新复制"
         case .missingExtensionDirectory:
             "未找到浏览器插件目录"
         case .missingInstallerScript:
             "未找到 Native Host 安装脚本"
+        case .missingChrome:
+            "未找到 Google Chrome，无法打开插件测试页"
         case .installFailed(let message):
             message.isEmpty ? "Native Host 安装失败" : message
         }

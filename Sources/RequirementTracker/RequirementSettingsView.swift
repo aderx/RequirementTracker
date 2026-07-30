@@ -979,6 +979,19 @@ struct RequirementSettingsView: View {
                             .buttonStyle(.bordered)
                             .pointingHandCursor()
 
+                            Button {
+                                openPluginTestPage()
+                            } label: {
+                                Label("打开测试页", systemImage: "testtube.2")
+                            }
+                            .buttonStyle(.bordered)
+                            .disabled(
+                                settingsStore.configuration.pluginSettings.chromeExtensionID
+                                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                                    .isEmpty
+                            )
+                            .pointingHandCursor()
+
                             nativeHostStatusInline
                                 .padding(.leading, 4)
 
@@ -1339,6 +1352,18 @@ struct RequirementSettingsView: View {
 
             isInstallingNativeHost = false
             refreshNativeHostStatus()
+        }
+    }
+
+    private func openPluginTestPage() {
+        let extensionID = settingsStore.configuration.pluginSettings.chromeExtensionID
+
+        Task {
+            do {
+                try await RequirementPluginSupport.openExtensionTestPage(extensionID: extensionID)
+            } catch {
+                pluginAlertMessage = error.localizedDescription
+            }
         }
     }
 }

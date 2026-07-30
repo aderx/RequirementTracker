@@ -12,26 +12,53 @@ function eventStub() {
 function createBackground(nativeStub) {
   const actionCalls = {
     badgeTexts: [],
-    badgeBackgroundColors: [],
+    badgeBackgrounds: [],
     badgeTextColors: [],
-    icons: []
+    icons: [],
+    titles: []
+  };
+  const badgeStyles = {
+    addable: { label: "可添加", text: "+", color: "#FF9500" },
+    recorded: { label: "已记录", text: "↻", color: "#1F9D54" },
+    done: { label: "开发完成", text: "✓", color: "#1570EF" },
+    tested: { label: "已自测", text: "\u2714\uFE0E", color: "#7F56D9" },
+    merged: { label: "已合并", text: "⇧", color: "#1F9D54" },
+    paused: { label: "已暂停", text: "Ⅱ", color: "#F59E0B" },
+    stopped: { label: "已停止", text: "■", color: "#D92D43" }
   };
   const sandbox = {
     URL,
     console,
+    importScripts() {},
+    BadgeIconRenderer: {
+      styles: badgeStyles
+    },
     chrome: {
       runtime: {
         lastError: null,
         onInstalled: eventStub(),
         onStartup: eventStub(),
         onMessage: eventStub(),
+        getURL(value) {
+          return `chrome-extension://abcdefghijklmnopabcdefghijklmnop/${value}`;
+        },
         sendNativeMessage() {}
       },
       tabs: {
         onActivated: eventStub(),
         onUpdated: eventStub(),
         get() {},
-        query() {}
+        query() {},
+        create() {}
+      },
+      contextMenus: {
+        onClicked: eventStub(),
+        remove(_id, callback) {
+          callback();
+        },
+        create(_details, callback) {
+          callback();
+        }
       },
       action: {
         setIcon(details) {
@@ -41,10 +68,13 @@ function createBackground(nativeStub) {
           actionCalls.badgeTexts.push(details);
         },
         setBadgeBackgroundColor(details) {
-          actionCalls.badgeBackgroundColors.push(details);
+          actionCalls.badgeBackgrounds.push(details);
         },
         setBadgeTextColor(details) {
           actionCalls.badgeTextColors.push(details);
+        },
+        setTitle(details) {
+          actionCalls.titles.push(details);
         }
       }
     }
@@ -54,7 +84,9 @@ function createBackground(nativeStub) {
     "globalThis.__background = {",
     "  BADGE_STYLES,",
     "  applyBadge,",
+    "  handleRuntimeMessage,",
     "  resolveState,",
+    "  testStateFromURL,",
     "  setNativeMessageStub(stub) { sendNativeMessage = stub; }",
     "};"
   ].join("\n");
@@ -85,29 +117,35 @@ function nativeStubFor({ exists, status, protocolVersion = 2 }) {
 async function testBadgeStylesDifferentiateMilestones() {
   const background = createBackground(nativeStubFor({ exists: true, status: "merged" }));
   const styles = background.BADGE_STYLES;
+  assert.equal(styles.recorded.label, "已记录");
   assert.equal(styles.recorded.text, "↻");
   assert.equal(styles.recorded.color, "#1F9D54");
-  assert.equal(styles.done.text, "✓");
-  assert.equal(styles.tested.text, "✔");
-  assert.equal(styles.merged.text, "⇧");
+  assert.equal(styles.done.label, "开发完成");
+  assert.equal(styles.tested.label, "已自测");
+  assert.equal(styles.tested.text, "\u2714\uFE0E");
+  assert.equal(styles.merged.label, "已合并");
+  assert.equal(styles.paused.text, "Ⅱ");
+  assert.equal(styles.stopped.text, "■");
   assert.notEqual(styles.done.color, styles.tested.color);
   assert.notEqual(styles.tested.color, styles.merged.color);
 }
 
-async function testEveryStatusUsesNativeBadgeOnDefaultIcon() {
+async function testEveryStatusUsesTheChromeNativeOverflowBadge() {
   const background = createBackground(nativeStubFor({ exists: true, status: "merged" }));
 
   for (const [state, style] of Object.entries(background.BADGE_STYLES)) {
-    background.applyBadge(42, state);
+    await background.applyBadge(42, state);
     assert.equal(background.actionCalls.badgeTexts.at(-1)?.text, style.text);
-    assert.equal(background.actionCalls.badgeBackgroundColors.at(-1)?.color, style.color);
-    assert.equal(background.actionCalls.badgeTextColors.at(-1)?.color, "#FFFFFF");
     assert.equal(background.actionCalls.icons.at(-1)?.path?.[16], "icons/icon-16.png");
+    assert.equal(background.actionCalls.badgeBackgrounds.at(-1)?.color, style.color);
+    assert.equal(background.actionCalls.badgeTextColors.at(-1)?.color, "#FFFFFF");
+    assert.equal(background.actionCalls.titles.at(-1)?.title, `需求记录：${style.label}`);
   }
 
-  background.applyBadge(42, "unsupported");
+  await background.applyBadge(42, "unsupported");
   assert.equal(background.actionCalls.badgeTexts.at(-1)?.text, "");
   assert.equal(background.actionCalls.icons.at(-1)?.path?.[16], "icons/icon-16.png");
+  assert.equal(background.actionCalls.titles.at(-1)?.title, "记录 Jira / MR");
 }
 
 async function testMilestoneJiraUsesDedicatedBadge() {
@@ -140,16 +178,13 @@ async function testPausedAndStoppedJiraUseDedicatedBadges() {
   }
 
   const background = createBackground(nativeStubFor({ exists: true, status: "paused" }));
-  background.applyBadge(42, "paused");
+  await background.applyBadge(42, "paused");
   assert.equal(background.actionCalls.badgeTexts.at(-1)?.text, "Ⅱ");
-  assert.equal(background.actionCalls.badgeBackgroundColors.at(-1)?.color, "#F59E0B");
-  assert.equal(background.actionCalls.badgeTextColors.at(-1)?.color, "#FFFFFF");
-  assert.equal(background.actionCalls.icons.at(-1)?.path?.[16], "icons/icon-16.png");
+  assert.equal(background.actionCalls.badgeBackgrounds.at(-1)?.color, "#F59E0B");
 
-  background.applyBadge(42, "stopped");
+  await background.applyBadge(42, "stopped");
   assert.equal(background.actionCalls.badgeTexts.at(-1)?.text, "■");
-  assert.equal(background.actionCalls.badgeBackgroundColors.at(-1)?.color, "#D92D43");
-  assert.equal(background.actionCalls.icons.at(-1)?.path?.[16], "icons/icon-16.png");
+  assert.equal(background.actionCalls.badgeBackgrounds.at(-1)?.color, "#D92D43");
 }
 
 async function testMergedRequirementMRPageUsesMergedBadge() {
@@ -180,15 +215,60 @@ async function testIncompatibleNativeHostClearsBadge() {
   );
 }
 
+async function testStatusTestPageRestoresStateFromURL() {
+  const background = createBackground(() => {
+    throw new Error("Test page state should not call Native Host");
+  });
+  const testURL = "chrome-extension://abcdefghijklmnopabcdefghijklmnop/test.html?state=tested";
+  assert.equal(background.testStateFromURL(testURL), "tested");
+  assert.equal(await background.resolveState(testURL), "tested");
+  assert.equal(
+    background.testStateFromURL(
+      "chrome-extension://abcdefghijklmnopabcdefghijklmnop/test.html?state=unknown"
+    ),
+    "unsupported"
+  );
+}
+
+async function testStatusTestPageDrivesTheRealToolbarStatePath() {
+  const background = createBackground(() => {
+    throw new Error("Test page state should not call Native Host");
+  });
+  const testURL = "chrome-extension://abcdefghijklmnopabcdefghijklmnop/test.html?state=tested";
+  let keepMessagePortOpen = false;
+  const responsePromise = new Promise((resolve) => {
+    keepMessagePortOpen = background.handleRuntimeMessage(
+      {
+        type: "APPLY_TEST_PAGE_STATE",
+        url: testURL
+      },
+      { tab: { id: 42 } },
+      resolve
+    );
+  });
+
+  assert.equal(keepMessagePortOpen, true);
+  const response = await responsePromise;
+  assert.equal(response.ok, true);
+  assert.equal(response.state, "tested");
+  assert.equal(background.actionCalls.badgeTexts.at(-1)?.tabId, 42);
+  assert.equal(background.actionCalls.badgeTexts.at(-1)?.text, "\u2714\uFE0E");
+  assert.equal(background.actionCalls.icons.at(-1)?.path?.[16], "icons/icon-16.png");
+  assert.equal(background.actionCalls.badgeBackgrounds.at(-1)?.color, "#7F56D9");
+  assert.equal(background.actionCalls.titles.at(-1)?.title, "需求记录：已自测");
+}
+
 async function run() {
   await testBadgeStylesDifferentiateMilestones();
-  await testEveryStatusUsesNativeBadgeOnDefaultIcon();
+  await testEveryStatusUsesTheChromeNativeOverflowBadge();
   await testMilestoneJiraUsesDedicatedBadge();
   await testPendingAndActiveJiraUseRecordedBadge();
   await testPausedAndStoppedJiraUseDedicatedBadges();
   await testMergedRequirementMRPageUsesMergedBadge();
   await testUnrecordedPageUsesAddableBadge();
   await testIncompatibleNativeHostClearsBadge();
+  await testStatusTestPageRestoresStateFromURL();
+  await testStatusTestPageDrivesTheRealToolbarStatePath();
 }
 
 run().then(() => {

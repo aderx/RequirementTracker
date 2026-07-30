@@ -123,4 +123,8 @@ mkdir -p "$(dirname "$OUTPUT_APP")"
 ditto "$STAGING_APP" "$OUTPUT_APP"
 codesign --verify --deep --strict --verbose=2 "$OUTPUT_APP"
 
+if [[ "$CONFIGURATION" == "release" ]]; then
+    "$ROOT_DIR/Scripts/cleanup-development-app.sh"
+fi
+
 echo "$OUTPUT_APP"

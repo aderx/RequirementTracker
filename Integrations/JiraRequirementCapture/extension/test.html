@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>需求记录 · 插件状态测试</title>
+  <link rel="stylesheet" href="test.css">
+</head>
+<body>
+  <main class="page-shell">
+    <header class="page-header">
+      <h1>插件测试</h1>
+      <p>点击状态后，浏览器右上角的插件图标和弹出的详情卡片会同步切换。</p>
+    </header>
+
+    <section class="content-card">
+      <div class="section-heading">
+        <h2>插件状态</h2>
+        <span id="applyResult" class="result-text" aria-live="polite"></span>
+      </div>
+      <div id="stateButtons" class="state-grid" role="group" aria-label="切换插件状态"></div>
+    </section>
+
+    <section class="content-card">
+      <div class="section-heading">
+        <h2>绑定信息</h2>
+        <button id="refreshBindingButton" class="secondary-button" type="button">刷新绑定信息</button>
+      </div>
+
+      <dl class="binding-grid">
+        <div>
+          <dt>绑定状态</dt>
+          <dd><span id="bindingDot" class="status-dot neutral"></span><span id="bindingState">检查中…</span></dd>
+        </div>
+        <div>
+          <dt>扩展版本</dt>
+          <dd id="extensionVersion">—</dd>
+        </div>
+        <div>
+          <dt>扩展 ID</dt>
+          <dd id="extensionID">—</dd>
+        </div>
+        <div>
+          <dt>Native Host</dt>
+          <dd id="nativeHostName">—</dd>
+        </div>
+        <div>
+          <dt>协议版本</dt>
+          <dd id="protocolVersion">—</dd>
+        </div>
+        <div>
+          <dt>Jira 基础地址</dt>
+          <dd id="jiraBaseURL">—</dd>
+        </div>
+        <div class="wide">
+          <dt>MR 域名</dt>
+          <dd id="mrHosts">—</dd>
+        </div>
+      </dl>
+    </section>
+  </main>
+
+  <script src="test.js"></script>
+</body>
+</html>

@@ -36,7 +36,7 @@ enum CalendarWidgetEnvironment {
         formatter.calendar = calendar
         formatter.locale = locale
         formatter.timeZone = calendar.timeZone
-        formatter.setLocalizedDateFormatFromTemplate("M月d日 EEEE")
+        formatter.setLocalizedDateFormatFromTemplate("y年M月d日 EEEE")
         return formatter.string(from: date)
     }
 
