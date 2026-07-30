@@ -10,6 +10,7 @@
   <main class="shell">
     <section class="status-card" aria-live="polite">
       <div id="iconFrame" class="icon-frame blue">
+        <canvas id="badgeIconCanvas" class="badge-icon-canvas hidden" width="96" height="96" aria-hidden="true"></canvas>
         <span id="statusIcon" class="icon-symbol" aria-hidden="true">✓</span>
       </div>
 
@@ -33,6 +34,7 @@
     <span id="countdownText" class="sr-only"></span>
   </main>
 
+  <script src="badge-renderer.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

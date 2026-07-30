@@ -1,15 +1,19 @@
 // 后台 Service Worker：根据当前标签页地址更新插件图标右下角的浏览器原生角标。
-// 主图标始终保持蓝色，角标沿用 Chrome 的突出位置、粗体白字和圆角底板：
+// 主图标始终保持蓝色，右下角的位置、溢出效果和字符排版交给 Chrome：
 // - 不支持的页面：不显示角标
 // - 可添加（支持的 Jira / MR 页面但尚未记录）：橙色「+」
 // - 已记录：生产版绿色「↻」
 // - 开发完成：蓝色「✓」
-// - 已测试：紫色重勾「✔」
+// - 已自测：紫色重勾「✔」
 // - 已合并：绿色「⇧」
 // - 已暂停：琥珀色「Ⅱ」
 // - 已停止：红色「■」
+importScripts("badge-renderer.js");
+
 const HOST_NAME = "com.aderx.requirementtracker.jira_capture";
 const REQUIRED_NATIVE_HOST_PROTOCOL_VERSION = 2;
+const TEST_PAGE_PATH = "test.html";
+const TEST_PAGE_CONTEXT_MENU_ID = "open-requirementtracker-status-test";
 const FALLBACK_SETTINGS = {
   jiraBaseURL: "http://jira.zstack.io/browse/",
   mrHosts: ["gitlab.zstack.io"]
@@ -21,23 +25,27 @@ const DEFAULT_ACTION_ICONS = {
   48: "icons/icon-48.png",
   128: "icons/icon-128.png"
 };
-
-const BADGE_STYLES = {
-  addable: { text: "+", color: "#FF9500" },
-  recorded: { text: "↻", color: "#1F9D54" },
-  done: { text: "✓", color: "#1570EF" },
-  tested: { text: "✔", color: "#7F56D9" },
-  merged: { text: "⇧", color: "#1F9D54" },
-  paused: { text: "Ⅱ", color: "#F59E0B" },
-  stopped: { text: "■", color: "#D92D43" }
-};
+const BADGE_STYLES = BadgeIconRenderer.styles;
+const TESTABLE_STATES = new Set(["unsupported", ...Object.keys(BADGE_STYLES)]);
 
 let cachedSettings = null;
 let cachedSettingsAt = 0;
 let cachedHostCompatible = false;
 
-chrome.runtime.onInstalled.addListener(refreshActiveTab);
-chrome.runtime.onStartup.addListener(refreshActiveTab);
+chrome.runtime.onInstalled.addListener(() => {
+  installTestPageContextMenu();
+  refreshActiveTab();
+});
+chrome.runtime.onStartup.addListener(() => {
+  installTestPageContextMenu();
+  refreshActiveTab();
+});
+
+chrome.contextMenus.onClicked.addListener((info) => {
+  if (info.menuItemId === TEST_PAGE_CONTEXT_MENU_ID) {
+    chrome.tabs.create({ url: chrome.runtime.getURL(TEST_PAGE_PATH) });
+  }
+});
 
 chrome.tabs.onActivated.addListener(({ tabId }) => {
   chrome.tabs.get(tabId, (tab) => {
@@ -55,13 +63,43 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   }
 });
 
-chrome.runtime.onMessage.addListener((message) => {
+chrome.runtime.onMessage.addListener(handleRuntimeMessage);
+
+function handleRuntimeMessage(message, sender, sendResponse) {
   if (message?.type === "REFRESH_ACTIVE_TAB_BADGE") {
     cachedSettings = null;
     refreshActiveTab();
+    return false;
   }
+
+  if (message?.type === "APPLY_TEST_PAGE_STATE") {
+    const tabId = sender.tab?.id ?? message.tabId;
+    const url = String(message.url || "");
+    const requestedState = testStateFromURL(url);
+    if (!Number.isInteger(tabId) || !requestedState) {
+      sendResponse({ ok: false, error: "没有找到有效的插件测试页" });
+      return false;
+    }
+
+    updateBadgeForTab(tabId, url)
+      .then((appliedState) => sendResponse({ ok: true, state: appliedState }))
+      .catch(() => sendResponse({ ok: false, error: "插件状态切换失败" }));
+    return true;
+  }
+
   return false;
-});
+}
+
+function installTestPageContextMenu() {
+  chrome.contextMenus.remove(TEST_PAGE_CONTEXT_MENU_ID, () => {
+    void chrome.runtime.lastError;
+    chrome.contextMenus.create({
+      id: TEST_PAGE_CONTEXT_MENU_ID,
+      title: "打开状态测试页",
+      contexts: ["action"]
+    }, ignoreError);
+  });
+}
 
 function refreshActiveTab() {
   chrome.tabs.query({ active: true, lastFocusedWindow: true }, (tabs) => {
@@ -74,13 +112,21 @@ function refreshActiveTab() {
 
 async function updateBadgeForTab(tabId, url) {
   try {
-    applyBadge(tabId, await resolveState(url));
+    const state = await resolveState(url);
+    await applyBadge(tabId, state);
+    return state;
   } catch {
-    applyBadge(tabId, "unsupported");
+    await applyBadge(tabId, "unsupported");
+    return "unsupported";
   }
 }
 
 async function resolveState(url) {
+  const testState = testStateFromURL(url);
+  if (testState) {
+    return testState;
+  }
+
   const pageType = await detectPageType(url);
   if (pageType === "unsupported") {
     return "unsupported";
@@ -106,6 +152,21 @@ async function resolveState(url) {
   }
 
   return "addable";
+}
+
+function testStateFromURL(value) {
+  try {
+    const testPageURL = new URL(chrome.runtime.getURL(TEST_PAGE_PATH));
+    const pageURL = new URL(String(value || ""));
+    if (pageURL.origin !== testPageURL.origin || pageURL.pathname !== testPageURL.pathname) {
+      return "";
+    }
+
+    const state = pageURL.searchParams.get("state") || "unsupported";
+    return TESTABLE_STATES.has(state) ? state : "unsupported";
+  } catch {
+    return "";
+  }
 }
 
 // MR 的“变更/提交/流水线”等子页统一归到 MR 主地址，与记录的 mrURL 匹配。
@@ -172,7 +233,7 @@ async function loadSettings() {
   return cachedSettings;
 }
 
-function applyBadge(tabId, state) {
+async function applyBadge(tabId, state) {
   const style = BADGE_STYLES[state];
   chrome.action.setIcon({
     tabId,
@@ -181,6 +242,7 @@ function applyBadge(tabId, state) {
   chrome.action.setBadgeText({ tabId, text: style?.text || "" }, ignoreError);
 
   if (!style) {
+    chrome.action.setTitle({ tabId, title: "记录 Jira / MR" }, ignoreError);
     return;
   }
 
@@ -188,6 +250,7 @@ function applyBadge(tabId, state) {
   if (typeof chrome.action.setBadgeTextColor === "function") {
     chrome.action.setBadgeTextColor({ tabId, color: "#FFFFFF" }, ignoreError);
   }
+  chrome.action.setTitle({ tabId, title: `需求记录：${style.label}` }, ignoreError);
 }
 
 function ignoreError() {

@@ -22,11 +22,79 @@ const MR_STATE_NAMES = {
   merged: "已合并",
   closed: "已关闭"
 };
+const TEST_PAGE_PATH = "test.html";
+const TESTABLE_STATES = new Set([
+  "unsupported",
+  "addable",
+  "recorded",
+  "done",
+  "tested",
+  "merged",
+  "paused",
+  "stopped"
+]);
+const TEST_REQUIREMENT = Object.freeze({
+  issueKey: "DEMO-1001",
+  title: "插件状态测试（模拟数据）"
+});
+const TEST_STATE_PRESENTATIONS = Object.freeze({
+  unsupported: {
+    tone: "warning",
+    icon: "!",
+    title: "此页面暂不支持",
+    status: "不支持页面"
+  },
+  addable: {
+    tone: "blue",
+    icon: "+",
+    title: "添加这个需求？",
+    status: "未记录"
+  },
+  recorded: {
+    tone: "subtle",
+    icon: "=",
+    title: "需求已记录",
+    status: "开发中"
+  },
+  done: {
+    tone: "subtle",
+    icon: "=",
+    title: "开发已完成",
+    status: "开发完成"
+  },
+  tested: {
+    tone: "subtle",
+    icon: "=",
+    title: "已完成自测",
+    status: "已自测"
+  },
+  merged: {
+    tone: "success",
+    icon: "✓",
+    title: "需求已完成",
+    status: "已合并"
+  },
+  paused: {
+    tone: "warning",
+    icon: "pause",
+    title: "需求已暂停",
+    status: "已暂停",
+    reason: "等待测试依赖恢复"
+  },
+  stopped: {
+    tone: "error",
+    icon: "stop",
+    title: "需求已停止",
+    status: "已停止",
+    reason: "需求范围已调整"
+  }
+});
 
 const elements = {
   titleText: document.getElementById("titleText"),
   statusText: document.getElementById("statusText"),
   iconFrame: document.getElementById("iconFrame"),
+  badgeIconCanvas: document.getElementById("badgeIconCanvas"),
   statusIcon: document.getElementById("statusIcon"),
   summaryPanel: document.getElementById("summaryPanel"),
   statusReasonPanel: document.getElementById("statusReasonPanel"),
@@ -55,16 +123,28 @@ async function run() {
     message: "正在识别当前页面..."
   });
 
+  let tab;
+  try {
+    [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (tab?.id == null) {
+      throw new Error("没有找到当前标签页");
+    }
+  } catch {
+    showUnsupported();
+    return;
+  }
+
+  const testState = testPageStateFromURL(tab.url);
+  if (testState) {
+    showTestPageState(testState);
+    return;
+  }
+
   const settingsResult = await loadPluginSettings();
   currentSettings = settingsResult.settings;
 
   let result;
   try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!tab?.id) {
-      throw new Error("没有找到当前标签页");
-    }
-
     await chrome.scripting.executeScript({
       target: { tabId: tab.id },
       files: ["content.js"]
@@ -91,6 +171,51 @@ async function run() {
   } catch (error) {
     showOperationError(error.message || "操作失败");
   }
+}
+
+function testPageStateFromURL(value) {
+  try {
+    const testPageURL = new URL(chrome.runtime.getURL(TEST_PAGE_PATH));
+    const pageURL = new URL(String(value || ""));
+    if (pageURL.origin !== testPageURL.origin || pageURL.pathname !== testPageURL.pathname) {
+      return "";
+    }
+
+    const state = pageURL.searchParams.get("state") || "unsupported";
+    return TESTABLE_STATES.has(state) ? state : "unsupported";
+  } catch {
+    return "";
+  }
+}
+
+function showTestPageState(state) {
+  clearTimers();
+  hideManualInput();
+  hideStatusReason();
+
+  const presentation = TEST_STATE_PRESENTATIONS[state]
+    || TEST_STATE_PRESENTATIONS.unsupported;
+  renderSummary([
+    { label: "模拟需求", value: TEST_REQUIREMENT.issueKey },
+    { label: "标题", value: TEST_REQUIREMENT.title },
+    { label: "记录状态", value: presentation.status },
+    { label: "数据来源", value: "独立模拟数据，不写入 App" }
+  ]);
+
+  if (state === "paused" || state === "stopped") {
+    showStatusReason(state, presentation.reason);
+  }
+
+  setView({
+    tone: presentation.tone,
+    icon: presentation.icon,
+    badgeState: state === "unsupported" ? "" : state,
+    title: presentation.title,
+    message: "测试模式"
+  });
+  setActions([
+    button("关闭", "text-button muted", closePopup)
+  ]);
 }
 
 async function handlePageResult(result, hostError) {
@@ -157,12 +282,30 @@ async function handleJiraPage(payload) {
 
     if (status === "paused") {
       showStatusReason("paused", statusReason);
-      setView({ tone: "warning", icon: "pause", title: "需求已暂停", message: "" });
+      setView({
+        tone: "warning",
+        icon: "pause",
+        badgeState: "paused",
+        title: "需求已暂停",
+        message: ""
+      });
     } else if (status === "stopped") {
       showStatusReason("stopped", statusReason);
-      setView({ tone: "error", icon: "stop", title: "需求已停止", message: "" });
+      setView({
+        tone: "error",
+        icon: "stop",
+        badgeState: "stopped",
+        title: "需求已停止",
+        message: ""
+      });
     } else {
-      setView({ tone: "subtle", icon: "=", title: "需求已记录", message: "" });
+      setView({
+        tone: "subtle",
+        icon: "=",
+        badgeState: badgeStateForRequirementStatus(status),
+        title: "需求已记录",
+        message: ""
+      });
     }
 
     const actions = [
@@ -178,6 +321,7 @@ async function handleJiraPage(payload) {
   setView({
     tone: "blue",
     icon: "+",
+    badgeState: "addable",
     title: "添加这个需求？",
     message: ""
   });
@@ -283,6 +427,9 @@ async function attachMRWithInspection(payload) {
     setView({
       tone: isTerminalCompletion ? "success" : "subtle",
       icon: isTerminalCompletion ? "✓" : "=",
+      badgeState: isTerminalCompletion
+        ? "merged"
+        : badgeStateForRequirementStatus(inspect.status),
       title: isTerminalCompletion ? "需求已完成" : "MR 已记录",
       message: isTerminalCompletion ? "MR 与需求均为已合并状态" : "没有需要同步的变化"
     });
@@ -301,6 +448,9 @@ async function attachMRWithInspection(payload) {
   setView({
     tone: "blue",
     icon: isRecorded ? "=" : "+",
+    badgeState: inspect.exists
+      ? badgeStateForRequirementStatus(inspect.status)
+      : "addable",
     title: isRecorded ? "同步 MR 状态" : "关联 MR",
     message: ""
   });
@@ -361,6 +511,7 @@ function showManualJiraInput(payload, message = "当前 MR 页面没有找到 Ji
   setView({
     tone: "blue",
     icon: "+",
+    badgeState: "addable",
     title: "关联 Jira",
     message
   });
@@ -472,6 +623,14 @@ function statusName(status) {
   return STATUS_NAMES[String(status || "").toLowerCase()] || "";
 }
 
+function badgeStateForRequirementStatus(status) {
+  const normalized = String(status || "").toLowerCase();
+  if (["done", "tested", "merged", "paused", "stopped"].includes(normalized)) {
+    return normalized;
+  }
+  return "recorded";
+}
+
 function statusRank(status) {
   return STATUS_FLOW.indexOf(String(status || "").toLowerCase());
 }
@@ -533,7 +692,24 @@ function resetContent() {
   setActions([]);
 }
 
-function setView({ tone, icon, title, message }) {
+function setView({ tone, icon, badgeState = "", title, message }) {
+  const showsBadge = Boolean(globalThis.BadgeIconRenderer?.styles?.[badgeState]);
+  elements.badgeIconCanvas.className = showsBadge
+    ? "badge-icon-canvas"
+    : "badge-icon-canvas hidden";
+  elements.statusIcon.className = showsBadge
+    ? "icon-symbol hidden"
+    : "icon-symbol";
+
+  if (showsBadge) {
+    elements.iconFrame.className = "icon-frame badge";
+    elements.statusIcon.textContent = "";
+    globalThis.BadgeIconRenderer.drawBadgePreview(elements.badgeIconCanvas, badgeState);
+    elements.titleText.textContent = title;
+    setStatus(message || "");
+    return;
+  }
+
   const stateIcon = icon === "pause" || icon === "stop";
   elements.iconFrame.className = `icon-frame ${tone || "blue"}`;
   elements.statusIcon.className = stateIcon

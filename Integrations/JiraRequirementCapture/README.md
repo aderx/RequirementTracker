@@ -28,6 +28,15 @@ Chrome/Edge unpacked extension and Native Messaging host for capturing the curre
 7. Pin the extension to the browser toolbar.
 8. Open a Jira issue page or GitLab MR page and click the extension icon once.
 
+## Status test page
+
+- Right-click the extension icon and choose **打开状态测试页**.
+- Or open RequirementTracker settings, select **插件配置**, and click **打开测试页**.
+- Each button drives the same background state resolver used by real Jira/MR pages and updates the extension icon in the browser toolbar. The page does not render a separate icon preview.
+- Opening the extension popup from the test page shows matching mock requirement details. Test-mode data stays inside the extension and never reads or writes RequirementTracker App data.
+- The selected state stays in the page URL, so refreshing the test page restores the same toolbar state.
+- The binding panel reads the actual extension ID, version, Native Host protocol, Jira base URL, and MR hosts.
+
 ## Notes
 
 - The popup uses `activeTab` and only reads page content after you click the extension. A background service worker uses the `tabs` permission to read the current tab's URL (not its content) so it can show an icon badge.

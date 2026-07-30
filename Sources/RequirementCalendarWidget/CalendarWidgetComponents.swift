@@ -75,6 +75,27 @@ struct SelectedDayAgenda: View {
     let selectedDate: Date
     let events: CalendarEventSnapshot
     let maximumEvents: Int
+    let page: Int
+
+    private var pageSize: Int {
+        max(1, maximumEvents)
+    }
+
+    private var pageCount: Int {
+        max(1, (events.selectedDayEvents.count + pageSize - 1) / pageSize)
+    }
+
+    private var visiblePage: Int {
+        min(max(0, page), pageCount - 1)
+    }
+
+    private var visibleEvents: [CalendarWidgetEvent] {
+        Array(
+            events.selectedDayEvents
+                .dropFirst(visiblePage * pageSize)
+                .prefix(pageSize)
+        )
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
@@ -95,7 +116,7 @@ struct SelectedDayAgenda: View {
                 if let detailURL = CalendarWidgetEnvironment.calendarDetailURL(for: selectedDate) {
                     Link(destination: detailURL) {
                         HStack(spacing: 2) {
-                            Text("打开详情")
+                            Text("详情")
                             Image(systemName: "arrow.up.right")
                         }
                         .font(.system(size: 7.5, weight: .semibold, design: .rounded))
@@ -126,30 +147,35 @@ struct SelectedDayAgenda: View {
                     .font(.system(size: 9, weight: .medium))
                     .foregroundStyle(.secondary)
             } else {
-                ForEach(Array(events.selectedDayEvents.prefix(maximumEvents))) { event in
-                    HStack(spacing: 5) {
-                        Circle()
-                            .fill(event.isHoliday ? Color.red : Color.blue)
-                            .frame(width: 4, height: 4)
+                HStack(alignment: .top, spacing: 4) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        ForEach(visibleEvents) { event in
+                            HStack(spacing: 5) {
+                                Circle()
+                                    .fill(event.isHoliday ? Color.red : Color.blue)
+                                    .frame(width: 4, height: 4)
 
-                        Text(eventTime(event))
-                            .font(.system(size: 8, weight: .semibold, design: .rounded))
-                            .foregroundStyle(event.isHoliday ? Color.red : Color.secondary)
-                            .frame(width: 28, alignment: .leading)
+                                Text(eventTime(event))
+                                    .font(.system(size: 8, weight: .semibold, design: .rounded))
+                                    .foregroundStyle(event.isHoliday ? Color.red : Color.secondary)
+                                    .frame(
+                                        width: event.isHoliday || event.isAllDay ? 28 : 67,
+                                        alignment: .leading
+                                    )
 
-                        Text(event.title)
-                            .font(.system(size: 9, weight: .medium))
-                            .foregroundStyle(.primary)
-                            .lineLimit(1)
+                                Text(event.title)
+                                    .font(.system(size: 9, weight: .medium))
+                                    .foregroundStyle(.primary)
+                                    .lineLimit(1)
 
-                        Spacer(minLength: 0)
+                                Spacer(minLength: 0)
+                            }
+                        }
                     }
-                }
 
-                if events.selectedDayEvents.count > maximumEvents {
-                    Text("另有 \(events.selectedDayEvents.count - maximumEvents) 项")
-                        .font(.system(size: 7.5, weight: .medium))
-                        .foregroundStyle(.secondary)
+                    if pageCount > 1 {
+                        agendaPageControls
+                    }
                 }
             }
         case .notDetermined:
@@ -167,6 +193,35 @@ struct SelectedDayAgenda: View {
         }
     }
 
+    private var agendaPageControls: some View {
+        VStack(spacing: 3) {
+            Button(intent: ChangeSelectedDayAgendaPageIntent(page: visiblePage - 1)) {
+                agendaPageIcon("chevron.up", enabled: visiblePage > 0)
+            }
+            .buttonStyle(.plain)
+            .disabled(visiblePage == 0)
+            .accessibilityLabel("上一页日程")
+
+            Button(intent: ChangeSelectedDayAgendaPageIntent(page: visiblePage + 1)) {
+                agendaPageIcon("chevron.down", enabled: visiblePage + 1 < pageCount)
+            }
+            .buttonStyle(.plain)
+            .disabled(visiblePage + 1 >= pageCount)
+            .accessibilityLabel("下一页日程")
+        }
+    }
+
+    private func agendaPageIcon(_ systemName: String, enabled: Bool) -> some View {
+        Image(systemName: systemName)
+            .font(.system(size: 7, weight: .bold))
+            .foregroundStyle(Color.blue.opacity(enabled ? 0.9 : 0.25))
+            .frame(width: 17, height: 13)
+            .background(
+                Color.blue.opacity(enabled ? 0.08 : 0.035),
+                in: RoundedRectangle(cornerRadius: 4, style: .continuous)
+            )
+    }
+
     private func eventTime(_ event: CalendarWidgetEvent) -> String {
         if event.isHoliday {
             return "节假"
@@ -174,7 +229,9 @@ struct SelectedDayAgenda: View {
         if event.isAllDay {
             return "全天"
         }
-        return CalendarWidgetEnvironment.eventTime(for: event.startDate)
+        return "\(CalendarWidgetEnvironment.eventTime(for: event.startDate))"
+            + "–"
+            + CalendarWidgetEnvironment.eventTime(for: event.endDate)
     }
 }
 
@@ -216,67 +273,129 @@ private struct CalendarDayCell: View {
 
     var body: some View {
         GeometryReader { geometry in
-            let minimumLength = min(geometry.size.width, geometry.size.height)
-            let circleSize = minimumLength * (compact ? 0.82 : (isSelected ? 0.72 : 0.64))
+            let cellMinimumLength = min(geometry.size.width, geometry.size.height)
+            let markerGap = compact
+                ? CGFloat.zero
+                : min(6, max(5, geometry.size.height * 0.11))
+            let markerHeight = compact
+                ? CGFloat.zero
+                : min(11, max(9, geometry.size.height * 0.22))
+            let markerFloatOffset = compact
+                ? CGFloat.zero
+                : min(3.5, max(2.5, geometry.size.height * 0.09))
+            let dateAreaHeight = max(
+                0,
+                geometry.size.height - markerGap - markerHeight
+            )
+            let dateMinimumLength = min(
+                geometry.size.width,
+                compact ? geometry.size.height : dateAreaHeight
+            )
+            let circleSize = dateMinimumLength * (
+                compact ? 0.82 : (isSelected ? 0.90 : 0.78)
+            )
             let fontSize = compact
-                ? min(8, max(4.5, minimumLength * 0.52))
-                : min(16, max(9, minimumLength * 0.42))
+                ? min(8, max(4.5, dateMinimumLength * 0.52))
+                : min(16, max(9, cellMinimumLength * 0.44))
 
             if let day {
-                ZStack {
-                    if day.isToday {
-                        Circle()
-                            .fill(Color.red)
-                            .frame(width: circleSize, height: circleSize)
-                            .offset(y: compact ? 0 : -2.5)
-                    } else if isSelected {
-                        Circle()
-                            .fill(Color.red.opacity(0.11))
-                            .overlay {
-                                Circle()
-                                    .strokeBorder(Color.red.opacity(0.42), lineWidth: 1)
-                            }
-                            .frame(width: circleSize, height: circleSize)
-                            .offset(y: -2.5)
-                    }
-
-                    Text(String(day.number))
-                        .font(
-                            .system(
-                                size: fontSize,
-                                weight: day.isToday || isSelected ? .bold : .medium,
-                                design: .rounded
-                            )
+                if compact {
+                    ZStack {
+                        dayNumber(
+                            for: day,
+                            circleSize: circleSize,
+                            fontSize: fontSize
                         )
-                        .foregroundStyle(foregroundStyle(for: day))
-                        .minimumScaleFactor(0.7)
-                        .offset(y: compact ? 0 : -2.5)
+                        eventMarker(for: day, size: cellMinimumLength)
+                    }
+                    .frame(width: geometry.size.width, height: geometry.size.height)
+                    .contentShape(Rectangle())
+                } else {
+                    ZStack(alignment: .topLeading) {
+                        dayNumber(
+                            for: day,
+                            circleSize: circleSize,
+                            fontSize: fontSize
+                        )
+                        .frame(width: geometry.size.width, height: dateAreaHeight)
+                        .position(
+                            x: geometry.size.width / 2,
+                            y: dateAreaHeight / 2
+                        )
 
-                    eventMarker(for: day, size: minimumLength)
+                    }
+                    .frame(width: geometry.size.width, height: geometry.size.height)
+                    .overlay(alignment: .bottom) {
+                        // 节日/节气是独立浮层，不参与日期数字和选中圆的布局。
+                        eventMarker(for: day, size: cellMinimumLength)
+                            .frame(width: geometry.size.width, height: markerHeight)
+                            .offset(y: markerFloatOffset)
+                    }
+                    .contentShape(Rectangle())
                 }
-                .frame(width: geometry.size.width, height: geometry.size.height)
-                .contentShape(Rectangle())
             }
+        }
+    }
+
+    private func dayNumber(
+        for day: CalendarDay,
+        circleSize: CGFloat,
+        fontSize: CGFloat
+    ) -> some View {
+        ZStack {
+            if day.isToday {
+                Circle()
+                    .fill(Color.red)
+                    .frame(width: circleSize, height: circleSize)
+            } else if isSelected {
+                Circle()
+                    .fill(Color.red.opacity(0.11))
+                    .overlay {
+                        Circle()
+                            .strokeBorder(Color.red.opacity(0.42), lineWidth: 1)
+                    }
+                    .frame(width: circleSize, height: circleSize)
+            }
+
+            Text(String(day.number))
+                .font(
+                    .system(
+                        size: fontSize,
+                        weight: day.isToday || isSelected ? .bold : .medium,
+                        design: .rounded
+                    )
+                )
+                .foregroundStyle(foregroundStyle(for: day))
+                .minimumScaleFactor(0.7)
         }
     }
 
     @ViewBuilder
     private func eventMarker(for day: CalendarDay, size: CGFloat) -> some View {
         if let holidayTitle = events.holidayTitle(on: day.date), !compact {
-            Text(String(holidayTitle.prefix(4)))
-                .font(.system(size: min(6.5, max(5, size * 0.17)), weight: .semibold))
-                .foregroundStyle(Color.red.opacity(0.85))
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-                .frame(maxWidth: .infinity)
-                .frame(maxHeight: .infinity, alignment: .bottom)
-                .padding(.bottom, 1)
+            HStack(spacing: 1.5) {
+                if events.hasScheduledEvent(on: day.date) {
+                    Circle()
+                        .fill(Color.blue.opacity(0.82))
+                        .frame(width: 3, height: 3)
+                }
+
+                Text(String(holidayTitle.prefix(3)))
+                    .font(.system(size: min(8.5, max(7, size * 0.23)), weight: .semibold))
+                    .foregroundStyle(Color.red.opacity(0.88))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         } else if events.hasEvent(on: day.date) {
             Circle()
                 .fill(Color.blue.opacity(0.78))
                 .frame(width: compact ? 1.7 : 3, height: compact ? 1.7 : 3)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-                .padding(.bottom, compact ? 0 : 2)
+                .frame(
+                    maxWidth: .infinity,
+                    maxHeight: .infinity,
+                    alignment: compact ? .bottom : .center
+                )
         }
     }
 

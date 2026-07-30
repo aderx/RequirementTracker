@@ -46,6 +46,7 @@ function createElement(id = "") {
 
 function createPopupSandbox() {
   const elements = new Map();
+  const badgeDraws = [];
   const document = {
     getElementById(id) {
       if (!elements.has(id)) {
@@ -63,6 +64,20 @@ function createPopupSandbox() {
   const sandbox = {
     console,
     document,
+    BadgeIconRenderer: {
+      styles: {
+        addable: { color: "#FF9500" },
+        recorded: { color: "#1F9D54" },
+        done: { color: "#1570EF" },
+        tested: { color: "#7F56D9" },
+        merged: { color: "#1F9D54" },
+        paused: { color: "#F59E0B" },
+        stopped: { color: "#D92D43" }
+      },
+      drawBadgePreview(canvas, state) {
+        badgeDraws.push({ canvas, state });
+      }
+    },
     window: { close() {} },
     URL,
     setInterval: () => 1001,
@@ -72,6 +87,9 @@ function createPopupSandbox() {
     chrome: {
       runtime: {
         lastError: null,
+        getURL(value) {
+          return `chrome-extension://abcdefghijklmnopabcdefghijklmnop/${value}`;
+        },
         sendNativeMessage() {},
         sendMessage() {}
       },
@@ -94,6 +112,8 @@ globalThis.__popup = {
   handleJiraPage,
   handleMRPage,
   attachMRWithInspection,
+  testPageStateFromURL,
+  showTestPageState,
   renderSummary,
   setActions,
   setStatus,
@@ -106,6 +126,7 @@ globalThis.__popup = {
     sandbox
   );
 
+  sandbox.__popup.badgeDraws = badgeDraws;
   return sandbox.__popup;
 }
 
@@ -126,6 +147,86 @@ async function testUnsupportedCountdownLivesOnCloseButton() {
   assert.equal(popup.elements.actions.children.length, 1);
   assert.equal(popup.elements.actions.children[0].textContent, "关闭（5s）");
   assert.equal(popup.elements.countdownText.textContent, "");
+}
+
+async function testTestPageStateIsReadFromTheExtensionURL() {
+  const popup = createPopupSandbox();
+  assert.equal(
+    popup.testPageStateFromURL(
+      "chrome-extension://abcdefghijklmnopabcdefghijklmnop/test.html?state=tested"
+    ),
+    "tested"
+  );
+  assert.equal(
+    popup.testPageStateFromURL(
+      "chrome-extension://abcdefghijklmnopabcdefghijklmnop/test.html?state=unknown"
+    ),
+    "unsupported"
+  );
+  assert.equal(
+    popup.testPageStateFromURL("https://example.com/?state=tested"),
+    ""
+  );
+}
+
+async function testTestPageStatesRenderIsolatedMockDetails() {
+  const testCases = [
+    ["unsupported", "此页面暂不支持", "不支持页面"],
+    ["addable", "添加这个需求？", "未记录"],
+    ["recorded", "需求已记录", "开发中"],
+    ["done", "开发已完成", "开发完成"],
+    ["tested", "已完成自测", "已自测"],
+    ["merged", "需求已完成", "已合并"],
+    ["paused", "需求已暂停", "已暂停"],
+    ["stopped", "需求已停止", "已停止"]
+  ];
+
+  for (const [state, title, status] of testCases) {
+    const popup = createPopupSandbox();
+    popup.setNativeMessageStub(async () => {
+      throw new Error("测试页不得读取或写入 App 数据");
+    });
+
+    popup.showTestPageState(state);
+
+    assert.equal(popup.elements.titleText.textContent, title);
+    assert.equal(popup.elements.statusText.textContent, "测试模式");
+    assert.equal(popup.elements.actions.children.length, 1);
+    assert.equal(popup.elements.actions.children[0].textContent, "关闭");
+    if (state === "unsupported") {
+      assert.equal(popup.badgeDraws.length, 0);
+    } else {
+      assert.equal(popup.badgeDraws.at(-1)?.state, state);
+      assert.equal(popup.elements.iconFrame.className, "icon-frame badge");
+      assert.equal(popup.elements.badgeIconCanvas.className, "badge-icon-canvas");
+      assert.equal(popup.elements.statusIcon.className, "icon-symbol hidden");
+    }
+
+    const rows = summaryRows(popup);
+    assert.equal(rows.length, 4);
+    assert.deepEqual(
+      rows.map((row) => [row.label, row.value]),
+      [
+        ["模拟需求", "DEMO-1001"],
+        ["标题", "插件状态测试（模拟数据）"],
+        ["记录状态", status],
+        ["数据来源", "独立模拟数据，不写入 App"]
+      ]
+    );
+  }
+}
+
+async function testPausedAndStoppedTestStatesShowMockReasons() {
+  for (const [state, label, reason] of [
+    ["paused", "暂停原因", "等待测试依赖恢复"],
+    ["stopped", "停止原因", "需求范围已调整"]
+  ]) {
+    const popup = createPopupSandbox();
+    popup.showTestPageState(state);
+    assert.equal(popup.elements.statusReasonPanel.className, `reason-card ${state}`);
+    assert.equal(popup.elements.statusReasonLabel.textContent, label);
+    assert.equal(popup.elements.statusReasonText.textContent, reason);
+  }
 }
 
 async function testIncompatibleNativeHostIsRejectedAtStartup() {
@@ -213,8 +314,10 @@ async function testPausedAndStoppedJiraShowReason() {
     });
 
     assert.equal(popup.elements.titleText.textContent, testCase.title);
-    assert.equal(popup.elements.iconFrame.className, `icon-frame ${testCase.tone}`);
-    assert.equal(popup.elements.statusIcon.className, `icon-symbol state-icon ${testCase.icon}`);
+    assert.equal(popup.elements.iconFrame.className, "icon-frame badge");
+    assert.equal(popup.elements.badgeIconCanvas.className, "badge-icon-canvas");
+    assert.equal(popup.badgeDraws.at(-1)?.state, testCase.status);
+    assert.equal(popup.elements.statusIcon.className, "icon-symbol hidden");
     assert.equal(popup.elements.statusIcon.textContent, "");
     assert.equal(popup.elements.actions.children.length, 1);
     assert.equal(popup.elements.actions.children[0].textContent, "更新信息");
@@ -293,6 +396,8 @@ async function testNewJiraOffersAddButtons() {
   });
 
   assert.equal(popup.elements.titleText.textContent, "添加这个需求？");
+  assert.equal(popup.badgeDraws.at(-1)?.state, "addable");
+  assert.equal(popup.elements.iconFrame.className, "icon-frame badge");
   assert.equal(popup.elements.actions.children.length, 2);
   assert.equal(popup.elements.actions.children[0].textContent, "添加");
   assert.equal(popup.elements.actions.children[1].textContent, "添加并开始开发");
@@ -446,8 +551,9 @@ async function testRecordedMergedMRShowsTerminalCompletion() {
   assert.ok(!sent.some((message) => message.type === "attachMergeRequest"));
   assert.equal(popup.elements.titleText.textContent, "需求已完成");
   assert.equal(popup.elements.statusText.textContent, "MR 与需求均为已合并状态");
-  assert.equal(popup.elements.statusIcon.textContent, "✓");
-  assert.equal(popup.elements.iconFrame.className, "icon-frame success");
+  assert.equal(popup.badgeDraws.at(-1)?.state, "merged");
+  assert.equal(popup.elements.iconFrame.className, "icon-frame badge");
+  assert.equal(popup.elements.statusIcon.className, "icon-symbol hidden");
   assert.equal(popup.elements.actions.children.length, 1);
   assert.equal(popup.elements.actions.children[0].textContent, "关闭（5s）");
 
@@ -469,6 +575,9 @@ async function testSuccessAutoClosesWithCountdown() {
 
 async function run() {
   await testUnsupportedCountdownLivesOnCloseButton();
+  await testTestPageStateIsReadFromTheExtensionURL();
+  await testTestPageStatesRenderIsolatedMockDetails();
+  await testPausedAndStoppedTestStatesShowMockReasons();
   await testIncompatibleNativeHostIsRejectedAtStartup();
   await testExistingJiraOffersNextStatusButton();
   await testExistingActiveJiraOffersDoneButton();

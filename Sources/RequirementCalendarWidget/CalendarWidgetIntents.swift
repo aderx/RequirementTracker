@@ -49,6 +49,25 @@ struct ReturnMonthToTodayIntent: AppIntent {
     }
 }
 
+struct ChangeSelectedDayAgendaPageIntent: AppIntent {
+    static let title: LocalizedStringResource = "切换日程页"
+    static let openAppWhenRun = false
+
+    @Parameter(title: "页码")
+    var page: Int
+
+    init() {}
+
+    init(page: Int) {
+        self.page = page
+    }
+
+    func perform() async throws -> some IntentResult {
+        CalendarWidgetStateStore.setAgendaPage(page)
+        return .result()
+    }
+}
+
 struct ChangeCalendarYearIntent: AppIntent {
     static let title: LocalizedStringResource = "切换年份"
     static let openAppWhenRun = false

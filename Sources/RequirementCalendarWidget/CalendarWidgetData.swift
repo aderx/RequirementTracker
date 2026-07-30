@@ -19,6 +19,7 @@ enum CalendarWidgetScope: Sendable {
 struct CalendarWidgetState: Sendable {
     let displayMonth: Date
     let selectedDate: Date
+    let agendaPage: Int
     let displayYear: Date
 }
 
@@ -27,6 +28,7 @@ enum CalendarWidgetStateStore {
         static let displayMonth = "calendarWidget.displayMonth"
         static let selectedDate = "calendarWidget.selectedDate"
         static let selectionUpdatedAt = "calendarWidget.selectionUpdatedAt"
+        static let agendaPage = "calendarWidget.agendaPage"
         static let displayYear = "calendarWidget.displayYear"
     }
 
@@ -67,6 +69,7 @@ enum CalendarWidgetStateStore {
         return CalendarWidgetState(
             displayMonth: displayMonth,
             selectedDate: selectedDate,
+            agendaPage: max(0, defaults.integer(forKey: Key.agendaPage)),
             displayYear: displayYear
         )
     }
@@ -86,17 +89,20 @@ enum CalendarWidgetStateStore {
     static func moveMonth(by offset: Int, now: Date = Date()) {
         let calendar = CalendarWidgetEnvironment.calendar
         let current = read(now: now)
-        let sourceDate = calendar.isDate(
-            current.selectedDate,
-            equalTo: current.displayMonth,
-            toGranularity: .month
-        ) ? current.selectedDate : current.displayMonth
-        let targetDate = CalendarNavigation.movingMonth(
-            from: sourceDate,
+        let targetMonth = CalendarNavigation.movingMonth(
+            from: current.displayMonth,
             by: offset,
             calendar: calendar
         )
-        selectDate(targetDate, now: now)
+        UserDefaults.standard.set(
+            CalendarNavigation.startOfMonth(containing: targetMonth, calendar: calendar)
+                .timeIntervalSince1970,
+            forKey: Key.displayMonth
+        )
+    }
+
+    static func setAgendaPage(_ page: Int) {
+        UserDefaults.standard.set(max(0, page), forKey: Key.agendaPage)
     }
 
     static func moveYear(by offset: Int, now: Date = Date()) {
@@ -142,6 +148,7 @@ enum CalendarWidgetStateStore {
     ) {
         defaults.set(selectedDate.timeIntervalSince1970, forKey: Key.selectedDate)
         defaults.set(updatedAt.timeIntervalSince1970, forKey: Key.selectionUpdatedAt)
+        defaults.set(0, forKey: Key.agendaPage)
         defaults.set(
             CalendarNavigation.startOfMonth(containing: selectedDate, calendar: calendar)
                 .timeIntervalSince1970,
@@ -161,6 +168,7 @@ struct CalendarWidgetEvent: Identifiable, Sendable {
     let id: String
     let title: String
     let startDate: Date
+    let endDate: Date
     let isAllDay: Bool
     let isHoliday: Bool
 }
@@ -168,12 +176,14 @@ struct CalendarWidgetEvent: Identifiable, Sendable {
 struct CalendarEventSnapshot: Sendable {
     let accessState: CalendarEventAccessState
     let eventDayIDs: Set<String>
+    let scheduledEventDayIDs: Set<String>
     let holidayTitleByDayID: [String: String]
     let selectedDayEvents: [CalendarWidgetEvent]
 
     static let unavailable = CalendarEventSnapshot(
         accessState: .unavailable,
         eventDayIDs: [],
+        scheduledEventDayIDs: [],
         holidayTitleByDayID: [:],
         selectedDayEvents: []
     )
@@ -184,12 +194,15 @@ struct CalendarEventSnapshot: Sendable {
         return CalendarEventSnapshot(
             accessState: .fullAccess,
             eventDayIDs: [CalendarWidgetEnvironment.dayIdentifier(for: now)],
+            scheduledEventDayIDs: [CalendarWidgetEnvironment.dayIdentifier(for: now)],
             holidayTitleByDayID: [:],
             selectedDayEvents: [
                 CalendarWidgetEvent(
                     id: "preview",
                     title: "项目例会",
                     startDate: start,
+                    endDate: calendar.date(byAdding: .hour, value: 1, to: start)
+                        ?? start.addingTimeInterval(60 * 60),
                     isAllDay: false,
                     isHoliday: false
                 )
@@ -199,6 +212,10 @@ struct CalendarEventSnapshot: Sendable {
 
     func hasEvent(on date: Date) -> Bool {
         eventDayIDs.contains(CalendarWidgetEnvironment.dayIdentifier(for: date))
+    }
+
+    func hasScheduledEvent(on date: Date) -> Bool {
+        scheduledEventDayIDs.contains(CalendarWidgetEnvironment.dayIdentifier(for: date))
     }
 
     func holidayTitle(on date: Date) -> String? {
@@ -217,6 +234,7 @@ enum CalendarWidgetEventLoader {
             return CalendarEventSnapshot(
                 accessState: authorizationStatus == .notDetermined ? .notDetermined : .denied,
                 eventDayIDs: [],
+                scheduledEventDayIDs: [],
                 holidayTitleByDayID: [:],
                 selectedDayEvents: []
             )
@@ -239,6 +257,7 @@ enum CalendarWidgetEventLoader {
 
         let events = Array(eventsByID.values)
         var eventDayIDs = Set<String>()
+        var scheduledEventDayIDs = Set<String>()
         var holidayTitleByDayID: [String: String] = [:]
 
         for event in events {
@@ -246,6 +265,9 @@ enum CalendarWidgetEventLoader {
             for day in coveredDays(for: event, calendar: calendar) {
                 let dayID = CalendarWidgetEnvironment.dayIdentifier(for: day)
                 eventDayIDs.insert(dayID)
+                if !holiday {
+                    scheduledEventDayIDs.insert(dayID)
+                }
                 if holiday, holidayTitleByDayID[dayID] == nil {
                     holidayTitleByDayID[dayID] = normalizedTitle(event.title)
                 }
@@ -266,6 +288,7 @@ enum CalendarWidgetEventLoader {
                     id: eventIdentity(event),
                     title: normalizedTitle(event.title),
                     startDate: event.startDate,
+                    endDate: event.endDate,
                     isAllDay: event.isAllDay,
                     isHoliday: isHoliday(event)
                 )
@@ -274,6 +297,7 @@ enum CalendarWidgetEventLoader {
         return CalendarEventSnapshot(
             accessState: .fullAccess,
             eventDayIDs: eventDayIDs,
+            scheduledEventDayIDs: scheduledEventDayIDs,
             holidayTitleByDayID: holidayTitleByDayID,
             selectedDayEvents: selectedEvents
         )

@@ -29,7 +29,7 @@ struct MonthCalendarWidgetView: View {
         GeometryReader { geometry in
             let headerHeight: CGFloat = 26
             let spacing: CGFloat = 7
-            let minimumDetailHeight: CGFloat = 56
+            let minimumDetailHeight: CGFloat = 62
             let gridRowCount = CGFloat(month.visibleWeeks.count + 1)
             let availableGridHeight = max(
                 0,
@@ -52,7 +52,8 @@ struct MonthCalendarWidgetView: View {
                 SelectedDayAgenda(
                     selectedDate: entry.state.selectedDate,
                     events: entry.events,
-                    maximumEvents: 2
+                    maximumEvents: 2,
+                    page: entry.state.agendaPage
                 )
                 .frame(maxHeight: .infinity)
                 .contentTransition(.identity)
@@ -112,17 +113,29 @@ struct MonthCalendarWidgetView: View {
 
             Spacer(minLength: 4)
 
-            Button(intent: ReturnMonthToTodayIntent()) {
-                Text("回到今天")
-                    .font(.system(size: 9, weight: .semibold, design: .rounded))
-                    .foregroundStyle(Color.red)
-                    .padding(.horizontal, 7)
-                    .frame(height: 22)
-                    .background(Color.red.opacity(0.09), in: Capsule())
+            if !isShowingToday {
+                Button(intent: ReturnMonthToTodayIntent()) {
+                    Text("回到今天")
+                        .font(.system(size: 9, weight: .semibold, design: .rounded))
+                        .foregroundStyle(Color.red)
+                        .padding(.horizontal, 7)
+                        .frame(height: 22)
+                        .background(Color.red.opacity(0.09), in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("回到今天")
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("回到今天")
         }
+    }
+
+    private var isShowingToday: Bool {
+        let calendar = CalendarWidgetEnvironment.calendar
+        return calendar.isDate(entry.state.selectedDate, inSameDayAs: entry.date)
+            && calendar.isDate(
+                entry.state.displayMonth,
+                equalTo: entry.date,
+                toGranularity: .month
+            )
     }
 
     private var selectedDaySummary: some View {
@@ -149,7 +162,8 @@ struct MonthCalendarWidgetView: View {
             SelectedDayAgenda(
                 selectedDate: selectedDate,
                 events: entry.events,
-                maximumEvents: 4
+                maximumEvents: 4,
+                page: entry.state.agendaPage
             )
             .contentTransition(.identity)
         }
