@@ -173,7 +173,7 @@ struct RequirementRowView: View {
             }
             .buttonStyle(RowPlainIconButtonStyle(tint: isCopied ? style.color : Color.black.opacity(0.25)))
             .allowsHitTesting(!isCopied)
-            .help("复制 Jira 与 MR 地址")
+            .help("复制名称、Jira 与 MR")
             .pointingHandCursor()
 
             rowMenu

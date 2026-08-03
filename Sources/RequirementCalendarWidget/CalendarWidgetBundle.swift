@@ -75,7 +75,9 @@ struct MonthCalendarWidget: Widget {
             MonthCalendarWidgetView(entry: entry)
                 .calendarWidgetBackground()
         }
-        .configurationDisplayName("完整月历")
+        .configurationDisplayName(
+            CalendarWidgetEnvironment.isDevelopment ? "完整月历（开发版）" : "完整月历"
+        )
         .description("切换月份、选择日期，并查看系统日历中的节假日与日程。")
         .supportedFamilies([.systemLarge, .systemExtraLarge])
     }
@@ -91,7 +93,9 @@ struct YearCalendarWidget: Widget {
             YearCalendarWidgetView(entry: entry)
                 .calendarWidgetBackground()
         }
-        .configurationDisplayName("全年日历")
+        .configurationDisplayName(
+            CalendarWidgetEnvironment.isDevelopment ? "全年日历（开发版）" : "全年日历"
+        )
         .description("切换年份，并在全年视图中查看有日程的日期。")
         .supportedFamilies([.systemLarge, .systemExtraLarge])
     }

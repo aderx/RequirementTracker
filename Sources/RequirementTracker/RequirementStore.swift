@@ -197,7 +197,7 @@ final class RequirementStore: ObservableObject {
         NSPasteboard.general.setString(requirement.combinedCopyText, forType: .string)
 
         if notify {
-            lastNotice = "已复制 Jira 与 MR"
+            lastNotice = "已复制名称、Jira 与 MR"
         }
     }
 

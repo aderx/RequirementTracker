@@ -47,6 +47,9 @@ function createElement(id = "") {
 function createPopupSandbox() {
   const elements = new Map();
   const badgeDraws = [];
+  const clipboardWrites = [];
+  const openedTabs = [];
+  const popupState = { closedCount: 0 };
   const document = {
     getElementById(id) {
       if (!elements.has(id)) {
@@ -78,7 +81,18 @@ function createPopupSandbox() {
         badgeDraws.push({ canvas, state });
       }
     },
-    window: { close() {} },
+    navigator: {
+      clipboard: {
+        async writeText(value) {
+          clipboardWrites.push(value);
+        }
+      }
+    },
+    window: {
+      close() {
+        popupState.closedCount += 1;
+      }
+    },
     URL,
     setInterval: () => 1001,
     clearInterval() {},
@@ -95,7 +109,11 @@ function createPopupSandbox() {
       },
       tabs: {
         query() {},
-        sendMessage() {}
+        sendMessage() {},
+        async create(options) {
+          openedTabs.push(options);
+          return { id: openedTabs.length };
+        }
       },
       scripting: {
         executeScript() {}
@@ -127,6 +145,9 @@ globalThis.__popup = {
   );
 
   sandbox.__popup.badgeDraws = badgeDraws;
+  sandbox.__popup.clipboardWrites = clipboardWrites;
+  sandbox.__popup.openedTabs = openedTabs;
+  sandbox.__popup.popupState = popupState;
   return sandbox.__popup;
 }
 
@@ -134,7 +155,8 @@ function summaryRows(popup) {
   return popup.elements.summaryPanel.children.map((row) => ({
     label: row.children[0].textContent,
     value: row.children[1].textContent,
-    hasCopyButton: row.children[1].children.some((child) => child.className.includes("copy-button"))
+    hasCopyButton: row.children[1].children.some((child) => child.className.includes("copy-button")),
+    hasOpenButton: row.children[1].children.some((child) => child.className.includes("open-button"))
   }));
 }
 
@@ -267,6 +289,40 @@ async function testExistingJiraOffersNextStatusButton() {
   assert.equal(rows[0].hasCopyButton, true);
   assert.equal(rows[2].label, "记录状态");
   assert.equal(rows[2].value, "待开发");
+}
+
+async function testExistingJiraOffersCopyAndOpenForLatestMR() {
+  const popup = createPopupSandbox();
+  const mrURL = "http://gitlab.zstack.io/g/p/-/merge_requests/88";
+  popup.setNativeMessageStub(async () => ({
+    ok: true,
+    exists: true,
+    status: "active",
+    jiraURL: "http://jira.zstack.io/browse/ZSTAC-12345",
+    mrURL
+  }));
+
+  await popup.handleJiraPage({
+    issueKey: "ZSTAC-12345",
+    title: "需求标题",
+    jiraURL: "http://jira.zstack.io/browse/ZSTAC-12345"
+  });
+
+  const rows = summaryRows(popup);
+  assert.deepEqual(rows.map((row) => row.label), ["需求", "标题", "MR", "记录状态"]);
+  assert.equal(rows[2].value, "!88");
+  assert.equal(rows[2].hasCopyButton, true);
+  assert.equal(rows[2].hasOpenButton, true);
+
+  const mrActions = popup.elements.summaryPanel.children[2].children[1].children;
+  await mrActions.find((element) => element.className === "copy-button").onclick();
+  assert.deepEqual(popup.clipboardWrites, [mrURL]);
+
+  await mrActions.find((element) => element.className === "open-button").onclick();
+  assert.equal(popup.openedTabs.length, 1);
+  assert.equal(popup.openedTabs[0].url, mrURL);
+  assert.equal(popup.openedTabs[0].active, true);
+  assert.equal(popup.popupState.closedCount, 1);
 }
 
 async function testExistingActiveJiraOffersDoneButton() {
@@ -564,6 +620,40 @@ async function testRecordedMergedMRShowsTerminalCompletion() {
   assert.equal(rows[2].value, "已合并");
 }
 
+async function testMRPageOffersCopyAndOpenForJira() {
+  const popup = createPopupSandbox();
+  const jiraURL = "http://jira.zstack.io/browse/ZSTAC-12345";
+  popup.setNativeMessageStub(async () => ({
+    ok: true,
+    exists: true,
+    status: "active",
+    jiraURL,
+    mrURL: "http://gitlab.zstack.io/g/p/-/merge_requests/1"
+  }));
+
+  await popup.handleMRPage({
+    mrURL: "http://gitlab.zstack.io/g/p/-/merge_requests/1",
+    mrState: "closed",
+    jiraURL,
+    issueKey: "ZSTAC-12345"
+  });
+
+  const rows = summaryRows(popup);
+  assert.equal(rows[0].label, "需求");
+  assert.equal(rows[0].hasCopyButton, true);
+  assert.equal(rows[0].hasOpenButton, true);
+
+  const jiraActions = popup.elements.summaryPanel.children[0].children[1].children;
+  await jiraActions.find((element) => element.className === "copy-button").onclick();
+  assert.deepEqual(popup.clipboardWrites, [jiraURL]);
+
+  await jiraActions.find((element) => element.className === "open-button").onclick();
+  assert.equal(popup.openedTabs.length, 1);
+  assert.equal(popup.openedTabs[0].url, jiraURL);
+  assert.equal(popup.openedTabs[0].active, true);
+  assert.equal(popup.popupState.closedCount, 1);
+}
+
 async function testSuccessAutoClosesWithCountdown() {
   const popup = createPopupSandbox();
 
@@ -580,6 +670,7 @@ async function run() {
   await testPausedAndStoppedTestStatesShowMockReasons();
   await testIncompatibleNativeHostIsRejectedAtStartup();
   await testExistingJiraOffersNextStatusButton();
+  await testExistingJiraOffersCopyAndOpenForLatestMR();
   await testExistingActiveJiraOffersDoneButton();
   await testPausedAndStoppedJiraShowReason();
   await testStatusToneCSSKeepsLargeIconsWhiteAndReasonCardsAligned();
@@ -591,6 +682,7 @@ async function run() {
   await testOpenMRRequiresButtonBeforeStatusSync();
   await testNewMRWithoutAvailableTransitionOffersSaveOnly();
   await testRecordedMergedMRShowsTerminalCompletion();
+  await testMRPageOffersCopyAndOpenForJira();
   await testSuccessAutoClosesWithCountdown();
 }
 

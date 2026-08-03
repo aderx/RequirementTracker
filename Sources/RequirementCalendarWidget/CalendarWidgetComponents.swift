@@ -3,6 +3,22 @@ import RequirementCalendarCore
 #endif
 import SwiftUI
 
+struct CalendarWidgetDevelopmentBadge: View {
+    var body: some View {
+        Text("开发版")
+            .font(.system(size: 8, weight: .black, design: .rounded))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 6)
+            .frame(height: 18)
+            .background(Color.red, in: Capsule())
+            .overlay {
+                Capsule()
+                    .strokeBorder(Color.white.opacity(0.72), lineWidth: 0.8)
+            }
+            .accessibilityLabel("开发版小组件")
+    }
+}
+
 struct FullMonthGrid: View {
     let month: CalendarMonth
     let selectedDate: Date
@@ -274,25 +290,19 @@ private struct CalendarDayCell: View {
     var body: some View {
         GeometryReader { geometry in
             let cellMinimumLength = min(geometry.size.width, geometry.size.height)
-            let markerGap = compact
-                ? CGFloat.zero
-                : min(6, max(5, geometry.size.height * 0.11))
             let markerHeight = compact
                 ? CGFloat.zero
                 : min(11, max(9, geometry.size.height * 0.22))
-            let markerFloatOffset = compact
-                ? CGFloat.zero
-                : min(3.5, max(2.5, geometry.size.height * 0.09))
             let dateAreaHeight = max(
                 0,
-                geometry.size.height - markerGap - markerHeight
+                geometry.size.height - markerHeight
             )
             let dateMinimumLength = min(
                 geometry.size.width,
                 compact ? geometry.size.height : dateAreaHeight
             )
-            let circleSize = dateMinimumLength * (
-                compact ? 0.82 : (isSelected ? 0.90 : 0.78)
+            let circleSize = cellMinimumLength * (
+                compact ? 0.82 : (isSelected ? 0.72 : 0.64)
             )
             let fontSize = compact
                 ? min(8, max(4.5, dateMinimumLength * 0.52))
@@ -329,7 +339,6 @@ private struct CalendarDayCell: View {
                         // 节日/节气是独立浮层，不参与日期数字和选中圆的布局。
                         eventMarker(for: day, size: cellMinimumLength)
                             .frame(width: geometry.size.width, height: markerHeight)
-                            .offset(y: markerFloatOffset)
                     }
                     .contentShape(Rectangle())
                 }

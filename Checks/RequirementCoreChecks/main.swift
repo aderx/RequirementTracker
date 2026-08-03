@@ -145,6 +145,19 @@ expect(
     !encodedTitledRequirement.contains("\"mrHistory\""),
     "Single-MR records should omit empty MR history"
 )
+expect(
+    decodedTitledRequirement.combinedCopyText == """
+    修复浏览器插件写入
+    Jira: http://jira.zstack.io/browse/ZSTAC-70121
+    MR: http://gitlab.zstack.io/demo/-/merge_requests/1
+    """,
+    "Combined copy text should render the title without a prefix, followed by Jira and MR"
+)
+expect(
+    decodedLegacyRequirement.combinedCopyText
+        == "Jira: http://jira.zstack.io/browse/ZSTAC-70122",
+    "Combined copy text should omit missing title and MR lines"
+)
 
 var multiMRRequirement = decodedTitledRequirement
 multiMRRequirement.recordMergeRequestURL(

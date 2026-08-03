@@ -391,17 +391,22 @@ public struct Requirement: Identifiable, Codable, Equatable, Sendable {
     }
 
     public var combinedCopyText: String {
+        let name = title.trimmingCharacters(in: .whitespacesAndNewlines)
         let jira = jiraURL.trimmingCharacters(in: .whitespacesAndNewlines)
         let mr = mrURL?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        var lines: [String] = []
 
-        guard !mr.isEmpty else {
-            return jira
+        if !name.isEmpty {
+            lines.append(name)
+        }
+        if !jira.isEmpty {
+            lines.append("Jira: \(jira)")
+        }
+        if !mr.isEmpty {
+            lines.append("MR: \(mr)")
         }
 
-        return """
-        Jira: \(jira)
-        MR: \(mr)
-        """
+        return lines.joined(separator: "\n")
     }
 
     public mutating func recordStatus(_ status: RequirementTimelineStatus, at date: Date) {
