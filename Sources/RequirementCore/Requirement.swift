@@ -158,6 +158,27 @@ public struct RequirementMergeRequestCollection: Equatable, Sendable {
     }
 }
 
+public enum RequirementMRTrackingStatus: String, CaseIterable, Codable, Equatable, Identifiable, Sendable {
+    case created
+    case mergeRequested
+    case merged
+
+    public var id: String { rawValue }
+
+    public var shortTitle: String {
+        switch self {
+        case .created:
+            "已创建"
+        case .mergeRequested:
+            "已提交合并"
+        case .merged:
+            "已合并"
+        }
+    }
+
+    public var title: String { "MR \(shortTitle)" }
+}
+
 public struct Requirement: Identifiable, Codable, Equatable, Sendable {
     public var id: UUID
     public var jiraKey: String
@@ -171,6 +192,10 @@ public struct Requirement: Identifiable, Codable, Equatable, Sendable {
     public var isDone: Bool
     public var isTested: Bool
     public var isMerged: Bool
+    public var mrTrackingStatus: RequirementMRTrackingStatus?
+    public var isMRMergeMonitoringEnabled: Bool
+    public var mrMergeReminderPending: Bool
+    public var mrMergeNotifiedAt: Date?
     public var createdAt: Date
     public var updatedAt: Date
     public var completedAt: Date?
@@ -194,6 +219,10 @@ public struct Requirement: Identifiable, Codable, Equatable, Sendable {
         isDone: Bool = false,
         isTested: Bool = false,
         isMerged: Bool = false,
+        mrTrackingStatus: RequirementMRTrackingStatus? = nil,
+        isMRMergeMonitoringEnabled: Bool = false,
+        mrMergeReminderPending: Bool = false,
+        mrMergeNotifiedAt: Date? = nil,
         createdAt: Date = Date(),
         updatedAt: Date = Date(),
         completedAt: Date? = nil,
@@ -215,6 +244,10 @@ public struct Requirement: Identifiable, Codable, Equatable, Sendable {
         self.isDone = isDone
         self.isTested = isTested
         self.isMerged = isMerged
+        self.mrTrackingStatus = mrTrackingStatus
+        self.isMRMergeMonitoringEnabled = isMRMergeMonitoringEnabled
+        self.mrMergeReminderPending = mrMergeReminderPending
+        self.mrMergeNotifiedAt = mrMergeNotifiedAt
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.completedAt = completedAt
@@ -232,6 +265,7 @@ public struct Requirement: Identifiable, Codable, Equatable, Sendable {
             completedAt: completedAt
         )
         normalizeMergeRequestURLs()
+        normalizeMRTracking()
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -247,6 +281,10 @@ public struct Requirement: Identifiable, Codable, Equatable, Sendable {
         case isDone
         case isTested
         case isMerged
+        case mrTrackingStatus
+        case isMRMergeMonitoringEnabled
+        case mrMergeReminderPending
+        case mrMergeNotifiedAt
         case createdAt
         case updatedAt
         case completedAt
@@ -271,6 +309,10 @@ public struct Requirement: Identifiable, Codable, Equatable, Sendable {
         isDone = try container.decode(Bool.self, forKey: .isDone)
         isTested = try container.decode(Bool.self, forKey: .isTested)
         isMerged = try container.decode(Bool.self, forKey: .isMerged)
+        mrTrackingStatus = try container.decodeIfPresent(RequirementMRTrackingStatus.self, forKey: .mrTrackingStatus)
+        isMRMergeMonitoringEnabled = try container.decodeIfPresent(Bool.self, forKey: .isMRMergeMonitoringEnabled) ?? false
+        mrMergeReminderPending = try container.decodeIfPresent(Bool.self, forKey: .mrMergeReminderPending) ?? false
+        mrMergeNotifiedAt = try container.decodeIfPresent(Date.self, forKey: .mrMergeNotifiedAt)
         createdAt = try container.decode(Date.self, forKey: .createdAt)
         updatedAt = try container.decode(Date.self, forKey: .updatedAt)
         completedAt = try container.decodeIfPresent(Date.self, forKey: .completedAt)
@@ -292,6 +334,7 @@ public struct Requirement: Identifiable, Codable, Equatable, Sendable {
             )
             : decodedHistory
         normalizeMergeRequestURLs()
+        normalizeMRTracking()
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -310,6 +353,14 @@ public struct Requirement: Identifiable, Codable, Equatable, Sendable {
         try container.encode(isDone, forKey: .isDone)
         try container.encode(isTested, forKey: .isTested)
         try container.encode(isMerged, forKey: .isMerged)
+        try container.encodeIfPresent(mrTrackingStatus, forKey: .mrTrackingStatus)
+        if isMRMergeMonitoringEnabled {
+            try container.encode(true, forKey: .isMRMergeMonitoringEnabled)
+        }
+        if mrMergeReminderPending {
+            try container.encode(true, forKey: .mrMergeReminderPending)
+        }
+        try container.encodeIfPresent(mrMergeNotifiedAt, forKey: .mrMergeNotifiedAt)
         try container.encode(createdAt, forKey: .createdAt)
         try container.encode(updatedAt, forKey: .updatedAt)
         try container.encodeIfPresent(completedAt, forKey: .completedAt)
@@ -384,6 +435,33 @@ public struct Requirement: Identifiable, Codable, Equatable, Sendable {
         let collection = RequirementMergeRequestCollection(latest: mrURL, history: mrHistory)
         mrURL = collection.latest
         mrHistory = collection.history
+    }
+
+    public mutating func clearMRTracking() {
+        mrTrackingStatus = nil
+        isMRMergeMonitoringEnabled = false
+        mrMergeReminderPending = false
+        mrMergeNotifiedAt = nil
+    }
+
+    public mutating func normalizeMRTracking() {
+        if isMerged || !hasMergeRequestURL {
+            clearMRTracking()
+            return
+        }
+
+        if mrTrackingStatus == nil {
+            mrTrackingStatus = .created
+        }
+
+        if mrTrackingStatus != .mergeRequested {
+            isMRMergeMonitoringEnabled = false
+        }
+
+        if mrTrackingStatus != .merged {
+            mrMergeReminderPending = false
+            mrMergeNotifiedAt = nil
+        }
     }
 
     public var canMarkMergedDirectly: Bool {

@@ -15,6 +15,55 @@ function element(text, extra = {}) {
   };
 }
 
+function identityElement(text, attributes = {}) {
+  return element(text, {
+    getAttribute(name) {
+      return attributes[name] || "";
+    },
+    href: attributes.href || ""
+  });
+}
+
+function extractOwnership(pageType, selectorMap) {
+  let listener;
+  let response;
+  const document = {
+    querySelector(selector) {
+      return selectorMap[selector] || null;
+    },
+    querySelectorAll() {
+      return [];
+    }
+  };
+  const sandbox = {
+    URL,
+    window: {},
+    document,
+    location: {
+      href: pageType === "jira"
+        ? "http://jira.zstack.io/browse/ZSTAC-12345"
+        : "http://gitlab.zstack.io/g/p/-/merge_requests/6732",
+      hostname: pageType === "jira" ? "jira.zstack.io" : "gitlab.zstack.io"
+    },
+    chrome: {
+      runtime: {
+        onMessage: {
+          addListener(value) {
+            listener = value;
+          }
+        }
+      }
+    }
+  };
+
+  vm.createContext(sandbox);
+  vm.runInContext(contentSource, sandbox);
+  listener({ type: "EXTRACT_PAGE_OWNERSHIP", pageType }, {}, (value) => {
+    response = value;
+  });
+  return response.ownership;
+}
+
 function extractMR({ title, links = [], bodyText = "Open" }) {
   let listener;
   let response;
@@ -105,7 +154,38 @@ function testUnprefixedJiraTextDoesNotMatchTitleFallback() {
   assert.equal(result.payload.jiraURL, undefined);
 }
 
+function testJiraOwnershipUsesAssigneeAndCurrentUsername() {
+  assert.equal(extractOwnership("jira", {
+    "#assignee-val": identityElement("徐福", { "data-username": "xfu" }),
+    "#header-details-user-fullname": identityElement("徐福", { "data-username": "xfu" })
+  }), "mine");
+
+  assert.equal(extractOwnership("jira", {
+    "#assignee-val": identityElement("徐福", { alt: "xfu" }),
+    "#header-details-user-fullname": identityElement("", {
+      "data-username": "xfu",
+      title: "徐福的个人信息"
+    })
+  }), "mine");
+
+  assert.equal(extractOwnership("jira", {
+    "#assignee-val": identityElement("其他人", { "data-username": "someone-else" }),
+    "#header-details-user-fullname": identityElement("徐福", { "data-username": "xfu" })
+  }), "other");
+}
+
+function testMROwnershipUsesAuthorAndCurrentUsername() {
+  assert.equal(extractOwnership("mr", {
+    "[data-testid='author-link']": identityElement("其他人", { "data-username": "someone-else" }),
+    "[data-testid='user-menu-toggle']": identityElement("徐福", { "data-username": "xfu" })
+  }), "other");
+
+  assert.equal(extractOwnership("mr", {}), "unknown");
+}
+
 testLinkedJiraWinsOverTitle();
 testHashJiraInMRTitleIsParsed();
 testUnprefixedJiraTextDoesNotMatchTitleFallback();
+testJiraOwnershipUsesAssigneeAndCurrentUsername();
+testMROwnershipUsesAuthorAndCurrentUsername();
 console.log("content.behavior.test.js passed");

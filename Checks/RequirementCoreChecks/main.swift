@@ -124,6 +124,18 @@ expect(
         && decodedLegacyRequirement.title.isEmpty,
     "Requirement should decode Jira title and default legacy records to blank title"
 )
+expect(
+    decodedTitledRequirement.mrTrackingStatus == .created
+        && decodedLegacyRequirement.mrTrackingStatus == nil
+        && !decodedLegacyRequirement.isMRMergeMonitoringEnabled
+        && !decodedLegacyRequirement.mrMergeReminderPending
+        && decodedLegacyRequirement.mrMergeNotifiedAt == nil,
+    "Requirements with an MR should default to created while records without an MR stay untracked"
+)
+expect(
+    RequirementMRTrackingStatus.allCases == [.created, .mergeRequested, .merged],
+    "MR tracking choices should keep the created, requested, merged flow order"
+)
 let requirementEncoder = JSONEncoder()
 requirementEncoder.dateEncodingStrategy = .iso8601
 let encodedTitledRequirement = String(
@@ -131,8 +143,9 @@ let encodedTitledRequirement = String(
     encoding: .utf8
 ) ?? ""
 expect(
-    encodedTitledRequirement.contains("\"title\":\"修复浏览器插件写入\""),
-    "Requirement should encode Jira title back to JSON"
+    encodedTitledRequirement.contains("\"title\":\"修复浏览器插件写入\"")
+        && encodedTitledRequirement.contains("\"mrTrackingStatus\":\"created\""),
+    "Requirement should encode Jira title and the default MR-created state back to JSON"
 )
 expect(
     decodedTitledRequirement.mrHistory.isEmpty
@@ -205,6 +218,27 @@ expect(
     "Multiple-MR records should encode historical URLs"
 )
 
+var trackedMRRequirement = decodedTitledRequirement
+trackedMRRequirement.mrTrackingStatus = .mergeRequested
+trackedMRRequirement.isMRMergeMonitoringEnabled = true
+trackedMRRequirement.normalizeMRTracking()
+expect(
+    trackedMRRequirement.mrTrackingStatus == .mergeRequested
+        && trackedMRRequirement.isMRMergeMonitoringEnabled
+        && !trackedMRRequirement.mrMergeReminderPending,
+    "Requested MR tracking should support an independent merge monitor"
+)
+trackedMRRequirement.mrTrackingStatus = .merged
+trackedMRRequirement.mrMergeReminderPending = true
+trackedMRRequirement.isMerged = true
+trackedMRRequirement.normalizeMRTracking()
+expect(
+    trackedMRRequirement.mrTrackingStatus == nil
+        && !trackedMRRequirement.isMRMergeMonitoringEnabled
+        && !trackedMRRequirement.mrMergeReminderPending,
+    "Completing the main status should remove all MR tracking state"
+)
+
 multiMRRequirement.mrURL = nil
 multiMRRequirement.normalizeMergeRequestURLs()
 expect(
@@ -249,11 +283,12 @@ expect(
     "External writes should share a stable distributed notification name"
 )
 expect(
-    RequirementNativeHostProtocol.currentVersion == 2
+    RequirementNativeHostProtocol.currentVersion == 3
         && !RequirementNativeHostProtocol.isCompatible(nil)
         && !RequirementNativeHostProtocol.isCompatible(1)
-        && RequirementNativeHostProtocol.isCompatible(2)
-        && RequirementNativeHostProtocol.isCompatible(3),
+        && !RequirementNativeHostProtocol.isCompatible(2)
+        && RequirementNativeHostProtocol.isCompatible(3)
+        && RequirementNativeHostProtocol.isCompatible(4),
     "Native Host protocol compatibility should reject missing or older versions"
 )
 
@@ -316,6 +351,17 @@ expect(
     RequirementQuery.sortedForOverview(overviewSortInput, by: .updatedAt).map(\.jiraKey)
         == ["ZSTAC-102", "ZSTAC-101", "ZSTAC-103"],
     "Overview should optionally sort by newest update time first"
+)
+
+var pinnedMRReminder = overviewMiddle
+pinnedMRReminder.mrTrackingStatus = .merged
+pinnedMRReminder.mrMergeReminderPending = true
+expect(
+    RequirementQuery.sortedForOverview(
+        [overviewCreatedNewest, overviewUpdatedNewest, pinnedMRReminder],
+        by: .createdAt
+    ).first?.jiraKey == pinnedMRReminder.jiraKey,
+    "An MR merge reminder should stay pinned above the normal overview ordering"
 )
 
 let overviewStatusInput = [

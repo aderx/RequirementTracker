@@ -11,9 +11,11 @@
 importScripts("badge-renderer.js");
 
 const HOST_NAME = "com.aderx.requirementtracker.jira_capture";
-const REQUIRED_NATIVE_HOST_PROTOCOL_VERSION = 2;
+const REQUIRED_NATIVE_HOST_PROTOCOL_VERSION = 3;
 const TEST_PAGE_PATH = "test.html";
 const TEST_PAGE_CONTEXT_MENU_ID = "open-requirementtracker-status-test";
+const MR_MONITOR_ALARM_NAME = "requirementtracker-mr-merge-monitor";
+const MR_MONITOR_INTERVAL_MINUTES = 15;
 const FALLBACK_SETTINGS = {
   jiraBaseURL: "http://jira.zstack.io/browse/",
   mrHosts: ["gitlab.zstack.io"]
@@ -34,11 +36,21 @@ let cachedHostCompatible = false;
 
 chrome.runtime.onInstalled.addListener(() => {
   installTestPageContextMenu();
+  ensureMRMonitorAlarm();
   refreshActiveTab();
+  checkMonitoredMRs();
 });
 chrome.runtime.onStartup.addListener(() => {
   installTestPageContextMenu();
+  ensureMRMonitorAlarm();
   refreshActiveTab();
+  checkMonitoredMRs();
+});
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === MR_MONITOR_ALARM_NAME) {
+    checkMonitoredMRs();
+  }
 });
 
 chrome.contextMenus.onClicked.addListener((info) => {
@@ -112,7 +124,7 @@ function refreshActiveTab() {
 
 async function updateBadgeForTab(tabId, url) {
   try {
-    const state = await resolveState(url);
+    const state = await resolveState(url, tabId);
     await applyBadge(tabId, state);
     return state;
   } catch {
@@ -121,7 +133,7 @@ async function updateBadgeForTab(tabId, url) {
   }
 }
 
-async function resolveState(url) {
+async function resolveState(url, tabId) {
   const testState = testStateFromURL(url);
   if (testState) {
     return testState;
@@ -151,7 +163,125 @@ async function resolveState(url) {
     // Native Host 不可用时，支持的页面仍按“可添加”展示。
   }
 
-  return "addable";
+  const ownership = await readPageOwnership(tabId, pageType);
+  return ownership === "other" ? "unsupported" : "addable";
+}
+
+async function readPageOwnership(tabId, pageType) {
+  if (!Number.isInteger(tabId)) {
+    return "unknown";
+  }
+
+  try {
+    const response = await chrome.tabs.sendMessage(tabId, {
+      type: "EXTRACT_PAGE_OWNERSHIP",
+      pageType
+    });
+    const ownership = String(response?.ownership || "").toLowerCase();
+    return ["mine", "other"].includes(ownership) ? ownership : "unknown";
+  } catch {
+    return "unknown";
+  }
+}
+
+function ensureMRMonitorAlarm() {
+  chrome.alarms.create(MR_MONITOR_ALARM_NAME, {
+    periodInMinutes: MR_MONITOR_INTERVAL_MINUTES
+  });
+}
+
+async function checkMonitoredMRs() {
+  let response;
+  try {
+    response = await sendNativeMessage({
+      type: "listMRMergeMonitors",
+      payload: {}
+    });
+  } catch {
+    return;
+  }
+
+  const monitors = Array.isArray(response?.monitors) ? response.monitors : [];
+  for (const monitor of monitors) {
+    const issueKey = String(monitor?.issueKey || "").trim();
+    const mrURL = canonicalPageURL(monitor?.mrURL || "");
+    if (!issueKey || !mrURL) {
+      continue;
+    }
+
+    if (await fetchMRState(mrURL) !== "merged") {
+      continue;
+    }
+
+    try {
+      await sendNativeMessage({
+        type: "markMRMergeMonitorMerged",
+        payload: { issueKey, mrURL }
+      });
+    } catch {
+      // 单个 MR 写回失败不影响其它监听项。
+    }
+  }
+}
+
+async function fetchMRState(mrURL) {
+  const candidates = [`${mrURL}.json`, mrURL];
+  for (const candidate of candidates) {
+    try {
+      const response = await fetch(candidate, {
+        method: "GET",
+        credentials: "include",
+        cache: "no-store",
+        redirect: "follow"
+      });
+      if (!response.ok) {
+        continue;
+      }
+
+      const state = extractMRStateFromResponseText(await response.text());
+      if (state) {
+        return state;
+      }
+    } catch {
+      // 登录失效、网络不可达或页面结构未知时保持原状态，等待下次检查。
+    }
+  }
+
+  return "";
+}
+
+function extractMRStateFromResponseText(value) {
+  const text = String(value || "");
+  if (!text) {
+    return "";
+  }
+
+  try {
+    const payload = JSON.parse(text);
+    const state = String(payload?.state || payload?.merge_request?.state || "").toLowerCase();
+    if (["merged", "open", "closed"].includes(state)) {
+      return state;
+    }
+  } catch {
+    // HTML 响应继续使用 GitLab 服务端状态字段判断。
+  }
+
+  const normalized = text
+    .replace(/&quot;|&#34;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'");
+  const statePatterns = [
+    /data-(?:merge-request-)?state=["'](merged|open|closed)["']/i,
+    /["']state["']\s*:\s*["'](merged|open|closed)["']/i,
+    /["']merge_request_state["']\s*:\s*["'](merged|open|closed)["']/i
+  ];
+  for (const pattern of statePatterns) {
+    const state = normalized.match(pattern)?.[1]?.toLowerCase();
+    if (state) {
+      return state;
+    }
+  }
+
+  return "";
 }
 
 function testStateFromURL(value) {

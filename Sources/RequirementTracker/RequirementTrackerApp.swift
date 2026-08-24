@@ -44,6 +44,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApplication.shared.applicationIconImage = Self.sharedAppIcon
         NSApplication.shared.setActivationPolicy(.accessory)
+        MRMergeNotificationService.shared.configure()
         WidgetCenter.shared.reloadAllTimelines()
 
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -113,6 +114,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             name: RequirementExternalUpdateNotification.name,
             object: RequirementPluginSettings.defaultNativeHostName
         )
+        store.deliverPendingMRMergeNotifications()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -142,6 +144,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private func requirementsDidChangeExternally(_ notification: Notification) {
         let issueKey = notification.userInfo?["issueKey"] as? String
         store.reloadAfterExternalUpdate(issueKey: issueKey)
+        store.deliverPendingMRMergeNotifications()
     }
 
     @objc

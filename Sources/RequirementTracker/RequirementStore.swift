@@ -53,6 +53,8 @@ final class RequirementStore: ObservableObject {
     func update(
         id: Requirement.ID,
         allowsMergedWithoutMR: Bool = false,
+        updatesTimestamp: Bool = true,
+        resetsMRTrackingWhenURLChanges: Bool = true,
         _ transform: (inout Requirement) -> Void
     ) {
         guard let index = requirements.firstIndex(where: { $0.id == id }) else {
@@ -61,13 +63,20 @@ final class RequirementStore: ObservableObject {
 
         let now = Date()
         let previousStatus = requirements[index].currentTimelineStatus
+        let previousMRURL = RequirementParser.normalizedURL(requirements[index].mrURL ?? "")
         transform(&requirements[index])
+        let nextMRURL = RequirementParser.normalizedURL(requirements[index].mrURL ?? "")
+        if resetsMRTrackingWhenURLChanges && nextMRURL != previousMRURL {
+            requirements[index].clearMRTracking()
+        }
         normalizeRequirement(at: index, now: now, allowsMergedWithoutMR: allowsMergedWithoutMR)
         let nextStatus = requirements[index].currentTimelineStatus
         if nextStatus != previousStatus {
             requirements[index].recordStatus(nextStatus, at: now)
         }
-        requirements[index].updatedAt = now
+        if updatesTimestamp {
+            requirements[index].updatedAt = now
+        }
     }
 
     func setStage(id: Requirement.ID, stage: RequirementStage) {
@@ -180,6 +189,88 @@ final class RequirementStore: ObservableObject {
         }
     }
 
+    func markMRMergeRequested(id: Requirement.ID) {
+        guard
+            let requirement = requirement(id: id),
+            !requirement.isMerged,
+            requirement.hasMergeRequestURL,
+            requirement.mrTrackingStatus == .created
+        else {
+            return
+        }
+
+        setMRTrackingStatus(id: id, status: .mergeRequested)
+    }
+
+    func setMRTrackingStatus(id: Requirement.ID, status: RequirementMRTrackingStatus) {
+        guard
+            let requirement = requirement(id: id),
+            !requirement.isMerged,
+            requirement.hasMergeRequestURL,
+            requirement.mrTrackingStatus != status
+        else {
+            return
+        }
+
+        update(id: id, updatesTimestamp: false) { requirement in
+            requirement.mrTrackingStatus = status
+
+            switch status {
+            case .created:
+                requirement.isMRMergeMonitoringEnabled = false
+                requirement.mrMergeReminderPending = false
+                requirement.mrMergeNotifiedAt = nil
+            case .mergeRequested:
+                requirement.isMRMergeMonitoringEnabled = false
+                requirement.mrMergeReminderPending = false
+                requirement.mrMergeNotifiedAt = nil
+            case .merged:
+                requirement.isMRMergeMonitoringEnabled = false
+                requirement.mrMergeReminderPending = true
+                requirement.mrMergeNotifiedAt = nil
+            }
+        }
+
+        lastNotice = "已更新为\(status.title)"
+        if status == .merged {
+            deliverPendingMRMergeNotifications()
+        }
+    }
+
+    func setMRMergeMonitoring(id: Requirement.ID, isEnabled: Bool) {
+        guard requirement(id: id)?.mrTrackingStatus == .mergeRequested else {
+            return
+        }
+
+        update(id: id, updatesTimestamp: false) { requirement in
+            requirement.isMRMergeMonitoringEnabled = isEnabled
+        }
+        lastNotice = isEnabled ? "已创建 MR 合并监听" : "已停止 MR 合并监听"
+    }
+
+    func deliverPendingMRMergeNotifications() {
+        guard MRMergeNotificationService.shared.isAvailable else {
+            return
+        }
+
+        let pending = requirements.filter {
+            $0.mrMergeReminderPending && $0.mrMergeNotifiedAt == nil
+        }
+        guard !pending.isEmpty else {
+            return
+        }
+
+        let notifiedAt = Date()
+        let pendingIDs = Set(pending.map(\.id))
+        for index in requirements.indices where pendingIDs.contains(requirements[index].id) {
+            requirements[index].mrMergeNotifiedAt = notifiedAt
+        }
+
+        for requirement in pending {
+            MRMergeNotificationService.shared.notify(requirement: requirement)
+        }
+    }
+
     func delete(id: Requirement.ID) {
         requirements.removeAll { $0.id == id }
         lastNotice = "已删除需求"
@@ -285,6 +376,7 @@ final class RequirementStore: ObservableObject {
 
         requirements[index].title = requirements[index].title.trimmingCharacters(in: .whitespacesAndNewlines)
         requirements[index].normalizeMergeRequestURLs()
+        requirements[index].normalizeMRTracking()
     }
 
     func reloadAfterExternalUpdate(issueKey: String?) {

@@ -6,6 +6,14 @@
   window.__jiraRequirementCaptureInstalled = true;
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    if (message?.type === "EXTRACT_PAGE_OWNERSHIP") {
+      sendResponse({
+        ok: true,
+        ownership: extractPageOwnership(message.pageType)
+      });
+      return false;
+    }
+
     if (message?.type !== "EXTRACT_REQUIREMENT_PAGE") {
       return false;
     }
@@ -24,6 +32,171 @@
 
     return true;
   });
+
+  function extractPageOwnership(pageType) {
+    if (pageType === "jira") {
+      const assigneeText = textFromSelector("#assignee-val")
+        || textFromSelector("[data-field-id='assignee']");
+      if (/^(未分配|无|unassigned|none)$/i.test(cleanText(assigneeText))) {
+        return "other";
+      }
+
+      return comparePageIdentities(
+        identityFromSelectors([
+          "#assignee-val",
+          "#assignee-field",
+          "[data-field-id='assignee']",
+          "[data-testid*='assignee']"
+        ]),
+        identityFromSelectors([
+          "#header-details-user-fullname",
+          "[data-testid='user-menu--trigger']",
+          "[data-testid='user-menu-toggle']",
+          "meta[name='current-user-id']",
+          "meta[name='user-login']"
+        ])
+      );
+    }
+
+    if (pageType === "mr") {
+      return comparePageIdentities(
+        identityFromSelectors([
+          "[data-testid='issuable-author']",
+          "[data-testid='author-link']",
+          ".issuable-meta .author-link",
+          ".detail-page-header .author-link",
+          ".issuable-meta .js-user-link"
+        ]),
+        identityFromSelectors([
+          "[data-testid='user-menu-toggle']",
+          ".header-user-dropdown-toggle",
+          ".current-user",
+          "meta[name='current-user-id']",
+          "meta[name='user-login']"
+        ])
+      );
+    }
+
+    return "unknown";
+  }
+
+  function identityFromSelectors(selectors) {
+    const identity = { strong: new Set(), weak: new Set() };
+    for (const selector of selectors) {
+      const element = document.querySelector(selector);
+      if (!element) {
+        continue;
+      }
+
+      addIdentityTokens(identity, element);
+      const descendants = typeof element.querySelectorAll === "function"
+        ? Array.from(element.querySelectorAll(
+          "[data-user-id], [data-username], [data-user], [data-login], [data-account-id], [data-user-key], a[href], img[alt]"
+        ))
+        : [];
+      descendants.forEach((candidate) => addIdentityTokens(identity, candidate));
+    }
+    return identity;
+  }
+
+  function addIdentityTokens(identity, element) {
+    const attribute = (name) => {
+      if (typeof element.getAttribute === "function") {
+        return element.getAttribute(name) || "";
+      }
+      return element[name] || "";
+    };
+    const strongAttributes = [
+      ["data-user-id", "id"],
+      ["data-account-id", "id"],
+      ["data-user-key", "id"],
+      ["data-username", "username"],
+      ["data-user", "username"],
+      ["data-login", "username"]
+    ];
+
+    for (const [name, kind] of strongAttributes) {
+      const token = normalizeIdentityToken(attribute(name));
+      if (token) {
+        identity.strong.add(`${kind}:${token}`);
+        identity.weak.add(token);
+      }
+    }
+
+    const content = normalizeIdentityToken(attribute("content"));
+    if (content) {
+      const kind = /id/i.test(attribute("name")) ? "id" : "username";
+      identity.strong.add(`${kind}:${content}`);
+    }
+
+    const href = String(element.href || attribute("href") || "");
+    const hrefUsername = href.match(/\/(?:users|u)\/([^/?#]+)/i)?.[1]
+      || href.match(/[?&](?:name|username)=([^&#]+)/i)?.[1];
+    const normalizedHrefUsername = normalizeIdentityToken(hrefUsername || "");
+    if (normalizedHrefUsername) {
+      identity.strong.add(`username:${normalizedHrefUsername}`);
+    }
+
+    for (const value of [
+      element.innerText,
+      element.textContent,
+      attribute("title"),
+      attribute("alt")
+    ]) {
+      const token = normalizeIdentityText(value);
+      if (token) {
+        identity.weak.add(token);
+      }
+    }
+  }
+
+  function comparePageIdentities(subject, currentUser) {
+    if (setsIntersect(subject.strong, currentUser.strong)) {
+      return "mine";
+    }
+
+    const comparableStrongKinds = ["id", "username"].filter((kind) => {
+      const prefix = `${kind}:`;
+      return Array.from(subject.strong).some((value) => value.startsWith(prefix))
+        && Array.from(currentUser.strong).some((value) => value.startsWith(prefix));
+    });
+    if (comparableStrongKinds.length > 0) {
+      return "other";
+    }
+
+    if (setsIntersect(subject.weak, currentUser.weak)) {
+      return "mine";
+    }
+
+    if (subject.weak.size > 0 && currentUser.weak.size > 0) {
+      return "other";
+    }
+
+    return "unknown";
+  }
+
+  function setsIntersect(lhs, rhs) {
+    return Array.from(lhs).some((value) => rhs.has(value));
+  }
+
+  function normalizeIdentityToken(value) {
+    return cleanText(value)
+      .replace(/^@/, "")
+      .toLowerCase();
+  }
+
+  function normalizeIdentityText(value) {
+    const normalized = cleanText(value)
+      .replace(/^(?:经办人|提交人|作者|assignee|author)\s*[:：]?\s*/i, "")
+      .replace(/(?:的个人信息|的头像)$/i, "")
+      .replace(/(?:'s)?\s+(?:profile|avatar)$/i, "")
+      .replace(/^@/, "")
+      .toLowerCase();
+    if (!normalized || /^(?:用户菜单|个人资料|user menu|profile|account)$/.test(normalized)) {
+      return "";
+    }
+    return normalized;
+  }
 
   function extractRequirementPage(settings) {
     const pageURL = normalizedURL(location.href);

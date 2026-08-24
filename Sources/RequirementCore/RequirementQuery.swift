@@ -241,6 +241,10 @@ public enum RequirementQuery {
         }
 
         return { lhs, rhs in
+            if let reminderOrder = reminderSortDecision(lhs, rhs) {
+                return reminderOrder
+            }
+
             let lhsStatus = lhs.currentTimelineStatus
             let rhsStatus = rhs.currentTimelineStatus
             let lhsRank = order[lhsStatus] ?? rules.count
@@ -281,6 +285,10 @@ public enum RequirementQuery {
         by mode: RequirementOverviewSortMode
     ) -> [Requirement] {
         requirements.sorted { lhs, rhs in
+            if let reminderOrder = reminderSortDecision(lhs, rhs) {
+                return reminderOrder
+            }
+
             let lhsDate = mode == .createdAt ? lhs.createdAt : lhs.updatedAt
             let rhsDate = mode == .createdAt ? rhs.createdAt : rhs.updatedAt
             if lhsDate != rhsDate {
@@ -480,6 +488,10 @@ public enum RequirementQuery {
     }
 
     private static func sortComparator(lhs: Requirement, rhs: Requirement) -> Bool {
+        if let reminderOrder = reminderSortDecision(lhs, rhs) {
+            return reminderOrder
+        }
+
         let leftRank = sortRank(lhs)
         let rightRank = sortRank(rhs)
 
@@ -505,6 +517,10 @@ public enum RequirementQuery {
     /// 未完成 TAB 专用排序：开发中 → 开发完成 → 待开发 → 已自测 → 已暂停，
     /// 同一分组内按最后更新时间正序（早的在前）。
     private static func incompleteSortComparator(lhs: Requirement, rhs: Requirement) -> Bool {
+        if let reminderOrder = reminderSortDecision(lhs, rhs) {
+            return reminderOrder
+        }
+
         let leftRank = incompleteSortRank(lhs)
         let rightRank = incompleteSortRank(rhs)
 
@@ -541,6 +557,10 @@ public enum RequirementQuery {
 
     /// 开发中 TAB 包含开发中、开发完成、已自测等未合并项，组内先按状态推进顺序排序。
     private static func activeSortComparator(lhs: Requirement, rhs: Requirement) -> Bool {
+        if let reminderOrder = reminderSortDecision(lhs, rhs) {
+            return reminderOrder
+        }
+
         let leftRank = activeSortRank(lhs)
         let rightRank = activeSortRank(rhs)
 
@@ -592,5 +612,15 @@ public enum RequirementQuery {
         }
 
         return 3
+    }
+
+    /// 自动发现 MR 已合并后，提醒项优先于用户配置的常规排序；
+    /// 主状态完成会清掉提醒，随后自动恢复原排序。
+    private static func reminderSortDecision(_ lhs: Requirement, _ rhs: Requirement) -> Bool? {
+        guard lhs.mrMergeReminderPending != rhs.mrMergeReminderPending else {
+            return nil
+        }
+
+        return lhs.mrMergeReminderPending
     }
 }

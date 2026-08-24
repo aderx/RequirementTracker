@@ -22,8 +22,25 @@
   "background": {
     "service_worker": "background.js"
   },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://jira.zstack.io/*",
+        "*://gitlab.zstack.io/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "host_permissions": [
+    "*://jira.zstack.io/*",
+    "*://gitlab.zstack.io/*"
+  ],
   "permissions": [
     "activeTab",
+    "alarms",
     "clipboardWrite",
     "contextMenus",
     "nativeMessaging",

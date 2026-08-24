@@ -1,5 +1,5 @@
 const HOST_NAME = "com.aderx.requirementtracker.jira_capture";
-const REQUIRED_NATIVE_HOST_PROTOCOL_VERSION = 2;
+const REQUIRED_NATIVE_HOST_PROTOCOL_VERSION = 3;
 const DEFAULT_DELAY_SECONDS = 5;
 const FALLBACK_SETTINGS = {
   jiraBaseURL: "http://jira.zstack.io/browse/",

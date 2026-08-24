@@ -508,6 +508,24 @@ struct RequirementOverviewView: View {
                         OverviewStatusBadge(status: OverviewStatusOption(requirement: requirement))
                     }
 
+                    if requirement.hasMergeRequestURL && !requirement.isMerged {
+                        OverviewDetailRow(label: "MR跟踪") {
+                            let currentStatus = requirement.mrTrackingStatus ?? .created
+
+                            HStack(spacing: 5) {
+                                if requirement.mrMergeReminderPending {
+                                    Image(systemName: "pin.fill")
+                                } else if requirement.isMRMergeMonitoringEnabled {
+                                    Image(systemName: "clock.arrow.circlepath")
+                                }
+
+                                Text(currentStatus.title)
+                            }
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(currentStatus.tint)
+                        }
+                    }
+
                     OverviewDetailRow(label: "Jira类型") {
                         OverviewTextValue(
                             text: requirement.issueType ?? "",
@@ -642,7 +660,7 @@ struct RequirementOverviewView: View {
                         ) {
                             ForEach(OverviewStatusOption.allCases) { option in
                                 Button {
-                                    editingDraft?.status = option
+                                    selectDraftStatus(option)
                                 } label: {
                                     HStack(spacing: 6) {
                                         Image(systemName: option.systemImage)
@@ -677,7 +695,7 @@ struct RequirementOverviewView: View {
 
                     OverviewEditFieldRow(label: "MR") {
                         VStack(alignment: .leading, spacing: 6) {
-                            TextField("MR 地址", text: draftStringBinding(\.mrURL))
+                            TextField("MR 地址", text: draftMRURLBinding)
                                 .font(.system(size: 12, design: .monospaced))
                                 .textFieldStyle(.roundedBorder)
 
@@ -685,6 +703,37 @@ struct RequirementOverviewView: View {
                                 Label("转为已合并前需要填写 MR 地址", systemImage: "exclamationmark.triangle.fill")
                                     .font(.system(size: 10.5, weight: .semibold))
                                     .foregroundStyle(DesignColor.stopped)
+                            }
+                        }
+                    }
+
+                    if let draft = editingDraft,
+                       !draft.mrURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                       draft.status != .merged {
+                        OverviewEditFieldRow(label: "MR状态") {
+                            HStack(spacing: 8) {
+                                ForEach([
+                                    RequirementMRTrackingStatus.created,
+                                    RequirementMRTrackingStatus.mergeRequested
+                                ]) { status in
+                                    Button {
+                                        selectDraftMRTrackingStatus(status)
+                                    } label: {
+                                        HStack(spacing: 6) {
+                                            Image(systemName: mrTrackingEditSystemImage(for: status))
+                                                .font(.system(size: 10, weight: .semibold))
+                                            Text(status.shortTitle)
+                                                .lineLimit(1)
+                                        }
+                                    }
+                                    .buttonStyle(
+                                        OverviewMRStatusOptionButtonStyle(
+                                            status: status,
+                                            isSelected: draft.mrTrackingStatus == status
+                                        )
+                                    )
+                                    .pointingHandCursor()
+                                }
                             }
                         }
                     }
@@ -960,7 +1009,13 @@ struct RequirementOverviewView: View {
 
         let reason = draft.reason.trimmingCharacters(in: .whitespacesAndNewlines)
         let draftMRURL = draft.mrURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        store.update(id: selectedRequirement.id) { requirement in
+        let mrURLChanged = normalized(draftMRURL) != normalized(selectedRequirement.mrURL ?? "")
+        let shouldUpdateTimestamp = pendingChanges.contains { $0.field != .mrTrackingStatus }
+        store.update(
+            id: selectedRequirement.id,
+            updatesTimestamp: shouldUpdateTimestamp,
+            resetsMRTrackingWhenURLChanges: false
+        ) { requirement in
             requirement.jiraURL = draft.jiraURL.trimmingCharacters(in: .whitespacesAndNewlines)
             if draftMRURL.isEmpty {
                 requirement.mrURL = nil
@@ -970,6 +1025,21 @@ struct RequirementOverviewView: View {
             }
             requirement.note = draft.note.trimmingCharacters(in: .whitespacesAndNewlines)
             draft.status.apply(to: &requirement, reason: reason, now: Date())
+
+            if requirement.isMerged || draftMRURL.isEmpty {
+                requirement.clearMRTracking()
+            } else {
+                let nextMRTrackingStatus = draft.mrTrackingStatus ?? .created
+                let didChangeMRTracking = requirement.mrTrackingStatus != nextMRTrackingStatus
+                    || mrURLChanged
+                requirement.mrTrackingStatus = nextMRTrackingStatus
+
+                if didChangeMRTracking {
+                    requirement.isMRMergeMonitoringEnabled = false
+                    requirement.mrMergeReminderPending = nextMRTrackingStatus == .merged
+                    requirement.mrMergeNotifiedAt = nil
+                }
+            }
         }
 
         selectedID = selectedRequirement.id
@@ -985,6 +1055,10 @@ struct RequirementOverviewView: View {
         switch field {
         case .status:
             draft.status = OverviewStatusOption(requirement: selectedRequirement)
+        case .mrTrackingStatus:
+            draft.mrTrackingStatus = selectedRequirement.hasMergeRequestURL && !selectedRequirement.isMerged
+                ? (selectedRequirement.mrTrackingStatus ?? .created)
+                : nil
         case .jiraURL:
             draft.jiraURL = selectedRequirement.jiraURL
         case .mrURL:
@@ -1009,6 +1083,53 @@ struct RequirementOverviewView: View {
             get: { editingDraft?[keyPath: keyPath] ?? "" },
             set: { editingDraft?[keyPath: keyPath] = $0 }
         )
+    }
+
+    private var draftMRURLBinding: Binding<String> {
+        Binding(
+            get: { editingDraft?.mrURL ?? "" },
+            set: { newValue in
+                guard var draft = editingDraft else {
+                    return
+                }
+
+                draft.mrURL = newValue
+                if newValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    draft.mrTrackingStatus = nil
+                } else if normalized(newValue) != normalized(selectedRequirement?.mrURL ?? "")
+                    || draft.mrTrackingStatus == nil {
+                    draft.mrTrackingStatus = .created
+                }
+                editingDraft = draft
+            }
+        )
+    }
+
+    private func selectDraftStatus(_ status: OverviewStatusOption) {
+        guard var draft = editingDraft else {
+            return
+        }
+
+        draft.status = status
+        if status != .merged,
+           !draft.mrURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+           draft.mrTrackingStatus == nil {
+            draft.mrTrackingStatus = .created
+        }
+        editingDraft = draft
+    }
+
+    private func selectDraftMRTrackingStatus(_ status: RequirementMRTrackingStatus) {
+        guard
+            var draft = editingDraft,
+            !draft.mrURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+            draft.status != .merged
+        else {
+            return
+        }
+
+        draft.mrTrackingStatus = status
+        editingDraft = draft
     }
 
     private func changes(for requirement: Requirement, draft: OverviewDraft) -> [OverviewChange] {
@@ -1061,6 +1182,20 @@ struct RequirementOverviewView: View {
             )
         }
 
+        if !normalized(draft.mrURL).isEmpty, draft.status != .merged {
+            let nextMRTrackingStatus = draft.mrTrackingStatus ?? .created
+            if nextMRTrackingStatus != requirement.mrTrackingStatus {
+                changes.append(
+                    OverviewChange(
+                        field: .mrTrackingStatus,
+                        title: "MR状态",
+                        beforeText: requirement.mrTrackingStatus?.title ?? "未设置",
+                        afterText: nextMRTrackingStatus.title
+                    )
+                )
+            }
+        }
+
         if normalized(draft.note) != normalized(requirement.note) {
             changes.append(
                 OverviewChange(
@@ -1094,6 +1229,17 @@ struct RequirementOverviewView: View {
                 status: OverviewStatusOption(status: $0.status),
                 date: $0.date
             )
+        }
+    }
+
+    private func mrTrackingEditSystemImage(for status: RequirementMRTrackingStatus) -> String {
+        switch status {
+        case .created:
+            "link"
+        case .mergeRequested:
+            "paperplane"
+        case .merged:
+            "arrow.triangle.merge"
         }
     }
 
@@ -1211,6 +1357,7 @@ private struct OverviewStats {
 
 private struct OverviewDraft: Equatable {
     var status: OverviewStatusOption
+    var mrTrackingStatus: RequirementMRTrackingStatus?
     var jiraURL: String
     var mrURL: String
     var note: String
@@ -1219,6 +1366,9 @@ private struct OverviewDraft: Equatable {
 
     init(requirement: Requirement) {
         status = OverviewStatusOption(requirement: requirement)
+        mrTrackingStatus = requirement.hasMergeRequestURL && !requirement.isMerged
+            ? (requirement.mrTrackingStatus ?? .created)
+            : nil
         jiraURL = requirement.jiraURL
         mrURL = requirement.mrURL ?? ""
         note = requirement.note
@@ -1388,6 +1538,7 @@ private enum OverviewStatusOption: String, CaseIterable, Identifiable {
 private struct OverviewChange: Identifiable {
     enum Field: Hashable {
         case status
+        case mrTrackingStatus
         case jiraURL
         case mrURL
         case note
@@ -1500,6 +1651,13 @@ private struct OverviewRequirementListRow: View {
 
                 Spacer(minLength: 6)
 
+                if requirement.mrMergeReminderPending {
+                    Image(systemName: "pin.fill")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(DesignColor.merged)
+                        .help("MR 已合并；主状态完成后自动取消置顶")
+                }
+
                 OverviewStatusBadge(status: status)
             }
 
@@ -1560,9 +1718,16 @@ private struct OverviewRequirementListRow: View {
         let issueType = trimmed(requirement.issueType)
         let priority = trimmed(requirement.priority)
         let version = trimmed(requirement.targetVersion)
+        let mrTrackingStatus = requirement.mrTrackingStatus
 
-        if issueType != nil || priority != nil || version != nil {
+        if issueType != nil || priority != nil || version != nil || mrTrackingStatus != nil {
             HStack(spacing: 7) {
+                if let mrTrackingStatus {
+                    Text(mrTrackingStatus.title)
+                        .font(.system(size: 9.5, weight: .semibold))
+                        .foregroundStyle(mrTrackingStatus.tint)
+                }
+
                 if let issueType {
                     Text(issueType)
                         .font(.system(size: 9.5, weight: .semibold))
@@ -2234,6 +2399,29 @@ private struct OverviewStatusOptionButtonStyle: ButtonStyle {
             .frame(maxWidth: .infinity, minHeight: 30)
             .background(
                 status.tint.opacity(configuration.isPressed ? 0.19 : 0.13),
+                in: RoundedRectangle(cornerRadius: 6, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .strokeBorder(isSelected ? status.tint : Color.clear, lineWidth: 1.5)
+            )
+            .pointingHandCursor(isEnabled)
+    }
+}
+
+private struct OverviewMRStatusOptionButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+    let status: RequirementMRTrackingStatus
+    let isSelected: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(status.tint)
+            .padding(.horizontal, 12)
+            .frame(maxWidth: .infinity, minHeight: 30)
+            .background(
+                status.tint.opacity(configuration.isPressed ? 0.19 : 0.11),
                 in: RoundedRectangle(cornerRadius: 6, style: .continuous)
             )
             .overlay(

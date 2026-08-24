@@ -49,7 +49,7 @@ function run() {
       payload: {}
     });
     assert.equal(settings.ok, true);
-    assert.equal(settings.protocolVersion, 2);
+    assert.equal(settings.protocolVersion, 3);
 
     const rejectedJiraStatus = sendNativeMessage(dataFile, {
       type: "upsertJiraRequirement",
@@ -76,6 +76,34 @@ function run() {
     assert.equal(record.isTested, false);
     assert.equal(record.isMerged, false);
     assert.equal(record.mrHistory, undefined);
+    assert.equal(record.mrTrackingStatus, "created");
+
+    record.mrTrackingStatus = "mergeRequested";
+    record.isMRMergeMonitoringEnabled = true;
+    const updatedAtBeforeTrackedMerge = record.updatedAt;
+    fs.writeFileSync(dataFile, JSON.stringify([record]));
+
+    const monitors = sendNativeMessage(dataFile, {
+      type: "listMRMergeMonitors",
+      payload: {}
+    });
+    assert.equal(monitors.ok, true);
+    assert.deepEqual(monitors.monitors, [{ issueKey, mrURL: firstMR }]);
+
+    const trackedMerge = sendNativeMessage(dataFile, {
+      type: "markMRMergeMonitorMerged",
+      payload: { issueKey, mrURL: firstMR }
+    });
+    assert.equal(trackedMerge.ok, true);
+    assert.equal(trackedMerge.action, "mrMerged");
+    record = readRecords(dataFile)[0];
+    assert.equal(record.mrTrackingStatus, "merged");
+    assert.equal(record.mrMergeReminderPending, true);
+    assert.equal(record.isMRMergeMonitoringEnabled, undefined);
+    assert.equal(record.isDone, false);
+    assert.equal(record.isTested, false);
+    assert.equal(record.isMerged, false);
+    assert.equal(record.updatedAt, updatedAtBeforeTrackedMerge);
 
     const tested = sendNativeMessage(dataFile, {
       type: "attachMergeRequest",
@@ -100,6 +128,8 @@ function run() {
     assert.equal(record.mrURL, secondMR);
     assert.deepEqual(record.mrHistory, [firstMR]);
     assert.equal(record.isMerged, true);
+    assert.equal(record.mrTrackingStatus, undefined);
+    assert.equal(record.mrMergeReminderPending, undefined);
 
     const historicalInspection = sendNativeMessage(dataFile, {
       type: "inspectByURL",

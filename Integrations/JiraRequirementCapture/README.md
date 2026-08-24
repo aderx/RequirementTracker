@@ -39,7 +39,9 @@ Chrome/Edge unpacked extension and Native Messaging host for capturing the curre
 
 ## Notes
 
-- The popup uses `activeTab` and only reads page content after you click the extension. A background service worker uses the `tabs` permission to read the current tab's URL (not its content) so it can show an icon badge.
+- The popup uses `activeTab` to read requirement details after you click the extension. A small content script reads only the current Jira assignee or GitLab MR author plus the signed-in identity so the background service worker can decide whether to show the orange `+` badge.
+- For an unrecorded Jira issue or GitLab MR, the orange `+` badge is hidden only when the page clearly belongs to another user. Unknown or unsupported page identity keeps the existing addable behavior, and opening the popup still allows an explicit add.
+- A saved MR starts at `MR 已创建`. The card's top-level menu can move it to `MR 已提交合并`, then optionally enable merge monitoring. While Chrome is running, the extension checks monitored MRs every 15 minutes using the existing GitLab login. A merged result updates only the MR sub-status and reminder fields through Native Host; it never advances the requirement's main status or its normal sorting timestamp.
 - The icon shows a bottom-right status badge per tab: orange `+` for an unrecorded supported page, green `↻` for a recorded requirement, green `✓` for a merged requirement, amber `Ⅱ` for a paused requirement, and red `■` for a stopped requirement. Unsupported pages have no badge. The popup shows the pause/stop reason in a separate highlighted row below the summary card.
 - When adding or updating a Jira, the popup also offers a `确认并开始开发` button. It saves the issue and, if the requirement is not started yet (or does not exist), creates it / moves it to `开发中`. Requirements already in progress or completed keep their status. The countdown default stays on the original confirm/close button.
 - Jira issue pages are detected by `/browse/<KEY>`. Non-detail Jira pages and unsupported pages show a short popup and close automatically.
