@@ -1,5 +1,5 @@
 const HOST_NAME = "com.aderx.requirementtracker.jira_capture";
-const REQUIRED_NATIVE_HOST_PROTOCOL_VERSION = 2;
+const REQUIRED_NATIVE_HOST_PROTOCOL_VERSION = 3;
 const TEST_STATES = [
   { id: "unsupported", label: "不支持页面" },
   { id: "addable", label: "可添加" },

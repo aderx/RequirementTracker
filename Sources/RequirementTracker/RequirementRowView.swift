@@ -157,6 +157,13 @@ struct RequirementRowView: View {
 
             Spacer(minLength: 4)
 
+            if requirement.mrMergeReminderPending {
+                Image(systemName: "pin.fill")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(DesignColor.merged)
+                    .help("MR 已合并；主状态完成后自动取消置顶")
+            }
+
             Button {
                 guard !isCopied else {
                     return
@@ -173,7 +180,7 @@ struct RequirementRowView: View {
             }
             .buttonStyle(RowPlainIconButtonStyle(tint: isCopied ? style.color : Color.black.opacity(0.25)))
             .allowsHitTesting(!isCopied)
-            .help("复制 Jira 与 MR 地址")
+            .help("复制名称、Jira 与 MR")
             .pointingHandCursor()
 
             rowMenu
@@ -184,9 +191,29 @@ struct RequirementRowView: View {
     private var metadataTags: some View {
         let priorityText = trimmed(requirement.priority)
         let versionText = trimmed(requirement.targetVersion)
+        let mrTrackingStatus = requirement.mrTrackingStatus
 
-        if priorityText != nil || versionText != nil {
+        if priorityText != nil || versionText != nil || mrTrackingStatus != nil {
             HStack(spacing: 7) {
+                if let mrTrackingStatus {
+                    HStack(spacing: 3) {
+                        if requirement.isMRMergeMonitoringEnabled {
+                            Image(systemName: "clock.arrow.circlepath")
+                                .font(.system(size: 8, weight: .semibold))
+                        }
+                        Text(mrTrackingStatus.title)
+                    }
+                    .font(.system(size: 9.5, weight: .semibold))
+                    .foregroundStyle(mrTrackingStatus.tint)
+                    .lineLimit(1)
+                    .padding(.horizontal, 5)
+                    .frame(height: 16)
+                    .background(
+                        mrTrackingStatus.tint.opacity(0.10),
+                        in: RoundedRectangle(cornerRadius: 3, style: .continuous)
+                    )
+                }
+
                 if let priorityText {
                     Text("#\(priorityText)")
                         .font(.system(size: 10, weight: .semibold, design: .monospaced))
@@ -340,10 +367,11 @@ struct RequirementRowView: View {
             )
         ]
 
+        var statusTransitionContents: [NativeMenuContent] = []
         if requirement.canMarkMergedDirectly {
-            contents.append(
+            statusTransitionContents.append(
                 .item(
-                    NativeMenuItemDescriptor(title: "一键标为已完成", systemImage: "checkmark.seal") {
+                    NativeMenuItemDescriptor(title: "标记需求为已完成", systemImage: "checkmark.seal") {
                         if requirement.hasMergeRequestURL {
                             store.markCompleted(id: requirement.id)
                         } else {
@@ -352,6 +380,15 @@ struct RequirementRowView: View {
                     }
                 )
             )
+        }
+
+        if let mrTrackingMenuContent {
+            statusTransitionContents.append(mrTrackingMenuContent)
+        }
+
+        if !statusTransitionContents.isEmpty {
+            contents.append(.separator())
+            contents.append(contentsOf: statusTransitionContents)
         }
 
         if canPause || canStop {
@@ -393,6 +430,44 @@ struct RequirementRowView: View {
         }
 
         return contents
+    }
+
+    private var mrTrackingMenuContent: NativeMenuContent? {
+        guard
+            !requirement.isMerged,
+            requirement.hasMergeRequestURL,
+            let currentStatus = requirement.mrTrackingStatus
+        else {
+            return nil
+        }
+
+        switch currentStatus {
+        case .created:
+            return .item(
+                NativeMenuItemDescriptor(
+                    title: "转为 MR 已提交合并",
+                    systemImage: "paperplane"
+                ) {
+                    store.markMRMergeRequested(id: requirement.id)
+                }
+            )
+        case .mergeRequested:
+            return .item(
+                NativeMenuItemDescriptor(
+                    title: requirement.isMRMergeMonitoringEnabled ? "停止定时监听" : "创建定时监听",
+                    systemImage: requirement.isMRMergeMonitoringEnabled
+                        ? "stopwatch"
+                        : "clock.arrow.circlepath"
+                ) {
+                    store.setMRMergeMonitoring(
+                        id: requirement.id,
+                        isEnabled: !requirement.isMRMergeMonitoringEnabled
+                    )
+                }
+            )
+        case .merged:
+            return nil
+        }
     }
 
     private var timelineView: some View {

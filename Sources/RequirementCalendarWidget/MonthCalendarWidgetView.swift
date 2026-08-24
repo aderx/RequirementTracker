@@ -103,6 +103,10 @@ struct MonthCalendarWidgetView: View {
                 Text(verbatim: CalendarDisplayText.year(month.year))
                     .font(.system(size: 14, weight: .semibold, design: .rounded))
                     .foregroundStyle(.secondary)
+
+                if CalendarWidgetEnvironment.isDevelopment {
+                    CalendarWidgetDevelopmentBadge()
+                }
             }
 
             Button(intent: ChangeCalendarMonthIntent(offset: 1)) {

@@ -17,6 +17,7 @@ function createBackground(nativeStub) {
     icons: [],
     titles: []
   };
+  const alarmCalls = [];
   const badgeStyles = {
     addable: { label: "可添加", text: "+", color: "#FF9500" },
     recorded: { label: "已记录", text: "↻", color: "#1F9D54" },
@@ -49,7 +50,16 @@ function createBackground(nativeStub) {
         onUpdated: eventStub(),
         get() {},
         query() {},
-        create() {}
+        create() {},
+        async sendMessage() {
+          return { ownership: "unknown" };
+        }
+      },
+      alarms: {
+        onAlarm: eventStub(),
+        create(name, options) {
+          alarmCalls.push({ name, options });
+        }
       },
       contextMenus: {
         onClicked: eventStub(),
@@ -85,19 +95,24 @@ function createBackground(nativeStub) {
     "  BADGE_STYLES,",
     "  applyBadge,",
     "  handleRuntimeMessage,",
+    "  checkMonitoredMRs,",
+    "  extractMRStateFromResponseText,",
     "  resolveState,",
     "  testStateFromURL,",
-    "  setNativeMessageStub(stub) { sendNativeMessage = stub; }",
+    "  setNativeMessageStub(stub) { sendNativeMessage = stub; },",
+    "  setPageOwnershipStub(stub) { readPageOwnership = stub; },",
+    "  setFetchMRStateStub(stub) { fetchMRState = stub; }",
     "};"
   ].join("\n");
   vm.createContext(sandbox);
   vm.runInContext(backgroundSource + "\n" + exposure, sandbox);
   sandbox.__background.setNativeMessageStub(nativeStub);
   sandbox.__background.actionCalls = actionCalls;
+  sandbox.__background.alarmCalls = alarmCalls;
   return sandbox.__background;
 }
 
-function nativeStubFor({ exists, status, protocolVersion = 2 }) {
+function nativeStubFor({ exists, status, protocolVersion = 3 }) {
   return async (message) => {
     if (message.type === "getPluginSettings") {
       return {
@@ -203,6 +218,67 @@ async function testUnrecordedPageUsesAddableBadge() {
   );
 }
 
+async function testOtherOwnersDoNotShowTheAddBadge() {
+  const background = createBackground(nativeStubFor({ exists: false }));
+  background.setPageOwnershipStub(async () => "other");
+  assert.equal(
+    await background.resolveState("http://jira.zstack.io/browse/ZSTAC-12345", 42),
+    "unsupported"
+  );
+
+  background.setPageOwnershipStub(async () => "mine");
+  assert.equal(
+    await background.resolveState("http://gitlab.zstack.io/g/p/-/merge_requests/1", 42),
+    "addable"
+  );
+}
+
+async function testMRMonitorMarksMergedWithoutChangingMainStatusItself() {
+  const messages = [];
+  const background = createBackground(async (message) => {
+    messages.push(message);
+    if (message.type === "listMRMergeMonitors") {
+      return {
+        ok: true,
+        monitors: [{
+          issueKey: "ZSTAC-12345",
+          mrURL: "http://gitlab.zstack.io/g/p/-/merge_requests/1"
+        }]
+      };
+    }
+    return { ok: true };
+  });
+  background.setFetchMRStateStub(async () => "merged");
+
+  await background.checkMonitoredMRs();
+
+  assert.equal(messages.length, 2);
+  assert.equal(messages[1].type, "markMRMergeMonitorMerged");
+  assert.equal(messages[1].payload.issueKey, "ZSTAC-12345");
+  assert.equal(
+    messages[1].payload.mrURL,
+    "http://gitlab.zstack.io/g/p/-/merge_requests/1"
+  );
+}
+
+async function testMRStateExtractionUsesStructuredGitLabFieldsOnly() {
+  const background = createBackground(nativeStubFor({ exists: false }));
+  assert.equal(
+    background.extractMRStateFromResponseText('{"state":"merged"}'),
+    "merged"
+  );
+  assert.equal(
+    background.extractMRStateFromResponseText(
+      '<div data-page="{&quot;state&quot;:&quot;open&quot;}"></div>'
+    ),
+    "open"
+  );
+  assert.equal(
+    background.extractMRStateFromResponseText("A comment says this was merged yesterday"),
+    ""
+  );
+}
+
 async function testIncompatibleNativeHostClearsBadge() {
   const background = createBackground(nativeStubFor({
     exists: true,
@@ -266,6 +342,9 @@ async function run() {
   await testPausedAndStoppedJiraUseDedicatedBadges();
   await testMergedRequirementMRPageUsesMergedBadge();
   await testUnrecordedPageUsesAddableBadge();
+  await testOtherOwnersDoNotShowTheAddBadge();
+  await testMRMonitorMarksMergedWithoutChangingMainStatusItself();
+  await testMRStateExtractionUsesStructuredGitLabFieldsOnly();
   await testIncompatibleNativeHostClearsBadge();
   await testStatusTestPageRestoresStateFromURL();
   await testStatusTestPageDrivesTheRealToolbarStatePath();

@@ -1,4 +1,5 @@
 import AppKit
+import RequirementCore
 import SwiftUI
 
 enum DesignColor {
@@ -11,8 +12,23 @@ enum DesignColor {
     static let devDone = Color(hex: 0x5E5CE6)
     static let tested = Color(hex: 0x0A9BB5)
     static let merged = Color(hex: 0x2A9E48)
+    static let mrMergeRequested = Color(hex: 0xC98A00)
+    static let mrMerged = Color(hex: 0x08783E)
     static let paused = Color(hex: 0xD97A09)
     static let stopped = Color(hex: 0xE0463E)
+}
+
+extension RequirementMRTrackingStatus {
+    var tint: Color {
+        switch self {
+        case .created:
+            DesignColor.merged
+        case .mergeRequested:
+            DesignColor.mrMergeRequested
+        case .merged:
+            DesignColor.mrMerged
+        }
+    }
 }
 
 extension Color {

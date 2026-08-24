@@ -4,6 +4,14 @@ import RequirementCalendarCore
 #endif
 
 enum CalendarWidgetEnvironment {
+    static var isDevelopment: Bool {
+        #if DEBUG
+        return true
+        #else
+        return Bundle.main.bundleIdentifier?.contains(".dev.") == true
+        #endif
+    }
+
     static var calendar: Calendar {
         let current = Calendar.autoupdatingCurrent
         var calendar = Calendar(identifier: .gregorian)
@@ -58,7 +66,7 @@ enum CalendarWidgetEnvironment {
 
     static func calendarDetailURL(for date: Date) -> URL? {
         var components = URLComponents()
-        components.scheme = Bundle.main.bundleIdentifier?.contains(".dev.") == true
+        components.scheme = isDevelopment
             ? "requirementtracker-dev"
             : "requirementtracker"
         components.host = "calendar"

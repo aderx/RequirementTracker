@@ -34,6 +34,10 @@ private func handle(request: [String: Any]) throws -> [String: Any] {
         return try writer.upsertJiraRequirement(payload: requiredPayload(from: request))
     case "attachMergeRequest":
         return try writer.attachMergeRequest(payload: requiredPayload(from: request))
+    case "listMRMergeMonitors":
+        return try writer.listMRMergeMonitors()
+    case "markMRMergeMonitorMerged":
+        return try writer.markMRMergeMonitorMerged(payload: requiredPayload(from: request))
     default:
         throw HostError.invalidRequest("不支持的消息类型")
     }
@@ -118,6 +122,9 @@ private struct RequirementJSONWriter {
             response["isDone"] = boolValue(record["isDone"]) ?? false
             response["isTested"] = boolValue(record["isTested"]) ?? false
             response["isMerged"] = boolValue(record["isMerged"]) ?? false
+            copyIfPresent("mrTrackingStatus", from: record, to: &response)
+            response["isMRMergeMonitoringEnabled"] = boolValue(record["isMRMergeMonitoringEnabled"]) ?? false
+            response["mrMergeReminderPending"] = boolValue(record["mrMergeReminderPending"]) ?? false
             copyIfPresent("pauseReason", from: record, to: &response)
             copyIfPresent("issueType", from: record, to: &response)
             copyIfPresent("priority", from: record, to: &response)
@@ -262,6 +269,9 @@ private struct RequirementJSONWriter {
             records[index]["jiraKey"] = issueKey
             records[index]["jiraURL"] = normalizedJiraURL
             apply(mergeRequests: mergeRequests, to: &records[index])
+            if didRecord {
+                resetMRTrackingForNewMR(in: &records[index])
+            }
             records[index]["updatedAt"] = now
             if let targetStatus {
                 statusUpdated = applyTargetStatus(targetStatus, to: &records[index], startDate: nowDate, formatter: formatter)
@@ -278,6 +288,7 @@ private struct RequirementJSONWriter {
             var mergeRequests = RequirementMergeRequestCollection(latest: nil)
             mergeRequests.record(normalizedMRURL)
             apply(mergeRequests: mergeRequests, to: &record)
+            resetMRTrackingForNewMR(in: &record)
             if let targetStatus {
                 statusUpdated = applyTargetStatus(targetStatus, to: &record, startDate: nowDate, formatter: formatter)
             }
@@ -292,6 +303,64 @@ private struct RequirementJSONWriter {
             mrURL: normalizedMRURL,
             statusUpdated: statusUpdated,
             targetStatus: targetStatus?.rawValue
+        )
+    }
+
+    func listMRMergeMonitors() throws -> [String: Any] {
+        let records = try loadRecords()
+        let monitors = records.compactMap { record -> [String: Any]? in
+            guard
+                currentStatus(of: record) != .merged,
+                stringValue(record["mrTrackingStatus"]) == "mergeRequested",
+                boolValue(record["isMRMergeMonitoringEnabled"]) == true,
+                let issueKey = stringValue(record["jiraKey"]),
+                let mrURL = mergeRequests(in: record).latest
+            else {
+                return nil
+            }
+
+            return [
+                "issueKey": issueKey,
+                "mrURL": mrURL
+            ]
+        }
+
+        return [
+            "ok": true,
+            "host": hostName,
+            "monitors": monitors
+        ]
+    }
+
+    func markMRMergeMonitorMerged(payload: [String: Any]) throws -> [String: Any] {
+        let issueKey = try issueKey(from: payload)
+        let mrURL = RequirementParser.normalizedURL(try requiredString(payload["mrURL"], field: "mrURL"))
+        var records = try loadRecords()
+
+        guard let index = records.firstIndex(where: { matchesIssueKey($0, issueKey: issueKey) }) else {
+            return ["ok": true, "host": hostName, "action": "ignored", "issueKey": issueKey]
+        }
+
+        let trackedMRURL = RequirementParser.normalizedURL(mergeRequests(in: records[index]).latest ?? "")
+        guard
+            trackedMRURL == mrURL,
+            currentStatus(of: records[index]) != .merged,
+            stringValue(records[index]["mrTrackingStatus"]) == "mergeRequested",
+            boolValue(records[index]["isMRMergeMonitoringEnabled"]) == true
+        else {
+            return ["ok": true, "host": hostName, "action": "ignored", "issueKey": issueKey]
+        }
+
+        records[index]["mrTrackingStatus"] = "merged"
+        records[index].removeValue(forKey: "isMRMergeMonitoringEnabled")
+        records[index]["mrMergeReminderPending"] = true
+        records[index].removeValue(forKey: "mrMergeNotifiedAt")
+
+        return try persist(
+            records: records,
+            action: "mrMerged",
+            issueKey: issueKey,
+            mrURL: mrURL
         )
     }
 
@@ -582,11 +651,26 @@ private struct RequirementJSONWriter {
             record["isDone"] = true
             record["isTested"] = true
             record["isMerged"] = true
+            clearMRTrackingFields(in: &record)
             if stringValue(record["completedAt"]) == nil {
                 record["completedAt"] = date
             }
         case .pending, .paused, .stopped:
             break
+        }
+    }
+
+    private func clearMRTrackingFields(in record: inout [String: Any]) {
+        record.removeValue(forKey: "mrTrackingStatus")
+        record.removeValue(forKey: "isMRMergeMonitoringEnabled")
+        record.removeValue(forKey: "mrMergeReminderPending")
+        record.removeValue(forKey: "mrMergeNotifiedAt")
+    }
+
+    private func resetMRTrackingForNewMR(in record: inout [String: Any]) {
+        clearMRTrackingFields(in: &record)
+        if currentStatus(of: record) != .merged {
+            record["mrTrackingStatus"] = "created"
         }
     }
 

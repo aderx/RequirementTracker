@@ -249,7 +249,8 @@ p {
   overflow-wrap: anywhere;
 }
 
-.copy-button {
+.copy-button,
+.open-button {
   margin-left: 8px;
   padding: 2px 8px;
   border: 0;
@@ -263,7 +264,8 @@ p {
   vertical-align: 1px;
 }
 
-.copy-button:hover {
+.copy-button:hover,
+.open-button:hover {
   background: rgba(37, 99, 235, 0.14);
 }
 

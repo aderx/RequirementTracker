@@ -1,5 +1,5 @@
 const HOST_NAME = "com.aderx.requirementtracker.jira_capture";
-const REQUIRED_NATIVE_HOST_PROTOCOL_VERSION = 2;
+const REQUIRED_NATIVE_HOST_PROTOCOL_VERSION = 3;
 const DEFAULT_DELAY_SECONDS = 5;
 const FALLBACK_SETTINGS = {
   jiraBaseURL: "http://jira.zstack.io/browse/",
@@ -273,11 +273,20 @@ async function handleJiraPage(payload) {
     const next = jiraNextStatus(inspect.status);
     const status = String(inspect.status || "").toLowerCase();
     const statusReason = String(inspect.pauseReason || "").trim();
+    const mrURL = normalizedURL(inspect.mrURL || "");
     const summaryRows = [
       { label: "需求", value: issueKey, copyText: inspect.jiraURL || jiraURL },
-      { label: "标题", value: title },
-      { label: "记录状态", value: statusName(inspect.status) || "未知" }
+      { label: "标题", value: title }
     ];
+    if (mrURL) {
+      summaryRows.push({
+        label: "MR",
+        value: mergeRequestDisplayName(mrURL),
+        copyText: mrURL,
+        openURL: mrURL
+      });
+    }
+    summaryRows.push({ label: "记录状态", value: statusName(inspect.status) || "未知" });
     renderSummary(summaryRows);
 
     if (status === "paused") {
@@ -416,11 +425,17 @@ async function attachMRWithInspection(payload) {
   const willAdvance = inspect.exists
     ? statusRank(targetStatus) > statusRank(inspect.status)
     : Boolean(targetStatus);
+  const resolvedJiraURL = normalizedURL(inspect.jiraURL || target.jiraURL);
 
   if (isRecorded && !willAdvance) {
     const isTerminalCompletion = payload.mrState === "merged" && inspect.status === "merged";
     renderSummary([
-      { label: "需求", value: target.issueKey, copyText: inspect.jiraURL || target.jiraURL },
+      {
+        label: "需求",
+        value: target.issueKey,
+        copyText: resolvedJiraURL,
+        openURL: resolvedJiraURL
+      },
       { label: "MR 状态", value: mrStateName(payload.mrState) || "未知" },
       { label: "记录状态", value: statusName(inspect.status) || "未知" }
     ]);
@@ -441,7 +456,12 @@ async function attachMRWithInspection(payload) {
   }
 
   renderSummary([
-    { label: "需求", value: target.issueKey, copyText: inspect.jiraURL || target.jiraURL },
+    {
+      label: "需求",
+      value: target.issueKey,
+      copyText: resolvedJiraURL,
+      openURL: resolvedJiraURL
+    },
     { label: "MR 状态", value: mrStateName(payload.mrState) || "未知" },
     { label: "记录状态", value: statusName(inspect.status) || "未记录" }
   ]);
@@ -743,6 +763,9 @@ function renderSummary(rows) {
     if (row.copyText) {
       value.appendChild(copyButtonFor(row.copyText));
     }
+    if (row.openURL) {
+      value.appendChild(openButtonFor(row.openURL));
+    }
     rowElement.appendChild(value);
 
     elements.summaryPanel.appendChild(rowElement);
@@ -781,6 +804,31 @@ function copyButtonFor(text) {
       element.textContent = "复制";
       element.classList.remove("copied");
     }, 1500);
+  });
+  return element;
+}
+
+/// 跳转按钮：保留当前 Jira/MR 页面，在新的浏览器标签页打开关联地址。
+function openButtonFor(value) {
+  const url = normalizedURL(value);
+  const element = document.createElement("button");
+  element.type = "button";
+  element.className = "open-button";
+  element.textContent = "打开";
+  element.title = `在新标签页打开 ${url}`;
+  element.addEventListener("click", async () => {
+    try {
+      if (!/^https?:\/\//i.test(url)) {
+        throw new Error("链接格式无效");
+      }
+      await chrome.tabs.create({ url, active: true });
+      closePopup();
+    } catch {
+      element.textContent = "打开失败";
+      setTimeout(() => {
+        element.textContent = "打开";
+      }, 1500);
+    }
   });
   return element;
 }
@@ -926,6 +974,12 @@ function displayURL(value) {
   }
 
   return `${normalized.slice(0, 29)}...${normalized.slice(-20)}`;
+}
+
+function mergeRequestDisplayName(value) {
+  const normalized = normalizedURL(value);
+  const identifier = normalized.match(/\/-\/merge_requests\/(\d+)(?:\/)?$/i)?.[1];
+  return identifier ? `!${identifier}` : displayURL(normalized);
 }
 
 function jiraKeyFromText(value) {

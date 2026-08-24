@@ -36,6 +36,10 @@ struct YearCalendarWidgetView: View {
                     )
                     .foregroundStyle(.red)
 
+                if CalendarWidgetEnvironment.isDevelopment {
+                    CalendarWidgetDevelopmentBadge()
+                }
+
                 Button(intent: ChangeCalendarYearIntent(offset: 1)) {
                     navigationIcon("chevron.right")
                 }
