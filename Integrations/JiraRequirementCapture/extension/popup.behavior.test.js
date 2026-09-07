@@ -375,8 +375,10 @@ async function testPausedAndStoppedJiraShowReason() {
     assert.equal(popup.badgeDraws.at(-1)?.state, testCase.status);
     assert.equal(popup.elements.statusIcon.className, "icon-symbol hidden");
     assert.equal(popup.elements.statusIcon.textContent, "");
-    assert.equal(popup.elements.actions.children.length, 1);
+    assert.equal(popup.elements.actions.children.length, 3);
     assert.equal(popup.elements.actions.children[0].textContent, "更新信息");
+    assert.equal(popup.elements.actions.children[1].textContent, "转为待开发");
+    assert.equal(popup.elements.actions.children[2].textContent, "开始开发");
 
     const rows = summaryRows(popup);
     assert.equal(rows.length, 3);
@@ -414,7 +416,7 @@ async function testPausedJiraAlwaysShowsReasonRow() {
   assert.equal(popup.elements.statusReasonText.textContent, "未填写");
 }
 
-async function testMergedJiraHasOnlyUpdateButton() {
+async function testMergedJiraOffersExplicitReopenActions() {
   const popup = createPopupSandbox();
   popup.setNativeMessageStub(async () => ({ ok: true, exists: true, status: "merged" }));
 
@@ -423,11 +425,31 @@ async function testMergedJiraHasOnlyUpdateButton() {
     title: "需求标题"
   });
 
-  assert.equal(popup.elements.actions.children.length, 1);
+  assert.equal(popup.elements.actions.children.length, 3);
   assert.equal(popup.elements.actions.children[0].textContent, "更新信息");
+  assert.equal(popup.elements.actions.children[1].textContent, "转为待开发");
+  assert.equal(popup.elements.actions.children[2].textContent, "开始开发");
 }
 
-async function testDoneAndTestedJiraCannotAdvance() {
+async function testReopenAndUpdateSendDifferentIntent() {
+  for (const [actionIndex, targetStatus, reopen] of [[0, "", false], [1, "pending", true], [2, "active", true]]) {
+    const popup = createPopupSandbox();
+    const sent = [];
+    popup.setNativeMessageStub(async (message) => {
+      sent.push(message);
+      return { ok: true, exists: true, status: "merged", action: "updated", statusUpdated: reopen, targetStatus };
+    });
+    await popup.handleJiraPage({ issueKey: "ZSTAC-12345", title: "重新打开后的标题" });
+    assert.equal(sent.filter((message) => message.type === "upsertJiraRequirement").length, 0);
+    await popup.elements.actions.children[actionIndex].onclick();
+    const saved = sent.find((message) => message.type === "upsertJiraRequirement");
+    assert.equal(saved.payload.targetStatus, targetStatus);
+    assert.equal(saved.payload.reopen, reopen);
+    assert.equal(saved.payload.title, "重新打开后的标题");
+  }
+}
+
+async function testDoneAndTestedJiraOfferReopenActions() {
   for (const status of ["done", "tested"]) {
     const popup = createPopupSandbox();
     popup.setNativeMessageStub(async () => ({ ok: true, exists: true, status }));
@@ -437,7 +459,7 @@ async function testDoneAndTestedJiraCannotAdvance() {
       title: "需求标题"
     });
 
-    assert.equal(popup.elements.actions.children.length, 1);
+    assert.equal(popup.elements.actions.children.length, 3);
     assert.equal(popup.elements.actions.children[0].textContent, "更新信息");
   }
 }
@@ -663,6 +685,79 @@ async function testSuccessAutoClosesWithCountdown() {
   assert.equal(popup.elements.actions.children[0].textContent, "关闭（5s）");
 }
 
+async function testMRWithoutPageJiraReusesSavedBinding() {
+  const mrURL = "http://gitlab.zstack.io/g/p/-/merge_requests/1";
+  const jiraURL = "http://jira.zstack.io/browse/ZSTAC-12345";
+  for (const historical of [false, true]) {
+    const popup = createPopupSandbox();
+    const sent = [];
+    popup.setNativeMessageStub(async (message) => {
+      sent.push(message);
+      if (message.type === "inspectByURL") {
+        assert.equal(message.payload.mrURL, mrURL);
+        return { ok: true, exists: true, issueKey: "ZSTAC-12345", jiraURL };
+      }
+      assert.equal(message.type, "inspectRequirement");
+      assert.equal(message.payload.issueKey, "ZSTAC-12345");
+      assert.equal(message.payload.jiraURL, jiraURL);
+      return {
+        ok: true,
+        exists: true,
+        status: "tested",
+        mrURL: historical ? "http://gitlab.zstack.io/g/p/-/merge_requests/2" : mrURL,
+        mrHistory: historical ? [mrURL] : []
+      };
+    });
+
+    await popup.handleMRPage({ mrURL: `${mrURL}?view=parallel#note_10`, mrState: "open" });
+
+    assert.equal(popup.elements.titleText.textContent, "MR 已记录");
+    assert.equal(popup.elements.manualPanel.classList.contains("hidden"), true);
+    assert.equal(summaryRows(popup)[0].value, "ZSTAC-12345");
+    assert.deepEqual(sent.map((message) => message.type), ["inspectByURL", "inspectRequirement"]);
+  }
+}
+
+async function testRecoveredMRBindingStillRequiresClickToSyncStatus() {
+  const popup = createPopupSandbox();
+  const mrURL = "http://gitlab.zstack.io/g/p/-/merge_requests/1";
+  const sent = [];
+  popup.setNativeMessageStub(async (message) => {
+    sent.push(message);
+    if (message.type === "inspectByURL") {
+      return { ok: true, exists: true, issueKey: "ZSTAC-12345" };
+    }
+    if (message.type === "inspectRequirement") {
+      return { ok: true, exists: true, status: "tested", mrURL };
+    }
+    return { ok: true, action: "synced", statusUpdated: true, targetStatus: "merged" };
+  });
+
+  await popup.handleMRPage({ mrURL, mrState: "merged" });
+  assert.equal(popup.elements.titleText.textContent, "同步 MR 状态");
+  assert.equal(popup.elements.actions.children[0].textContent, "转为已合并");
+  assert.ok(!sent.some((message) => message.type === "attachMergeRequest"));
+
+  await popup.elements.actions.children[0].onclick();
+  const saved = sent.find((message) => message.type === "attachMergeRequest");
+  assert.equal(saved.payload.issueKey, "ZSTAC-12345");
+  assert.equal(saved.payload.mrURL, mrURL);
+  assert.equal(saved.payload.targetStatus, "merged");
+}
+
+async function testUnboundMRStillRequestsJiraAndLookupErrorsAreReported() {
+  const popup = createPopupSandbox();
+  const payload = { mrURL: "http://gitlab.zstack.io/g/p/-/merge_requests/1", mrState: "open" };
+  popup.setNativeMessageStub(async () => ({ ok: true, exists: false }));
+  await popup.handleMRPage(payload);
+  assert.equal(popup.elements.titleText.textContent, "关联 Jira");
+  assert.equal(popup.elements.manualPanel.classList.contains("hidden"), false);
+
+  const failedPopup = createPopupSandbox();
+  failedPopup.setNativeMessageStub(async () => ({ ok: false, error: "读取需求失败" }));
+  await assert.rejects(() => failedPopup.handleMRPage(payload), /读取需求失败/);
+}
+
 async function run() {
   await testUnsupportedCountdownLivesOnCloseButton();
   await testTestPageStateIsReadFromTheExtensionURL();
@@ -675,14 +770,18 @@ async function run() {
   await testPausedAndStoppedJiraShowReason();
   await testStatusToneCSSKeepsLargeIconsWhiteAndReasonCardsAligned();
   await testPausedJiraAlwaysShowsReasonRow();
-  await testMergedJiraHasOnlyUpdateButton();
-  await testDoneAndTestedJiraCannotAdvance();
+  await testMergedJiraOffersExplicitReopenActions();
+  await testReopenAndUpdateSendDifferentIntent();
+  await testDoneAndTestedJiraOfferReopenActions();
   await testNewJiraOffersAddButtons();
   await testMergedMRRequiresButtonBeforeStatusSync();
   await testOpenMRRequiresButtonBeforeStatusSync();
   await testNewMRWithoutAvailableTransitionOffersSaveOnly();
   await testRecordedMergedMRShowsTerminalCompletion();
   await testMRPageOffersCopyAndOpenForJira();
+  await testMRWithoutPageJiraReusesSavedBinding();
+  await testRecoveredMRBindingStillRequiresClickToSyncStatus();
+  await testUnboundMRStillRequestsJiraAndLookupErrorsAreReported();
   await testSuccessAutoClosesWithCountdown();
 }
 

@@ -83,6 +83,18 @@ install -m 755 \
 ditto \
     "$ROOT_DIR/Integrations/JiraRequirementCapture/extension" \
     "$STAGING_APP/Contents/Resources/JiraRequirementCaptureExtension"
+mkdir -p "$STAGING_APP/Contents/Resources/ZsStart"
+for TOOL_FILE in zs-start.py zs_start_manager.py zs-start-fe-memory.mjs; do
+    install -m 644 \
+        "$ROOT_DIR/Integrations/ZsStart/$TOOL_FILE" \
+        "$STAGING_APP/Contents/Resources/ZsStart/$TOOL_FILE"
+done
+mkdir -p "$STAGING_APP/Contents/Resources/DevServices"
+for TOOL_FILE in dev_services.py dev_services_manager.py; do
+    install -m 644 \
+        "$ROOT_DIR/Integrations/DevServices/$TOOL_FILE" \
+        "$STAGING_APP/Contents/Resources/DevServices/$TOOL_FILE"
+done
 
 ICON_SOURCE="$ROOT_DIR/dist/需求记录.app/Contents/Resources/AppIcon.icns"
 if [[ -f "$ICON_SOURCE" ]]; then
