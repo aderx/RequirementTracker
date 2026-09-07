@@ -78,6 +78,25 @@ function run() {
     assert.equal(record.mrHistory, undefined);
     assert.equal(record.mrTrackingStatus, "created");
 
+    const savedData = fs.readFileSync(dataFile, "utf8");
+    const savedBinding = sendNativeMessage(dataFile, {
+      type: "inspectByURL",
+      payload: { mrURL: `${firstMR}?view=parallel#note_10` }
+    });
+    assert.equal(savedBinding.ok, true);
+    assert.equal(savedBinding.exists, true);
+    assert.equal(savedBinding.issueKey, issueKey);
+    assert.equal(savedBinding.jiraURL, jiraURL);
+    assert.equal(fs.readFileSync(dataFile, "utf8"), savedData);
+
+    const unboundMR = sendNativeMessage(dataFile, {
+      type: "inspectByURL",
+      payload: { mrURL: `http://gitlab.zstack.io/g/${issueKey}/-/merge_requests/999` }
+    });
+    assert.equal(unboundMR.ok, true);
+    assert.equal(unboundMR.exists, false);
+    assert.equal(unboundMR.issueKey, "");
+
     record.mrTrackingStatus = "mergeRequested";
     record.isMRMergeMonitoringEnabled = true;
     const updatedAtBeforeTrackedMerge = record.updatedAt;
@@ -138,6 +157,59 @@ function run() {
     assert.equal(historicalInspection.ok, true);
     assert.equal(historicalInspection.exists, true);
     assert.equal(historicalInspection.status, "merged");
+
+    const historicalBinding = sendNativeMessage(dataFile, {
+      type: "inspectByURL",
+      payload: { mrURL: firstMR }
+    });
+    assert.equal(historicalBinding.exists, true);
+    assert.equal(historicalBinding.issueKey, issueKey);
+    assert.equal(historicalBinding.jiraURL, jiraURL);
+
+    const beforeInfoUpdate = JSON.stringify(record);
+    const updatedOnly = sendNativeMessage(dataFile, {
+      type: "upsertJiraRequirement",
+      payload: { issueKey, title: "重新打开后的标题", targetStatus: "" }
+    });
+    assert.equal(updatedOnly.statusUpdated, false);
+    assert.equal(readRecords(dataFile)[0].isMerged, true);
+
+    for (const targetStatus of ["pending", "active"]) {
+      record = JSON.parse(beforeInfoUpdate);
+      fs.writeFileSync(dataFile, JSON.stringify([record]));
+      const reopened = sendNativeMessage(dataFile, {
+        type: "upsertJiraRequirement",
+        payload: { issueKey, title: "重新打开后的标题", targetStatus, reopen: true }
+      });
+      assert.equal(reopened.ok, true);
+      assert.equal(reopened.statusUpdated, true);
+      const reopenedRecord = readRecords(dataFile)[0];
+      assert.equal(reopenedRecord.stage, targetStatus);
+      assert.equal(reopenedRecord.title, "重新打开后的标题");
+      assert.equal(reopenedRecord.isDone, false);
+      assert.equal(reopenedRecord.isTested, false);
+      assert.equal(reopenedRecord.isMerged, false);
+      assert.equal(reopenedRecord.completedAt, undefined);
+      assert.equal(reopenedRecord.mrURL, secondMR);
+      assert.deepEqual(reopenedRecord.mrHistory, [firstMR]);
+      assert.equal(reopenedRecord.mrTrackingStatus, undefined);
+      assert.equal(reopenedRecord.mrMergeReminderPending, undefined);
+      assert.deepEqual(reopenedRecord.statusHistory.slice(0, -1), record.statusHistory);
+      assert.equal(reopenedRecord.statusHistory.at(-1).status, targetStatus);
+
+      const repeat = sendNativeMessage(dataFile, {
+        type: "upsertJiraRequirement",
+        payload: { issueKey, targetStatus, reopen: true }
+      });
+      assert.equal(repeat.statusUpdated, false);
+      assert.deepEqual(readRecords(dataFile)[0].statusHistory, reopenedRecord.statusHistory);
+    }
+
+    const rejectedReopen = sendNativeMessage(dataFile, {
+      type: "upsertJiraRequirement",
+      payload: { issueKey, targetStatus: "done", reopen: true }
+    });
+    assert.equal(rejectedReopen.ok, false);
 
     record.stage = "paused";
     record.pauseReason = "等待后端接口";

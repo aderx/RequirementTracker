@@ -322,6 +322,11 @@ async function handleJiraPage(payload) {
     ];
     if (next) {
       actions.push(button(`转为${statusName(next)}`, "start-button", () => saveJira(payload, { targetStatus: next })));
+    } else if (["done", "tested", "merged", "paused", "stopped"].includes(status)) {
+      actions.push(
+        button("转为待开发", "primary-button", () => saveJira(payload, { targetStatus: "pending", reopen: true })),
+        button("开始开发", "start-button", () => saveJira(payload, { targetStatus: "active", reopen: true }))
+      );
     }
     setActions(actions);
     return;
@@ -341,7 +346,7 @@ async function handleJiraPage(payload) {
   ]);
 }
 
-async function saveJira(payload, { targetStatus = "" } = {}) {
+async function saveJira(payload, { targetStatus = "", reopen = false } = {}) {
   clearTimers();
   hideManualInput();
   setActions([]);
@@ -354,7 +359,7 @@ async function saveJira(payload, { targetStatus = "" } = {}) {
 
   const response = await sendNativeMessage({
     type: "upsertJiraRequirement",
-    payload: { ...payload, targetStatus }
+    payload: { ...payload, targetStatus, reopen }
   });
 
   if (!response?.ok) {
@@ -380,8 +385,19 @@ async function handleMRPage(payload) {
   hideSummary();
 
   if (!payload.jiraURL && !payload.issueKey) {
-    showManualJiraInput(payload);
-    return;
+    // 页面未识别出 Jira 时，复用此前手动保存的 MR 绑定。
+    const binding = await sendNativeMessage({
+      type: "inspectByURL",
+      payload: { mrURL: normalizedURL(payload.mrURL || "") }
+    });
+    if (!binding?.ok) {
+      throw new Error(binding?.error || "查询 MR 绑定失败");
+    }
+    if (!binding.exists || !binding.issueKey) {
+      showManualJiraInput(payload);
+      return;
+    }
+    payload = { ...payload, issueKey: binding.issueKey, jiraURL: binding.jiraURL || "" };
   }
 
   await attachMRWithInspection(payload);

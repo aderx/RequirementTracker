@@ -144,10 +144,14 @@ private struct RequirementJSONWriter {
             ?? stringValue(payload["mrURL"])
             ?? ""
         let normalized = RequirementParser.normalizedURL(rawURL)
-        let issueKey = RequirementParser.jiraKey(from: rawURL) ?? ""
+        let isMRLookup = stringValue(payload["mrURL"]) != nil
+        let issueKey = isMRLookup ? "" : RequirementParser.jiraKey(from: rawURL) ?? ""
 
         let records = try loadRecords()
         let record = records.first { record in
+            if isMRLookup {
+                return !normalized.isEmpty && mergeRequests(in: record).allURLs.contains(normalized)
+            }
             if !issueKey.isEmpty, matchesIssueKey(record, issueKey: issueKey) {
                 return true
             }
@@ -168,6 +172,9 @@ private struct RequirementJSONWriter {
             "dataFilePath": dataFileURL.path
         ]
         if let record {
+            let boundIssueKey = try self.issueKey(from: record)
+            response["issueKey"] = boundIssueKey
+            response["jiraURL"] = jiraURL(from: record, issueKey: boundIssueKey)
             response["status"] = currentStatus(of: record).rawValue
         }
         return response
@@ -182,6 +189,7 @@ private struct RequirementJSONWriter {
         let normalizedJiraURL = jiraURL(from: payload, issueKey: issueKey)
         let startDevelopment = boolValue(payload["startDevelopment"]) ?? false
         let targetStatus = try targetStatusForJira(from: payload, startDevelopment: startDevelopment)
+        let reopen = boolValue(payload["reopen"]) ?? false
 
         var records = try loadRecords()
         let index = records.firstIndex { matchesIssueKey($0, issueKey: issueKey) }
@@ -195,7 +203,11 @@ private struct RequirementJSONWriter {
             records[index]["updatedAt"] = now
             applyJiraFields(from: payload, to: &records[index], capturedAt: capturedAt)
             if let targetStatus {
-                statusUpdated = applyTargetStatus(targetStatus, to: &records[index], startDate: nowDate, formatter: formatter)
+                if reopen {
+                    statusUpdated = reopenRequirement(targetStatus, record: &records[index], date: now)
+                } else {
+                    statusUpdated = applyTargetStatus(targetStatus, to: &records[index], startDate: nowDate, formatter: formatter)
+                }
                 didStart = statusUpdated && targetStatus == .active
             }
             action = "updated"
@@ -505,7 +517,8 @@ private struct RequirementJSONWriter {
             guard let status = RequirementHostStatus(rawValue: value) else {
                 throw HostError.invalidRequest("未知需求状态：\(value)")
             }
-            guard status == .active || status == .done else {
+            let reopen = boolValue(payload["reopen"]) ?? false
+            guard reopen ? (status == .pending || status == .active) : (status == .active || status == .done) else {
                 throw HostError.invalidRequest("Jira 页面不允许直接转为 \(value)")
             }
             return status
@@ -617,6 +630,27 @@ private struct RequirementJSONWriter {
         }
 
         record["updatedAt"] = formatter.string(from: finalDate)
+        return true
+    }
+
+    // 重新开发只在明确点击回退按钮时发生，原 MR 地址及状态历史继续保留。
+    private func reopenRequirement(
+        _ target: RequirementHostStatus,
+        record: inout [String: Any],
+        date: String
+    ) -> Bool {
+        guard target == .pending || target == .active, currentStatus(of: record) != target else {
+            return false
+        }
+
+        record["stage"] = target.rawValue
+        record["isDone"] = false
+        record["isTested"] = false
+        record["isMerged"] = false
+        record["pauseReason"] = ""
+        record.removeValue(forKey: "completedAt")
+        appendStatusEvent(to: &record, status: target.rawValue, date: date)
+        record["updatedAt"] = date
         return true
     }
 

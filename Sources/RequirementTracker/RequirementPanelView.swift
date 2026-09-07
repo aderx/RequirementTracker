@@ -684,7 +684,7 @@ struct RequirementPanelView: View {
         HStack(spacing: 6) {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 10.5, weight: .semibold))
-                .foregroundStyle(Color.black.opacity(0.42))
+                .foregroundStyle(hasActiveFilter ? DesignColor.doing : Color.black.opacity(0.42))
                 .frame(width: 18)
 
             inlineSearchField()
@@ -712,7 +712,7 @@ struct RequirementPanelView: View {
             Image(systemName: isSearchExpanded ? "xmark" : "magnifyingglass")
                 .font(.system(size: 10.5, weight: .semibold))
                 .foregroundStyle(
-                    isSearchExpanded
+                    isSearchExpanded || hasActiveFilter
                         ? DesignColor.doing
                         : Color.black.opacity(0.52)
                 )
@@ -864,7 +864,7 @@ struct RequirementPanelView: View {
             } label: {
                 Image(systemName: isSearchExpanded ? "xmark" : "magnifyingglass")
                     .font(.system(size: 11.5, weight: .semibold))
-                    .foregroundStyle(isSearchExpanded ? DesignColor.doing : Color.black.opacity(0.62))
+                    .foregroundStyle(isSearchExpanded || hasActiveFilter ? DesignColor.doing : Color.black.opacity(0.62))
                     .frame(width: 32, height: 32)
                     .contentShape(Circle())
             }
@@ -1200,6 +1200,10 @@ struct RequirementPanelView: View {
 
     private var hasActiveDateFilter: Bool {
         dateFilter != .all || selectedDay != nil
+    }
+
+    private var hasActiveFilter: Bool {
+        hasActiveDateFilter || !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private var activeDateSelection: RequirementPanelDateSelection {

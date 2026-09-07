@@ -8,6 +8,8 @@ struct RequirementSettingsView: View {
     @State private var selectedSortFilter: RequirementStatusFilter = .incomplete
     @Namespace private var sortFilterSelectionNamespace
     @State private var selectedProjectID: RequirementScriptProject.ID?
+    @State private var showsGlobalCommands = true
+    @State private var selectedGlobalCommand: DeveloperCommand = .zsStart
     @State private var pluginAlertMessage = ""
     @State private var isInstallingNativeHost = false
     @State private var nativeHostStatus: RequirementNativeHostStatus?
@@ -472,21 +474,68 @@ struct RequirementSettingsView: View {
     }
 
     private var scriptConfigurationView: some View {
-        HStack(spacing: 0) {
+        HStack(alignment: .top, spacing: 16) {
             projectList
-                .frame(width: 230)
+                .frame(width: 210)
 
-            scriptDetail
+            Group {
+                if showsGlobalCommands {
+                    GlobalCommandRegistrationView(command: selectedGlobalCommand)
+                        .id(selectedGlobalCommand)
+                } else {
+                    scriptDetail
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .padding(18)
     }
 
     private var projectList: some View {
         VStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("全局命令")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 4)
+
+                ForEach(DeveloperCommand.allCases) { command in
+                    Button {
+                        selectedGlobalCommand = command
+                        showsGlobalCommands = true
+                    } label: {
+                        HStack(spacing: 9) {
+                            Image(systemName: "terminal")
+                                .font(.system(size: 16))
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(command.rawValue)
+                                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                                Text(command.summary)
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                        }
+                        .foregroundStyle(showsGlobalCommands && selectedGlobalCommand == command ? DesignColor.doing : DesignColor.textPrimary)
+                        .padding(10)
+                        .background(
+                            showsGlobalCommands && selectedGlobalCommand == command ? DesignColor.doing.opacity(0.11) : Color.clear,
+                            in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        )
+                        .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                    .pointingHandCursor()
+                }
+            }
+            .padding(8)
+
+            GlassDivider()
+
             HStack {
-                Text("项目")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(DesignColor.textPrimary)
+                Text("项目脚本")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.secondary)
 
                 Text("\(settingsStore.configuration.scriptProjects.count)")
                     .font(.system(size: 9.5, weight: .bold, design: .rounded))
@@ -502,6 +551,14 @@ struct RequirementSettingsView: View {
 
             ScrollView(.vertical, showsIndicators: true) {
                 LazyVStack(spacing: 5) {
+                    if settingsStore.configuration.scriptProjects.isEmpty {
+                        Text("添加项目后可配置常用脚本")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 8)
+                    }
                     ForEach(
                         Array(settingsStore.configuration.scriptProjects.enumerated()),
                         id: \.element.id
@@ -509,6 +566,7 @@ struct RequirementSettingsView: View {
                         HStack(spacing: 3) {
                             Button {
                                 selectedProjectID = project.id
+                                showsGlobalCommands = false
                             } label: {
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text(project.name.isEmpty ? "未命名项目" : project.name)
@@ -520,10 +578,12 @@ struct RequirementSettingsView: View {
                                         .font(.system(size: 10))
                                         .foregroundStyle(Color.black.opacity(0.38))
                                         .lineLimit(1)
+                                        .truncationMode(.middle)
                                 }
                                 .frame(maxWidth: .infinity, alignment: .leading)
                             }
                             .buttonStyle(.plain)
+                            .help(project.directoryPath)
                             .pointingHandCursor()
 
                             reorderButtons(
@@ -540,7 +600,7 @@ struct RequirementSettingsView: View {
                         .padding(.horizontal, 9)
                         .padding(.vertical, 7)
                         .background(
-                            project.id == selectedProjectID
+                            !showsGlobalCommands && project.id == selectedProjectID
                                 ? DesignColor.doing.opacity(0.11)
                                 : Color.black.opacity(0.018),
                             in: RoundedRectangle(cornerRadius: 7, style: .continuous)
@@ -548,7 +608,7 @@ struct RequirementSettingsView: View {
                         .overlay(
                             RoundedRectangle(cornerRadius: 7, style: .continuous)
                                 .strokeBorder(
-                                    project.id == selectedProjectID
+                                    !showsGlobalCommands && project.id == selectedProjectID
                                         ? DesignColor.doing.opacity(0.18)
                                         : Color.clear,
                                     lineWidth: 0.5
@@ -565,7 +625,7 @@ struct RequirementSettingsView: View {
                 Button {
                     chooseProjectFolder()
                 } label: {
-                    Label("添加", systemImage: "plus")
+                    Label("添加项目", systemImage: "plus")
                         .font(.system(size: 10.5, weight: .medium))
                 }
                 .buttonStyle(.plain)
@@ -573,7 +633,7 @@ struct RequirementSettingsView: View {
                 .pointingHandCursor()
 
                 Button {
-                    if let selectedProjectID {
+                    if !showsGlobalCommands, let selectedProjectID {
                         settingsStore.deleteScriptProject(id: selectedProjectID)
                     }
                 } label: {
@@ -581,9 +641,9 @@ struct RequirementSettingsView: View {
                         .font(.system(size: 10.5, weight: .medium))
                 }
                 .buttonStyle(.plain)
-                .disabled(selectedProjectID == nil)
+                .disabled(showsGlobalCommands || selectedProjectID == nil)
                 .help("删除项目")
-                .pointingHandCursor(selectedProjectID != nil)
+                .pointingHandCursor(!showsGlobalCommands && selectedProjectID != nil)
 
                 Spacer()
             }
@@ -591,12 +651,12 @@ struct RequirementSettingsView: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
         }
+        .frame(maxHeight: .infinity)
         .background(Color.white.opacity(0.64), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .strokeBorder(Color.black.opacity(0.08), lineWidth: 0.7)
         )
-        .padding(.trailing, 16)
     }
 
     @ViewBuilder
@@ -604,11 +664,9 @@ struct RequirementSettingsView: View {
         if let project = selectedProject {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 8) {
-                    Text("项目详情")
+                    Text("项目脚本")
                         .font(.system(size: 13.5, weight: .bold))
                         .foregroundStyle(DesignColor.textPrimary)
-
-                    Spacer()
 
                     Text("\(project.scripts.count) 个脚本")
                         .font(.system(size: 9.5, weight: .semibold))
@@ -616,6 +674,17 @@ struct RequirementSettingsView: View {
                         .padding(.horizontal, 7)
                         .frame(height: 19)
                         .background(DesignColor.doing.opacity(0.09), in: Capsule())
+
+                    Spacer()
+
+                    Button {
+                        settingsStore.addScript(to: project.id)
+                    } label: {
+                        Label("添加脚本", systemImage: "plus")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .pointingHandCursor()
                 }
 
                 TextField("项目名称", text: projectNameBinding(projectID: project.id))
@@ -625,9 +694,18 @@ struct RequirementSettingsView: View {
                     .font(.system(size: 10.5))
                     .foregroundStyle(Color.black.opacity(0.40))
                     .lineLimit(1)
+                    .truncationMode(.middle)
+                    .help(project.directoryPath)
 
-                ScrollView(.vertical, showsIndicators: false) {
+                ScrollView(.vertical, showsIndicators: true) {
                     LazyVStack(spacing: 10) {
+                        if project.scripts.isEmpty {
+                            Text("暂无脚本，点击右上角“添加脚本”开始配置。")
+                                .font(.system(size: 12))
+                                .foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.vertical, 24)
+                        }
                         ForEach(Array(project.scripts.enumerated()), id: \.element.id) { index, script in
                             scriptEditor(
                                 projectID: project.id,
@@ -640,14 +718,6 @@ struct RequirementSettingsView: View {
                     .padding(.vertical, 2)
                 }
 
-                Button {
-                    settingsStore.addScript(to: project.id)
-                } label: {
-                    Label("添加脚本", systemImage: "plus")
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .pointingHandCursor()
             }
         } else {
             placeholder(icon: "terminal", title: "脚本配置")
@@ -1195,6 +1265,7 @@ struct RequirementSettingsView: View {
         }
 
         selectedProjectID = settingsStore.addScriptProject(directoryURL: url)
+        showsGlobalCommands = false
     }
 
     private func projectNameBinding(projectID: RequirementScriptProject.ID) -> Binding<String> {
