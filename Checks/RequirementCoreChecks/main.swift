@@ -138,6 +138,27 @@ expect(
 )
 let requirementEncoder = JSONEncoder()
 requirementEncoder.dateEncodingStrategy = .iso8601
+expect(decodedLegacyRequirement.epicKey == nil && decodedLegacyRequirement.epicCapturedAt == nil,
+       "Legacy records without Epic metadata must remain unknown")
+var epicRequirement = decodedLegacyRequirement
+epicRequirement.epicKey = "ZSTAC-87912"
+epicRequirement.epicName = "健康检查 Buglist"
+epicRequirement.epicURL = "http://jira.zstack.io/browse/ZSTAC-87912"
+epicRequirement.epicCapturedAt = "2026-09-07T00:00:00Z"
+var decodedEpicRequirement = try requirementDecoder.decode(Requirement.self, from: requirementEncoder.encode(epicRequirement))
+decodedEpicRequirement.note = "操作卡片后保存"
+let savedEpicRequirement = try requirementDecoder.decode(Requirement.self, from: requirementEncoder.encode(decodedEpicRequirement))
+expect(savedEpicRequirement.epicKey == epicRequirement.epicKey
+       && savedEpicRequirement.epicName == epicRequirement.epicName
+       && savedEpicRequirement.epicURL == epicRequirement.epicURL
+       && savedEpicRequirement.epicCapturedAt == epicRequirement.epicCapturedAt,
+       "App writes must preserve Epic metadata captured by the extension")
+decodedEpicRequirement.epicKey = nil
+decodedEpicRequirement.epicName = nil
+decodedEpicRequirement.epicURL = nil
+let emptyEpicRequirement = try requirementDecoder.decode(Requirement.self, from: requirementEncoder.encode(decodedEpicRequirement))
+expect(emptyEpicRequirement.epicKey == nil && emptyEpicRequirement.epicCapturedAt != nil,
+       "Known empty Epic must stay distinct from an unrecognized field after save")
 let encodedTitledRequirement = String(
     data: try requirementEncoder.encode(decodedTitledRequirement),
     encoding: .utf8

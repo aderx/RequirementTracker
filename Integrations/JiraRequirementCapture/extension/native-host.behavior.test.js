@@ -64,6 +64,21 @@ function run() {
     });
     assert.equal(created.ok, true);
 
+    const epic = {key: "ZSTAC-87912", name: "健康检查 Buglist", url: "http://jira.zstack.io/browse/ZSTAC-87912"};
+    assert.equal(sendNativeMessage(dataFile, {type: "upsertJiraRequirement", payload: {issueKey, jiraURL, epic}}).ok, true);
+    assert.equal(readRecords(dataFile)[0].epicKey, epic.key);
+    assert.equal(readRecords(dataFile)[0].epicName, epic.name);
+    assert.equal(readRecords(dataFile)[0].epicURL, epic.url);
+    assert.ok(readRecords(dataFile)[0].epicCapturedAt);
+    sendNativeMessage(dataFile, {type: "upsertJiraRequirement", payload: {issueKey, jiraURL}});
+    assert.equal(readRecords(dataFile)[0].epicKey, epic.key, "Unrecognized Epic fields must preserve saved binding");
+    sendNativeMessage(dataFile, {type: "upsertJiraRequirement", payload: {issueKey, jiraURL, epic: null}});
+    assert.equal(readRecords(dataFile)[0].epicKey, undefined);
+    assert.equal(readRecords(dataFile)[0].epicName, undefined);
+    assert.equal(readRecords(dataFile)[0].epicURL, undefined);
+    assert.ok(readRecords(dataFile)[0].epicCapturedAt, "Known empty is distinct from never captured");
+    sendNativeMessage(dataFile, {type: "upsertJiraRequirement", payload: {issueKey, jiraURL, epic}});
+
     const savedWithoutStatus = sendNativeMessage(dataFile, {
       type: "attachMergeRequest",
       payload: { issueKey, jiraURL, mrURL: firstMR, mrState: "open", targetStatus: "" }

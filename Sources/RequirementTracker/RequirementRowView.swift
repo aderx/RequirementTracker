@@ -18,6 +18,8 @@ struct RequirementRowView: View {
     let requirement: Requirement
     let isExpanded: Bool
     let onToggleExpanded: () -> Void
+    var epicName: String? = nil
+    var onShowEpic: (() -> Void)? = nil
 
     private var style: RequirementDisplayStyle {
         RequirementDisplayStyle(requirement: requirement)
@@ -193,7 +195,7 @@ struct RequirementRowView: View {
         let versionText = trimmed(requirement.targetVersion)
         let mrTrackingStatus = requirement.mrTrackingStatus
 
-        if priorityText != nil || versionText != nil || mrTrackingStatus != nil {
+        if priorityText != nil || versionText != nil || mrTrackingStatus != nil || epicName != nil {
             HStack(spacing: 7) {
                 if let mrTrackingStatus {
                     HStack(spacing: 3) {
@@ -226,6 +228,18 @@ struct RequirementRowView: View {
                         .font(.system(size: 10, weight: .semibold, design: .monospaced))
                         .foregroundStyle(DesignColor.doing)
                         .lineLimit(1)
+                }
+
+                if let epicName {
+                    if let onShowEpic {
+                        Button(action: onShowEpic) {
+                            RequirementEpicBadge(name: epicName)
+                        }
+                        .buttonStyle(.plain)
+                        .pointingHandCursor()
+                    } else {
+                        RequirementEpicBadge(name: epicName)
+                    }
                 }
             }
         }

@@ -247,6 +247,7 @@
       issueKey,
       jiraKey: issueKey,
       title: extractTitle(),
+      ...extractEpicFields(pageURL),
       type: extractFieldValue({
         selectors: [
           "#type-val",
@@ -283,6 +284,35 @@
 
   function issueKeyFromJiraDetailURL(value) {
     return normalizedURL(value).match(/\/browse\/([A-Z][A-Z0-9]+-\d+)(?:\/)?$/i)?.[1]?.toUpperCase() || "";
+  }
+
+  function extractEpicFields(pageURL) {
+    const containers = Array.from(document.querySelectorAll(
+      "#ghx-epic-link-field, [data-field-id='epic-link'], [data-field-id='epicLink'], [data-testid*='epic-link']"
+    ));
+    // Epic Link 的自定义字段编号随 Jira 实例变化，只在该字段附近查找关联地址。
+    for (const label of document.querySelectorAll("strong, label, dt, th, .name")) {
+      if (["Epic Link", "Epic 链接", "史诗链接"].some(name => isLabelText(cleanText(label.textContent), name))) {
+        if (label.nextElementSibling) containers.push(label.nextElementSibling);
+        if (label.parentElement) containers.push(label.parentElement);
+      }
+    }
+    for (const container of containers) {
+      if (/^(none|无|未设置|未关联|没有|[-—])$/i.test(cleanText(container.innerText || container.textContent))) {
+        return { epic: null };
+      }
+      const links = container.matches?.("a[href]") ? [container] : Array.from(container.querySelectorAll("a[href]"));
+      for (const link of links) {
+        let url;
+        try { url = new URL(link.href || link.getAttribute("href"), pageURL); }
+        catch { continue; }
+        const key = issueKeyFromJiraDetailURL(url.href);
+        if (!key || url.hostname !== new URL(pageURL).hostname) continue;
+        return { epic: { key, name: cleanText(link.innerText || link.textContent) || key, url: `${url.origin}/browse/${key}` } };
+      }
+    }
+    // 未渲染、无法识别或只有名称时不覆盖旧关联，明确显示无 Epic 才清空。
+    return {};
   }
 
   function jiraKeyFromText(value) {

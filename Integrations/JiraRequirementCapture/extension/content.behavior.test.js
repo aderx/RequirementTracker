@@ -183,6 +183,45 @@ function testMROwnershipUsesAuthorAndCurrentUsername() {
   assert.equal(extractOwnership("mr", {}), "unknown");
 }
 
+function extractJiraEpic(containers = [], labels = []) {
+  let listener, result;
+  const document = {
+    title: "[ZSTAC-12345] 测试需求 - Jira",
+    querySelector: () => null,
+    querySelectorAll(selector) {
+      if (selector.startsWith("#ghx-epic-link-field")) return containers;
+      if (selector === "strong, label, dt, th, .name") return labels;
+      return [];
+    }
+  };
+  const sandbox = {
+    URL, window: {}, document,
+    location: {href: "http://jira.zstack.io/browse/ZSTAC-12345", hostname: "jira.zstack.io"},
+    chrome: {runtime: {onMessage: {addListener(value) { listener = value; }}}}
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(contentSource, sandbox);
+  listener({type: "EXTRACT_REQUIREMENT_PAGE", settings: {jiraBaseURL: "http://jira.zstack.io/browse/", mrHosts: []}}, {}, value => { result = value; });
+  assert.equal(result.ok, true, result.error);
+  return result.result.payload;
+}
+
+function testEpicCaptureUsesFieldLinkAndPreservesUnknown() {
+  const link = element("健康检查 Buglist", {href: "http://jira.zstack.io/browse/ZSTAC-87912"});
+  const field = element("健康检查 Buglist", {querySelectorAll: () => [link]});
+  const payload = extractJiraEpic([field]);
+  assert.equal(payload.epic.key, "ZSTAC-87912");
+  assert.equal(payload.epic.name, "健康检查 Buglist");
+  assert.equal(payload.epic.url, link.href);
+  assert.equal(extractJiraEpic([], [element("Epic Link:", {nextElementSibling: field})]).epic.key, "ZSTAC-87912");
+  assert.equal(extractJiraEpic([element("None")]).epic, null);
+  assert.equal(extractJiraEpic().epic, undefined);
+  assert.equal(extractJiraEpic([element("仅加载了名称")]).epic, undefined);
+  const malformed = element("未知链接", {href: "http://["});
+  assert.equal(extractJiraEpic([element("未知", {querySelectorAll: () => [malformed]})]).epic, undefined);
+}
+
+testEpicCaptureUsesFieldLinkAndPreservesUnknown();
 testLinkedJiraWinsOverTitle();
 testHashJiraInMRTitleIsParsed();
 testUnprefixedJiraTextDoesNotMatchTitleFallback();

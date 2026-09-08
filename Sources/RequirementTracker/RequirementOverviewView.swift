@@ -18,6 +18,10 @@ struct RequirementOverviewView: View {
     @State private var editingDraft: OverviewDraft?
     @State private var isShowingConfirmation = false
     @State private var sidebarWidth: CGFloat = 330
+    @AppStorage("RequirementOverview.groupsByEpic") private var groupsByEpic = false
+    @State private var collapsedEpicIDs: Set<String> = []
+    @State private var navigationTargetID: Requirement.ID?
+    @State private var scrollRequest = 0
     @AppStorage("RequirementOverview.sortMode") private var overviewSortModeRawValue = RequirementOverviewSortMode.createdAt.rawValue
 
     private var overviewSortMode: RequirementOverviewSortMode {
@@ -70,7 +74,9 @@ struct RequirementOverviewView: View {
                 requirement.pauseReason,
                 requirement.issueType ?? "",
                 requirement.priority ?? "",
-                requirement.targetVersion ?? ""
+                requirement.targetVersion ?? "",
+                requirement.epicKey ?? "",
+                requirement.epicName ?? ""
             ])
             .joined(separator: " ")
             .foldedForSearch
@@ -84,11 +90,19 @@ struct RequirementOverviewView: View {
     }
 
     private var selectedRequirement: Requirement? {
-        if let selectedID, let requirement = visibleRequirements.first(where: { $0.id == selectedID }) {
+        if let selectedID, let requirement = sidebarRequirements.first(where: { $0.id == selectedID }) {
             return requirement
         }
 
-        return visibleRequirements.first
+        return sidebarRequirements.first
+    }
+
+    private var sidebarRequirements: [Requirement] {
+        guard let navigationTargetID,
+              !visibleRequirements.contains(where: { $0.id == navigationTargetID }),
+              let target = store.requirement(id: navigationTargetID) else { return visibleRequirements }
+        // 关联跳转允许临时显示被筛选隐藏的目标，不清空用户原来的筛选条件。
+        return [target] + visibleRequirements
     }
 
     private var isEditing: Bool {
@@ -169,21 +183,27 @@ struct RequirementOverviewView: View {
             ensureSelection()
         }
         .onChange(of: selectedFilter) { _ in
+            navigationTargetID = nil
             ensureSelection()
         }
         .onChange(of: selectedDateFilter) { _ in
+            navigationTargetID = nil
             ensureSelection()
         }
         .onChange(of: searchText) { _ in
+            navigationTargetID = nil
             ensureSelection()
         }
         .onChange(of: selectedIssueType) { _ in
+            navigationTargetID = nil
             ensureSelection()
         }
         .onChange(of: selectedPriority) { _ in
+            navigationTargetID = nil
             ensureSelection()
         }
         .onChange(of: selectedTargetVersion) { _ in
+            navigationTargetID = nil
             ensureSelection()
         }
         .animation(.snappy(duration: 0.16), value: isShowingConfirmation)
@@ -196,33 +216,106 @@ struct RequirementOverviewView: View {
 
             overviewToolbar
 
-            ScrollView(.vertical, showsIndicators: true) {
-                LazyVStack(spacing: 4) {
-                    if visibleRequirements.isEmpty {
-                        OverviewListEmptyState(
-                            isSearching: !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                        )
-                        .padding(.top, 70)
-                    } else {
-                        ForEach(Array(visibleRequirements.enumerated()), id: \.element.id) { index, requirement in
-                            Button {
-                                selectedID = requirement.id
-                            } label: {
-                                OverviewRequirementListRow(
-                                    index: index + 1,
-                                    requirement: requirement,
-                                    isSelected: selectedRequirement?.id == requirement.id
-                                )
+            ScrollViewReader { proxy in
+                ScrollView(.vertical, showsIndicators: true) {
+                    LazyVStack(spacing: 4) {
+                        if let navigationTargetID, !visibleRequirements.contains(where: { $0.id == navigationTargetID }) {
+                            HStack {
+                                Text("目标需求不在当前筛选中")
+                                    .foregroundStyle(.secondary)
+                                Spacer()
+                                Button("返回筛选结果") {
+                                    self.navigationTargetID = nil
+                                    ensureSelection()
+                                }
+                                .buttonStyle(.plain)
+                                .foregroundStyle(DesignColor.doing)
                             }
-                            .buttonStyle(.plain)
-                            .pointingHandCursor()
+                            .font(.system(size: 10))
+                            .padding(5)
+                        }
+                        if sidebarRequirements.isEmpty {
+                            OverviewListEmptyState(isSearching: !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                                .padding(.top, 70)
+                        } else if groupsByEpic {
+                            ForEach(RequirementEpicGroup.groups(in: sidebarRequirements)) { group in
+                                epicGroupHeader(group)
+                                if !collapsedEpicIDs.contains(group.id) {
+                                    ForEach(Array(group.requirements.enumerated()), id: \.element.id) { index, requirement in
+                                        overviewListRow(requirement, index: index)
+                                    }
+                                }
+                            }
+                        } else {
+                            ForEach(Array(sidebarRequirements.enumerated()), id: \.element.id) { index, requirement in
+                                overviewListRow(requirement, index: index)
+                            }
                         }
                     }
+                    .padding(8)
                 }
-                .padding(8)
+                .onChange(of: scrollRequest) { _ in
+                    guard let selectedID else { return }
+                    DispatchQueue.main.async {
+                        withAnimation { proxy.scrollTo(selectedID, anchor: .center) }
+                    }
+                }
             }
         }
         .background(Color.white.opacity(0.24))
+    }
+
+    private func overviewListRow(_ requirement: Requirement, index: Int) -> some View {
+        Button {
+            selectedID = requirement.id
+        } label: {
+            OverviewRequirementListRow(index: index + 1, requirement: requirement, isSelected: selectedRequirement?.id == requirement.id)
+        }
+        .buttonStyle(.plain)
+        .pointingHandCursor()
+        .id(requirement.id)
+    }
+
+    private func epicGroupHeader(_ group: RequirementEpicGroup) -> some View {
+        Button {
+            if collapsedEpicIDs.contains(group.id) {
+                collapsedEpicIDs.remove(group.id)
+            } else {
+                collapsedEpicIDs.insert(group.id)
+            }
+        } label: {
+            HStack(alignment: .top, spacing: 6) {
+                Image(systemName: collapsedEpicIDs.contains(group.id) ? "chevron.right" : "chevron.down")
+                    .frame(width: 10)
+                    .padding(.top, 3)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(group.title).lineLimit(2)
+                    if let epic = group.epic {
+                        Text(epic.key).font(.system(size: 10, design: .monospaced))
+                    }
+                }
+                Spacer(minLength: 2)
+                Text("\(group.requirements.count) 项").font(.system(size: 10))
+            }
+            .font(.system(size: 11, weight: .medium))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 5)
+            .padding(.top, 8)
+            .padding(.bottom, 4)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(group.title)
+        .accessibilityLabel("\(group.title)，\(group.requirements.count) 项，\(collapsedEpicIDs.contains(group.id) ? "展开" : "收起")")
+        .pointingHandCursor()
+    }
+
+    private func navigateToEpicRequirement(_ requirement: Requirement) {
+        groupsByEpic = true
+        collapsedEpicIDs.remove(requirement.epicGroupID)
+        navigationTargetID = requirement.id
+        selectedID = requirement.id
+        scrollRequest += 1
     }
 
     private var statsGrid: some View {
@@ -328,6 +421,21 @@ struct RequirementOverviewView: View {
                 .pointingHandCursor()
 
                 Spacer(minLength: 8)
+
+                Button {
+                    groupsByEpic.toggle()
+                    if groupsByEpic, let selectedRequirement {
+                        collapsedEpicIDs.remove(selectedRequirement.epicGroupID)
+                    }
+                    scrollRequest += 1
+                } label: {
+                    Image(systemName: "square.stack.3d.up")
+                        .font(.system(size: 10, weight: .medium))
+                }
+                .buttonStyle(OverviewIconButtonStyle(isSelected: groupsByEpic, width: 24, height: 20))
+                .help(groupsByEpic ? "取消 Epic 分组" : "按 Epic 分组")
+                .accessibilityLabel("按 Epic 分组")
+                .pointingHandCursor()
 
                 Button {
                     toggleToolbarPanel(.jiraFilters)
@@ -594,10 +702,54 @@ struct RequirementOverviewView: View {
                     }
 
                     timelineSection(for: requirement)
+
+                    epicRelatedSection(for: requirement)
                 }
                 .padding(20)
             }
             .scrollIndicators(.hidden)
+        }
+    }
+
+    @ViewBuilder
+    private func epicRelatedSection(for requirement: Requirement) -> some View {
+        if let epic = requirement.epic {
+            VStack(alignment: .leading, spacing: 8) {
+                Divider().padding(.top, 12)
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    Text("Epic")
+                    Text("\(epic.key) · \(epic.name)")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+
+                ForEach(sortedRequirements.filter { $0.epic?.id == epic.id }) { related in
+                    Button {
+                        navigateToEpicRequirement(related)
+                    } label: {
+                        HStack(alignment: .firstTextBaseline, spacing: 10) {
+                            Text(related.jiraKey)
+                                .font(.system(size: 10.5, design: .monospaced))
+                            Text(related.title.isEmpty ? "暂无标题" : related.title)
+                                .lineLimit(2)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            Text(OverviewStatusOption(requirement: related).title)
+                                .foregroundStyle(OverviewStatusOption(requirement: related).tint)
+                                .fixedSize()
+                        }
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(.secondary)
+                        .padding(.vertical, 6)
+                        .padding(.horizontal, 5)
+                        .background(related.id == requirement.id ? Color.primary.opacity(0.035) : .clear, in: RoundedRectangle(cornerRadius: 4))
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .pointingHandCursor()
+                }
+            }
         }
     }
 
@@ -922,18 +1074,18 @@ struct RequirementOverviewView: View {
     }
 
     private func ensureSelection() {
-        guard !visibleRequirements.isEmpty else {
+        guard !sidebarRequirements.isEmpty else {
             selectedID = nil
             editingDraft = nil
             isShowingConfirmation = false
             return
         }
 
-        if let selectedID, visibleRequirements.contains(where: { $0.id == selectedID }) {
+        if let selectedID, sidebarRequirements.contains(where: { $0.id == selectedID }) {
             return
         }
 
-        selectedID = visibleRequirements.first?.id
+        selectedID = sidebarRequirements.first?.id
         editingDraft = nil
         isShowingConfirmation = false
     }
@@ -1720,7 +1872,7 @@ private struct OverviewRequirementListRow: View {
         let version = trimmed(requirement.targetVersion)
         let mrTrackingStatus = requirement.mrTrackingStatus
 
-        if issueType != nil || priority != nil || version != nil || mrTrackingStatus != nil {
+        if issueType != nil || priority != nil || version != nil || mrTrackingStatus != nil || requirement.epic != nil {
             HStack(spacing: 7) {
                 if let mrTrackingStatus {
                     Text(mrTrackingStatus.title)
@@ -1744,6 +1896,9 @@ private struct OverviewRequirementListRow: View {
                     Text("#\(version)")
                         .font(.system(size: 9.5, weight: .semibold, design: .monospaced))
                         .foregroundStyle(overviewVersionColor)
+                }
+                if let epic = requirement.epic {
+                    RequirementEpicBadge(name: epic.name)
                 }
             }
             .lineLimit(1)

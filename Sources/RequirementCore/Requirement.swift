@@ -200,11 +200,16 @@ public struct Requirement: Identifiable, Codable, Equatable, Sendable {
     public var updatedAt: Date
     public var completedAt: Date?
     public var statusHistory: [RequirementStatusEvent]
-    /// 浏览器插件抓取的 Jira 字段。App 暂不展示，仅做记录与持久化保留。
+    /// 浏览器插件抓取的 Jira 字段。
     public var issueType: String?
     public var priority: String?
     public var targetVersion: String?
     public var jiraCapturedAt: String?
+    public var epicKey: String?
+    public var epicName: String?
+    public var epicURL: String?
+    /// nil 表示尚未识别 Epic 字段，不能当作已确认没有 Epic。
+    public var epicCapturedAt: String?
 
     public init(
         id: UUID = UUID(),
@@ -230,7 +235,11 @@ public struct Requirement: Identifiable, Codable, Equatable, Sendable {
         issueType: String? = nil,
         priority: String? = nil,
         targetVersion: String? = nil,
-        jiraCapturedAt: String? = nil
+        jiraCapturedAt: String? = nil,
+        epicKey: String? = nil,
+        epicName: String? = nil,
+        epicURL: String? = nil,
+        epicCapturedAt: String? = nil
     ) {
         self.id = id
         self.jiraKey = jiraKey
@@ -255,6 +264,10 @@ public struct Requirement: Identifiable, Codable, Equatable, Sendable {
         self.priority = priority
         self.targetVersion = targetVersion
         self.jiraCapturedAt = jiraCapturedAt
+        self.epicKey = epicKey
+        self.epicName = epicName
+        self.epicURL = epicURL
+        self.epicCapturedAt = epicCapturedAt
         self.statusHistory = statusHistory ?? Self.legacyStatusHistory(
             stage: stage,
             isDone: isDone,
@@ -293,6 +306,10 @@ public struct Requirement: Identifiable, Codable, Equatable, Sendable {
         case priority
         case targetVersion
         case jiraCapturedAt
+        case epicKey
+        case epicName
+        case epicURL
+        case epicCapturedAt
     }
 
     public init(from decoder: Decoder) throws {
@@ -320,6 +337,10 @@ public struct Requirement: Identifiable, Codable, Equatable, Sendable {
         priority = try container.decodeIfPresent(String.self, forKey: .priority)
         targetVersion = try container.decodeIfPresent(String.self, forKey: .targetVersion)
         jiraCapturedAt = try container.decodeIfPresent(String.self, forKey: .jiraCapturedAt)
+        epicKey = try container.decodeIfPresent(String.self, forKey: .epicKey)
+        epicName = try container.decodeIfPresent(String.self, forKey: .epicName)
+        epicURL = try container.decodeIfPresent(String.self, forKey: .epicURL)
+        epicCapturedAt = try container.decodeIfPresent(String.self, forKey: .epicCapturedAt)
 
         let decodedHistory = try container.decodeIfPresent([RequirementStatusEvent].self, forKey: .statusHistory) ?? []
         statusHistory = decodedHistory.isEmpty
@@ -369,6 +390,10 @@ public struct Requirement: Identifiable, Codable, Equatable, Sendable {
         try container.encodeIfPresent(priority, forKey: .priority)
         try container.encodeIfPresent(targetVersion, forKey: .targetVersion)
         try container.encodeIfPresent(jiraCapturedAt, forKey: .jiraCapturedAt)
+        try container.encodeIfPresent(epicKey, forKey: .epicKey)
+        try container.encodeIfPresent(epicName, forKey: .epicName)
+        try container.encodeIfPresent(epicURL, forKey: .epicURL)
+        try container.encodeIfPresent(epicCapturedAt, forKey: .epicCapturedAt)
     }
 
     public var effectiveStage: RequirementStage {

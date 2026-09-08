@@ -30,6 +30,7 @@ struct RequirementPanelView: View {
     @State private var isAddButtonHovering = false
     @State private var searchText = ""
     @State private var isSearchExpanded = false
+    @State private var selectedEpic: RequirementEpic?
     @State private var bottomOverlayHeight: CGFloat = 0
     @State private var modernTopOverlayHeight: CGFloat = 0
     @FocusState private var isSearchFocused: Bool
@@ -74,10 +75,27 @@ struct RequirementPanelView: View {
             Color.clear
                 .ignoresSafeArea()
 
-            if panelStyle == .modern {
-                modernPanelContent(items)
-            } else {
-                legacyPanelContent(items)
+            Group {
+                if panelStyle == .modern {
+                    modernPanelContent(items)
+                } else {
+                    legacyPanelContent(items)
+                }
+            }
+            .allowsHitTesting(selectedEpic == nil)
+            .accessibilityHidden(selectedEpic != nil)
+
+            if let selectedEpic {
+                Color.black.opacity(0.18)
+                    .contentShape(Rectangle())
+                    .onTapGesture { self.selectedEpic = nil }
+                RequirementEpicQuickLook(
+                    key: selectedEpic.key,
+                    name: epicRequirements(for: selectedEpic).first?.epic?.name ?? selectedEpic.name,
+                    requirements: epicRequirements(for: selectedEpic),
+                    onClose: { self.selectedEpic = nil }
+                )
+                .environmentObject(store)
             }
         }
         .frame(width: RequirementPanelMetrics.width, height: panelHeight)
@@ -116,7 +134,14 @@ struct RequirementPanelView: View {
             isSearchExpanded = false
             isSearchFocused = false
             showsCalendar = false
+            selectedEpic = nil
         }
+    }
+
+    private func epicRequirements(for epic: RequirementEpic) -> [Requirement] {
+        // 速览包含该 Epic 下全部本地记录，不受主弹窗当前状态和日期筛选影响。
+        store.requirements.filter { $0.epic?.id == epic.id }
+            .sorted { $0.updatedAt > $1.updatedAt }
     }
 
     private func legacyPanelContent(_ items: [Requirement]) -> some View {
@@ -468,7 +493,9 @@ struct RequirementPanelView: View {
                                         expandedIDs[statusFilter] = requirement.id
                                     }
                                 }
-                            }
+                            },
+                            epicName: requirement.epic?.name,
+                            onShowEpic: requirement.epic.map { epic in { selectedEpic = epic } }
                         )
                         .environmentObject(store)
                         .transition(
