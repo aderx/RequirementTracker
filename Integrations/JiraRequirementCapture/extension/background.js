@@ -1,13 +1,4 @@
-// 后台 Service Worker：根据当前标签页地址更新插件图标右下角的浏览器原生角标。
-// 主图标始终保持蓝色，右下角的位置、溢出效果和字符排版交给 Chrome：
-// - 不支持的页面：不显示角标
-// - 可添加（支持的 Jira / MR 页面但尚未记录）：橙色「+」
-// - 已记录：生产版绿色「↻」
-// - 开发完成：蓝色「✓」
-// - 已自测：紫色重勾「✔」
-// - 已合并：绿色「⇧」
-// - 已暂停：琥珀色「Ⅱ」
-// - 已停止：红色「■」
+// 普通页面保留原 Logo；需求状态使用完整的渐变图标，不叠加原生文字角标。
 importScripts("badge-renderer.js");
 
 const HOST_NAME = "com.aderx.requirementtracker.jira_capture";
@@ -367,19 +358,17 @@ async function applyBadge(tabId, state) {
   const style = BADGE_STYLES[state];
   chrome.action.setIcon({
     tabId,
-    path: DEFAULT_ACTION_ICONS
+    path: style
+      ? Object.fromEntries(Object.keys(DEFAULT_ACTION_ICONS).map((size) => [size, `icons/status/${state}-${size}.png`]))
+      : DEFAULT_ACTION_ICONS
   }, ignoreError);
-  chrome.action.setBadgeText({ tabId, text: style?.text || "" }, ignoreError);
+  chrome.action.setBadgeText({ tabId, text: "" }, ignoreError);
 
   if (!style) {
     chrome.action.setTitle({ tabId, title: "记录 Jira / MR" }, ignoreError);
     return;
   }
 
-  chrome.action.setBadgeBackgroundColor({ tabId, color: style.color }, ignoreError);
-  if (typeof chrome.action.setBadgeTextColor === "function") {
-    chrome.action.setBadgeTextColor({ tabId, color: "#FFFFFF" }, ignoreError);
-  }
   chrome.action.setTitle({ tabId, title: `需求记录：${style.label}` }, ignoreError);
 }
 

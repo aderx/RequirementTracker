@@ -485,6 +485,19 @@ private struct RequirementJSONWriter {
         setIfPresent("type", from: payload, to: &record, as: "issueType")
         setIfPresent("priority", from: payload, to: &record, as: "priority")
         setIfPresent("targetVersion", from: payload, to: &record, as: "targetVersion")
+        // 仅在页面明确识别出 Epic 或明确为空时更新；旧插件和未加载字段保留已存关联。
+        if payload["epic"] is NSNull {
+            for key in ["epicKey", "epicName", "epicURL"] {
+                record.removeValue(forKey: key)
+            }
+            record["epicCapturedAt"] = capturedAt
+        } else if let epic = payload["epic"] as? [String: Any],
+                  let key = stringValue(epic["key"]), !key.isEmpty {
+            record["epicKey"] = key.uppercased()
+            record["epicName"] = stringValue(epic["name"]) ?? key.uppercased()
+            record["epicURL"] = stringValue(epic["url"])
+            record["epicCapturedAt"] = capturedAt
+        }
         record["jiraCapturedAt"] = capturedAt
     }
 

@@ -3,125 +3,46 @@ const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
 
-const rendererSource = fs.readFileSync(path.join(__dirname, "badge-renderer.js"), "utf8");
-
-class ContextStub {
-  constructor() {
-    this.operations = [];
-    this.fillStyle = "";
-    this.font = "";
-    this.textAlign = "";
-    this.textBaseline = "";
-  }
-
-  clearRect(...arguments_) { this.operations.push(["clearRect", ...arguments_]); }
-  beginPath() { this.operations.push(["beginPath"]); }
-  roundRect(...arguments_) { this.operations.push(["roundRect", ...arguments_]); }
-  fill() { this.operations.push(["fill", this.fillStyle]); }
-
-  measureText(text) {
-    this.operations.push(["measureText", text]);
-    return {
-      actualBoundingBoxAscent: 60,
-      actualBoundingBoxDescent: 12
-    };
-  }
-
-  fillText(text, x, y) {
-    this.operations.push([
-      "fillText",
-      text,
-      x,
-      y,
-      this.fillStyle,
-      this.font,
-      this.textAlign,
-      this.textBaseline
-    ]);
-  }
+class PathStub {
+  constructor(data) { this.operations = data ? [["path", data]] : []; }
+  arc(...values) { this.operations.push(["arc", ...values]); }
+  roundRect(...values) { this.operations.push(["roundRect", ...values]); }
 }
 
-function createRenderer() {
-  const sandbox = { console };
-
-  vm.createContext(sandbox);
-  vm.runInContext(rendererSource, sandbox);
-  return sandbox.BadgeIconRenderer;
-}
-
-function drawPreview(renderer, state) {
-  const context = new ContextStub();
-  const canvas = {
-    width: 96,
-    height: 96,
-    getContext() {
-      return context;
-    }
+function createCanvas() {
+  const operations = [];
+  const context = {
+    clearRect(...values) { operations.push(["clear", ...values]); },
+    beginPath() {}, roundRect() {}, save() {}, restore() {}, translate() {}, scale() {},
+    createLinearGradient() { return { addColorStop() {} }; },
+    drawImage(...values) { operations.push(["logo", ...values]); },
+    fill(shape) { operations.push(["fill", this.fillStyle, shape?.operations]); },
+    stroke(shape) { operations.push(["stroke", this.strokeStyle, shape?.operations]); },
+    fillText() { throw new Error("Status icons must not depend on OS font/emoji rendering"); }
   };
+  return { width: 96, height: 96, getContext: () => context, operations };
+}
+
+const sandbox = { Path2D: PathStub };
+vm.createContext(sandbox);
+vm.runInContext(fs.readFileSync(path.join(__dirname, "badge-renderer.js"), "utf8"), sandbox);
+const renderer = sandbox.BadgeIconRenderer;
+const fingerprints = new Set();
+for (const state of ["addable", "recorded", "done", "tested", "merged", "paused", "stopped"]) {
+  const canvas = createCanvas();
   renderer.drawBadgePreview(canvas, state);
-  return context.operations;
-}
-
-function testStylesMatchTheVerifiedNativeBadgeSet() {
-  const renderer = createRenderer();
-  const stateTokens = Object.fromEntries(
-    Object.entries(renderer.styles).map(([state, style]) => [
-      state,
-      { text: style.text, color: style.color }
-    ])
-  );
-
-  assert.deepEqual(stateTokens, {
-    addable: { text: "+", color: "#FF9500" },
-    recorded: { text: "↻", color: "#1F9D54" },
-    done: { text: "✓", color: "#1570EF" },
-    tested: { text: "\u2714\uFE0E", color: "#7F56D9" },
-    merged: { text: "⇧", color: "#1F9D54" },
-    paused: { text: "Ⅱ", color: "#F59E0B" },
-    stopped: { text: "■", color: "#D92D43" }
-  });
-}
-
-function testPopupPreviewUsesTheSameSymbolColorAndCenteredGeometry() {
-  const renderer = createRenderer();
-  for (const [state, style] of Object.entries(renderer.styles)) {
-    const operations = drawPreview(renderer, state);
-    assert.deepEqual(
-      operations.find(([name]) => name === "roundRect"),
-      ["roundRect", 0, 0, 96, 96, 24]
-    );
-    assert.deepEqual(
-      operations.find(([name]) => name === "fill"),
-      ["fill", style.color]
-    );
-
-    const text = operations.find(([name]) => name === "fillText");
-    assert.equal(text[1], style.text);
-    assert.equal(text[2], 48);
-    assert.equal(text[3], 72);
-    assert.equal(text[4], "#FFFFFF");
-    assert.equal(text[6], "center");
-    assert.equal(text[7], "alphabetic");
+  const shapes = canvas.operations.filter(([operation, , shape]) => operation === "stroke" && shape);
+  assert.ok(shapes.length > 0, `${state}: missing symbol`);
+  fingerprints.add(JSON.stringify(shapes));
+  for (const size of [16, 32, 48, 128]) {
+    const png = fs.readFileSync(path.join(__dirname, `icons/status/${state}-${size}.png`));
+    assert.equal(png.subarray(0, 8).toString("hex"), "89504e470d0a1a0a");
+    assert.equal(png.readUInt32BE(16), size);
+    assert.equal(png.readUInt32BE(20), size);
   }
-
-  const addableFont = drawPreview(renderer, "addable")
-    .find(([name]) => name === "fillText")[5];
-  const stoppedFont = drawPreview(renderer, "stopped")
-    .find(([name]) => name === "fillText")[5];
-  const addableFontSize = Number.parseFloat(addableFont.match(/800 ([\d.]+)px/)[1]);
-  const stoppedFontSize = Number.parseFloat(stoppedFont.match(/800 ([\d.]+)px/)[1]);
-  assert.ok(addableFontSize > stoppedFontSize);
 }
-
-function run() {
-  testStylesMatchTheVerifiedNativeBadgeSet();
-  testPopupPreviewUsesTheSameSymbolColorAndCenteredGeometry();
-}
-
-Promise.resolve().then(() => {
-  run();
-  console.log("badge-renderer.behavior.test.js passed");
-}).catch((error) => {
-  console.error(error);
-  process.exitCode = 1;
-});
+assert.equal(fingerprints.size, 7, "Every status must have a distinct shape, independent of color");
+const empty = createCanvas();
+renderer.drawBadgePreview(empty, "unsupported");
+assert.deepEqual(empty.operations, [["clear", 0, 0, 96, 96]]);
+console.log("badge-renderer.behavior.test.js passed");

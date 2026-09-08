@@ -18,22 +18,10 @@ function createBackground(nativeStub) {
     titles: []
   };
   const alarmCalls = [];
-  const badgeStyles = {
-    addable: { label: "可添加", text: "+", color: "#FF9500" },
-    recorded: { label: "已记录", text: "↻", color: "#1F9D54" },
-    done: { label: "开发完成", text: "✓", color: "#1570EF" },
-    tested: { label: "已自测", text: "\u2714\uFE0E", color: "#7F56D9" },
-    merged: { label: "已合并", text: "⇧", color: "#1F9D54" },
-    paused: { label: "已暂停", text: "Ⅱ", color: "#F59E0B" },
-    stopped: { label: "已停止", text: "■", color: "#D92D43" }
-  };
   const sandbox = {
     URL,
     console,
     importScripts() {},
-    BadgeIconRenderer: {
-      styles: badgeStyles
-    },
     chrome: {
       runtime: {
         lastError: null,
@@ -105,6 +93,7 @@ function createBackground(nativeStub) {
     "};"
   ].join("\n");
   vm.createContext(sandbox);
+  vm.runInContext(fs.readFileSync(path.join(__dirname, "badge-renderer.js"), "utf8"), sandbox);
   vm.runInContext(backgroundSource + "\n" + exposure, sandbox);
   sandbox.__background.setNativeMessageStub(nativeStub);
   sandbox.__background.actionCalls = actionCalls;
@@ -145,15 +134,19 @@ async function testBadgeStylesDifferentiateMilestones() {
   assert.notEqual(styles.tested.color, styles.merged.color);
 }
 
-async function testEveryStatusUsesTheChromeNativeOverflowBadge() {
+async function testStatusIconsReplaceWholeIconAndUnsupportedRestoresLogo() {
   const background = createBackground(nativeStubFor({ exists: true, status: "merged" }));
 
   for (const [state, style] of Object.entries(background.BADGE_STYLES)) {
     await background.applyBadge(42, state);
-    assert.equal(background.actionCalls.badgeTexts.at(-1)?.text, style.text);
-    assert.equal(background.actionCalls.icons.at(-1)?.path?.[16], "icons/icon-16.png");
-    assert.equal(background.actionCalls.badgeBackgrounds.at(-1)?.color, style.color);
-    assert.equal(background.actionCalls.badgeTextColors.at(-1)?.color, "#FFFFFF");
+    assert.equal(background.actionCalls.badgeTexts.at(-1)?.text, "");
+    for (const size of [16, 32, 48, 128]) {
+      const iconPath = background.actionCalls.icons.at(-1)?.path?.[size];
+      assert.equal(iconPath, `icons/status/${state}-${size}.png`);
+      assert.ok(fs.existsSync(path.join(__dirname, iconPath)));
+    }
+    assert.equal(background.actionCalls.badgeBackgrounds.length, 0);
+    assert.equal(background.actionCalls.badgeTextColors.length, 0);
     assert.equal(background.actionCalls.titles.at(-1)?.title, `需求记录：${style.label}`);
   }
 
@@ -194,12 +187,12 @@ async function testPausedAndStoppedJiraUseDedicatedBadges() {
 
   const background = createBackground(nativeStubFor({ exists: true, status: "paused" }));
   await background.applyBadge(42, "paused");
-  assert.equal(background.actionCalls.badgeTexts.at(-1)?.text, "Ⅱ");
-  assert.equal(background.actionCalls.badgeBackgrounds.at(-1)?.color, "#F59E0B");
+  assert.equal(background.actionCalls.badgeTexts.at(-1)?.text, "");
+  assert.equal(background.actionCalls.icons.at(-1)?.path?.[16], "icons/status/paused-16.png");
 
   await background.applyBadge(42, "stopped");
-  assert.equal(background.actionCalls.badgeTexts.at(-1)?.text, "■");
-  assert.equal(background.actionCalls.badgeBackgrounds.at(-1)?.color, "#D92D43");
+  assert.equal(background.actionCalls.badgeTexts.at(-1)?.text, "");
+  assert.equal(background.actionCalls.icons.at(-1)?.path?.[16], "icons/status/stopped-16.png");
 }
 
 async function testMergedRequirementMRPageUsesMergedBadge() {
@@ -328,15 +321,14 @@ async function testStatusTestPageDrivesTheRealToolbarStatePath() {
   assert.equal(response.ok, true);
   assert.equal(response.state, "tested");
   assert.equal(background.actionCalls.badgeTexts.at(-1)?.tabId, 42);
-  assert.equal(background.actionCalls.badgeTexts.at(-1)?.text, "\u2714\uFE0E");
-  assert.equal(background.actionCalls.icons.at(-1)?.path?.[16], "icons/icon-16.png");
-  assert.equal(background.actionCalls.badgeBackgrounds.at(-1)?.color, "#7F56D9");
+  assert.equal(background.actionCalls.badgeTexts.at(-1)?.text, "");
+  assert.equal(background.actionCalls.icons.at(-1)?.path?.[16], "icons/status/tested-16.png");
   assert.equal(background.actionCalls.titles.at(-1)?.title, "需求记录：已自测");
 }
 
 async function run() {
   await testBadgeStylesDifferentiateMilestones();
-  await testEveryStatusUsesTheChromeNativeOverflowBadge();
+  await testStatusIconsReplaceWholeIconAndUnsupportedRestoresLogo();
   await testMilestoneJiraUsesDedicatedBadge();
   await testPendingAndActiveJiraUseRecordedBadge();
   await testPausedAndStoppedJiraUseDedicatedBadges();
