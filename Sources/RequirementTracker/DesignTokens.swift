@@ -3,19 +3,35 @@ import RequirementCore
 import SwiftUI
 
 enum DesignColor {
-    static let textPrimary = Color(hex: 0x1C1B18)
-    static let textSecondary = Color.black.opacity(0.55)
-    static let textTertiary = Color.black.opacity(0.30)
+    static let textPrimary = Color.primary
+    static let textSecondary = Color.secondary
+    static let textTertiary = Color(nsColor: .tertiaryLabelColor)
+    static let surface = Color(nsColor: .controlBackgroundColor)
+    static let card = adaptive(light: 0xFAFAFA, dark: 0x2C2C2E)
+    static let border = Color.primary.opacity(0.12)
 
-    static let todo = Color(hex: 0x8A8A90)
-    static let doing = Color(hex: 0x007AFF)
-    static let devDone = Color(hex: 0x5E5CE6)
-    static let tested = Color(hex: 0x0A9BB5)
-    static let merged = Color(hex: 0x2A9E48)
-    static let mrMergeRequested = Color(hex: 0xC98A00)
-    static let mrMerged = Color(hex: 0x08783E)
-    static let paused = Color(hex: 0xD97A09)
-    static let stopped = Color(hex: 0xE0463E)
+    static let todo = adaptive(light: 0x8A8A90, dark: 0xAEAEB2)
+    static let doing = adaptive(light: 0x007AFF, dark: 0x409CFF)
+    static let devDone = adaptive(light: 0x5E5CE6, dark: 0x9B99FF)
+    static let tested = adaptive(light: 0x0A9BB5, dark: 0x5AC8DA)
+    static let merged = adaptive(light: 0x2A9E48, dark: 0x5BD477)
+    static let mrMergeRequested = adaptive(light: 0xC98A00, dark: 0xEAC35B)
+    static let mrMerged = adaptive(light: 0x08783E, dark: 0x60D898)
+    static let paused = adaptive(light: 0xD97A09, dark: 0xFFB340)
+    static let stopped = adaptive(light: 0xE0463E, dark: 0xFF6961)
+
+    // 保留浅色模式的状态色；深色模式提高亮度，避免文字和标签融入材质背景。
+    private static func adaptive(light: UInt32, dark: UInt32) -> Color {
+        Color(nsColor: NSColor(name: nil) { appearance in
+            let value = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? dark : light
+            return NSColor(
+                srgbRed: Double((value >> 16) & 0xff) / 255,
+                green: Double((value >> 8) & 0xff) / 255,
+                blue: Double(value & 0xff) / 255,
+                alpha: 1
+            )
+        })
+    }
 }
 
 extension RequirementMRTrackingStatus {

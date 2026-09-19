@@ -85,6 +85,10 @@ struct NativeIconMenuButton: NSViewRepresentable {
         Coordinator(contents: contents)
     }
 
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: IconMenuButton, context: Context) -> CGSize? {
+        size
+    }
+
     func makeNSView(context: Context) -> IconMenuButton {
         let button = IconMenuButton()
         button.isBordered = false
@@ -106,6 +110,7 @@ struct NativeIconMenuButton: NSViewRepresentable {
         button.image = Self.image(for: kind)
         button.contentTintColor = NSColor.labelColor.withAlphaComponent(tintAlpha)
         button.toolTip = help
+        button.setAccessibilityLabel(help)
         button.hoverShape = hoverShape
         button.hoverBackgroundSize = hoverBackgroundSize
         button.onPress = { [coordinator = context.coordinator] sender in
@@ -370,6 +375,8 @@ final class IconMenuButton: NSButton {
         NSSize(width: buttonSize.width, height: buttonSize.height)
     }
 
+    override var alignmentRectInsets: NSEdgeInsets { .init(top: 0, left: 0, bottom: 0, right: 0) }
+
     override func updateTrackingAreas() {
         if let trackingAreaRef {
             removeTrackingArea(trackingAreaRef)
@@ -425,7 +432,7 @@ final class IconMenuButton: NSButton {
                 width: backgroundSize.width,
                 height: backgroundSize.height
             )
-            NSColor.black.withAlphaComponent(isHighlighted ? 0.10 : 0.06).setFill()
+            NSColor.labelColor.withAlphaComponent(isHighlighted ? 0.10 : 0.06).setFill()
 
             switch hoverShape {
             case let .roundedRectangle(cornerRadius):
@@ -439,6 +446,16 @@ final class IconMenuButton: NSButton {
             }
         }
 
-        super.draw(dirtyRect)
+        // 图标和悬停背景共用中心，避免按钮单元格的边框补偿使图标向下偏移。
+        if let image {
+            let rect = NSRect(
+                x: bounds.midX - image.size.width / 2,
+                y: bounds.midY - image.size.height / 2,
+                width: image.size.width,
+                height: image.size.height
+            )
+            image.tinted(with: contentTintColor ?? .labelColor)
+                .draw(in: rect, from: .zero, operation: .sourceOver, fraction: isEnabled ? 1 : 0.4, respectFlipped: true, hints: nil)
+        }
     }
 }

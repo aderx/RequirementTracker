@@ -64,7 +64,7 @@ function extractOwnership(pageType, selectorMap) {
   return response.ownership;
 }
 
-function extractMR({ title, links = [], bodyText = "Open" }) {
+function extractMR({ title, links = [], bodyText = "Open", stateLabel = "Open", automatic = false }) {
   let listener;
   let response;
   const titleElement = element(title);
@@ -78,11 +78,14 @@ function extractMR({ title, links = [], bodyText = "Open" }) {
       return null;
     },
     querySelectorAll(selector) {
+      if (selector.includes(".issuable-description")) {
+        return [element("description", { querySelectorAll: () => links.map(href => element(href, { href })) })];
+      }
       if (selector === "a[href]") {
         return links.map((href) => element(href, { href }));
       }
       if (selector === ".issuable-status-box") {
-        return [element("Open")];
+        return stateLabel ? [element(stateLabel)] : [];
       }
       return [];
     }
@@ -110,7 +113,7 @@ function extractMR({ title, links = [], bodyText = "Open" }) {
   vm.runInContext(contentSource, sandbox);
   listener(
     {
-      type: "EXTRACT_REQUIREMENT_PAGE",
+      type: automatic ? "EXTRACT_AUTOMATIC_MR_CONTEXT" : "EXTRACT_REQUIREMENT_PAGE",
       settings: {
         jiraBaseURL: "http://jira.zstack.io/browse/",
         mrHosts: ["gitlab.zstack.io"]
@@ -220,6 +223,12 @@ function testEpicCaptureUsesFieldLinkAndPreservesUnknown() {
   const malformed = element("未知链接", {href: "http://["});
   assert.equal(extractJiraEpic([element("未知", {querySelectorAll: () => [malformed]})]).epic, undefined);
 }
+
+const autoContext = extractMR({ automatic: true, title: "#ZSTAC-11111", links: ["http://jira.zstack.io/browse/ZSTAC-22222"] });
+assert.equal(autoContext.issueKeys.length, 2, "Conflicting title and description must remain ambiguous");
+assert.equal(extractMR({ automatic: true, title: "#ZSTAC-11111", stateLabel: "", bodyText: "Merged: a different MR in a comment" }).mrState, "");
+assert.equal(extractMR({ automatic: true, title: "#ZSTAC-11111", stateLabel: "Merged" }).mrState, "merged");
+assert.equal(extractMR({ automatic: true, title: "#ZSTAC-11111", stateLabel: "Opened" }).mrState, "open");
 
 testEpicCaptureUsesFieldLinkAndPreservesUnknown();
 testLinkedJiraWinsOverTitle();

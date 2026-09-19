@@ -21,15 +21,18 @@ struct RequirementTrackerApp: App {
 
     var body: some Scene {
         Settings {
-            EmptyView()
+            RequirementSettingsView()
+                .environmentObject(appDelegate.settingsStore)
         }
+        .windowToolbarStyle(.unifiedCompact)
+        .defaultSize(width: 1040, height: 700)
     }
 }
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let store = RequirementStore()
-    private let settingsStore = RequirementSettingsStore()
+    let settingsStore = RequirementSettingsStore()
     private let scriptLauncher = GhosttyScriptLauncher()
     private var statusItem: NSStatusItem?
     private var popover: NSPopover?
@@ -39,6 +42,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var overviewWindowController: NSWindowController?
     private var aboutWindowController: NSWindowController?
     private var settingsWindowController: NSWindowController?
+    private var openSettingsScene: (() -> Void)?
     private let panelWidth = RequirementPanelMetrics.width
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -78,6 +82,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         .environmentObject(store)
         .environmentObject(settingsStore)
         .environmentObject(scriptLauncher)
+        .background {
+            if #available(macOS 14.0, *) {
+                SettingsSceneActionReader { [weak self] action in
+                    self?.openSettingsScene = action
+                }
+            }
+        }
 
         let hostingController = NSHostingController(rootView: content)
         hostingController.view.frame = NSRect(
@@ -263,7 +274,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window.isMovableByWindowBackground = false
         window.isReleasedWhenClosed = false
         window.delegate = self
-        window.minSize = NSSize(width: 780, height: 560)
+        window.contentMinSize = NSSize(width: 780, height: 560)
         window.contentViewController = hostingController
         window.center()
 
@@ -276,6 +287,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private func openSettings() {
         closePopover()
+
+        if let openSettingsScene {
+            NSApplication.shared.activate(ignoringOtherApps: true)
+            openSettingsScene()
+            return
+        }
 
         if let window = settingsWindowController?.window {
             NSApplication.shared.activate(ignoringOtherApps: true)
@@ -292,19 +309,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 .environmentObject(settingsStore)
         )
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 760, height: 520),
-            styleMask: [.titled, .closable, .fullSizeContentView],
+            contentRect: NSRect(x: 0, y: 0, width: 860, height: 640),
+            styleMask: [.titled, .closable, .resizable],
             backing: .buffered,
             defer: false
         )
         window.title = "设置"
-        window.titleVisibility = .hidden
-        window.titlebarAppearsTransparent = true
-        window.titlebarSeparatorStyle = .none
-        window.isMovableByWindowBackground = true
+        window.titleVisibility = .visible
+        window.titlebarAppearsTransparent = false
+        window.titlebarSeparatorStyle = .automatic
+        window.isMovableByWindowBackground = false
         window.isReleasedWhenClosed = false
         window.delegate = self
-        window.minSize = NSSize(width: 680, height: 460)
+        window.contentMinSize = NSSize(width: 820, height: 580)
         window.contentViewController = hostingController
         centerOnMainScreen(window)
 
@@ -377,7 +394,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             ?? NSScreen.main
             ?? window.screen
             ?? NSScreen.screens.first
-        let screenFrame = screen?.frame ?? .zero
+        let screenFrame = screen?.visibleFrame ?? .zero
 
         guard screenFrame != .zero else {
             window.center()
@@ -424,7 +441,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private static var appVersion: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
-            ?? "1.18.0"
+            ?? "1.19.0"
     }
 
     private static var githubURL: String? {
@@ -660,5 +677,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         context.setLineCap(.round)
         context.setLineJoin(.round)
         context.strokePath()
+    }
+}
+
+// 菜单栏使用 AppKit 承载，设置窗口仍交给 SwiftUI Settings 场景管理。
+@available(macOS 14.0, *)
+private struct SettingsSceneActionReader: View {
+    @Environment(\.openSettings) private var openSettings
+    let register: (@escaping () -> Void) -> Void
+
+    var body: some View {
+        Color.clear
+            .frame(width: 0, height: 0)
+            .onAppear {
+                register { openSettings() }
+            }
     }
 }

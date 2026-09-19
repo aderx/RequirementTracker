@@ -6,7 +6,6 @@ struct RequirementSettingsView: View {
     @EnvironmentObject private var settingsStore: RequirementSettingsStore
     @State private var selectedTab: RequirementSettingsTab = .base
     @State private var selectedSortFilter: RequirementStatusFilter = .incomplete
-    @Namespace private var sortFilterSelectionNamespace
     @State private var selectedProjectID: RequirementScriptProject.ID?
     @State private var showsGlobalCommands = true
     @State private var selectedGlobalCommand: DeveloperCommand = .zsStart
@@ -16,22 +15,51 @@ struct RequirementSettingsView: View {
     @StateObject private var calendarAccessManager = CalendarAccessManager()
 
     var body: some View {
-        ZStack {
-            VisualEffectView(material: .popover, blendingMode: .behindWindow)
-                .ignoresSafeArea()
-
-            VStack(spacing: 0) {
-                settingsToolbar
-
-                GlassDivider()
-
-                content
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+        NavigationSplitView(columnVisibility: .constant(.all)) {
+            List(selection: Binding<RequirementSettingsTab?>(
+                get: { selectedTab },
+                set: { if let tab = $0 { selectedTab = tab } }
+            )) {
+                Section("设置") {
+                    ForEach(RequirementSettingsTab.allCases) { tab in
+                        Label(tab.title, systemImage: tab.systemImage)
+                            .padding(.vertical, 6)
+                            .tag(tab)
+                    }
+                }
             }
+            .listStyle(.sidebar)
+            .navigationSplitViewColumnWidth(min: 160, ideal: 180, max: 220)
+        } detail: {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 24) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(selectedTab.title)
+                            .font(.system(size: 24, weight: .bold))
+                        Text(selectedTab.subtitle)
+                            .font(.system(size: 13))
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.bottom, 2)
+
+                    Group {
+                        switch selectedTab {
+                        case .base: baseConfigurationView
+                        case .plugin: pluginConfigurationView
+                        case .scripts: scriptConfigurationView
+                        case .quickLinks: quickLinksView
+                        }
+                    }
+                }
+                .frame(maxWidth: 800, alignment: .leading)
+                .padding(28)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+            }
+            .navigationTitle("设置")
         }
-        .ignoresSafeArea(.container, edges: .top)
-        .frame(width: 760, height: 520)
-        .background(TransparentWindowConfigurator())
+        .navigationSplitViewStyle(.balanced)
+        .toolbar(.hidden, for: .windowToolbar)
+        .frame(minWidth: 960, idealWidth: 1040, minHeight: 640, idealHeight: 700)
         .onAppear {
             ensureProjectSelection()
             calendarAccessManager.refresh()
@@ -58,257 +86,78 @@ struct RequirementSettingsView: View {
         }
     }
 
-    private var settingsToolbar: some View {
-        HStack(spacing: 14) {
-            Text("设置")
-                .font(.system(size: 14, weight: .bold))
-                .foregroundStyle(DesignColor.textPrimary)
-
-            Spacer(minLength: 12)
-
-            HStack(spacing: 4) {
-                ForEach(RequirementSettingsTab.allCases) { tab in
-                    Button {
-                        selectedTab = tab
-                    } label: {
-                        HStack(spacing: 5) {
-                            Image(systemName: tab.systemImage)
-                                .font(.system(size: 10.5, weight: .semibold))
-
-                            Text(tab.title)
-                                .font(.system(size: 11, weight: selectedTab == tab ? .semibold : .medium))
-                                .lineLimit(1)
-                        }
-                        .foregroundStyle(selectedTab == tab ? DesignColor.doing : Color.black.opacity(0.55))
-                        .padding(.horizontal, 8)
-                        .frame(height: 28)
-                        .background(
-                            selectedTab == tab
-                                ? Color.white.opacity(0.82)
-                                : Color.black.opacity(0.025),
-                            in: RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .strokeBorder(
-                                    selectedTab == tab
-                                        ? DesignColor.doing.opacity(0.20)
-                                        : Color.clear,
-                                    lineWidth: 0.6
-                                )
-                        )
-                        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                    }
-                    .buttonStyle(.plain)
-                    .pointingHandCursor()
-                }
-            }
-        }
-        .padding(.leading, 88)
-        .padding(.trailing, 16)
-        .frame(maxWidth: .infinity)
-        .frame(height: 44)
-        .background(Color.white.opacity(0.20))
-    }
-
-    @ViewBuilder
-    private var content: some View {
-        switch selectedTab {
-        case .base:
-            baseConfigurationView
-        case .plugin:
-            pluginConfigurationView
-        case .scripts:
-            scriptConfigurationView
-        case .quickLinks:
-            quickLinksView
-        }
-    }
-
     private var baseConfigurationView: some View {
         let rules = settingsStore.tabSortRules(for: selectedSortFilter)
         let isDefault = rules == RequirementTabSortConfiguration.defaultRules(for: selectedSortFilter)
 
-        return ScrollView(.vertical, showsIndicators: true) {
-            VStack(alignment: .leading, spacing: 14) {
-                settingsPageHeader(
-                    title: "弹窗样式",
-                    help: "选择菜单栏弹窗底部的状态、日期、搜索与更多操作布局。"
-                )
-
-                panelStyleSelector
-
-                GlassDivider()
-                    .padding(.vertical, 2)
-
-                calendarAccessCard
-
-                GlassDivider()
-                    .padding(.vertical, 2)
-
-                HStack(spacing: 8) {
-                    settingsPageHeader(
-                        title: "列表排序",
-                        help: "选择状态页后，可调整状态顺序以及各状态的时间正倒序。"
-                    )
-
+        return VStack(alignment: .leading, spacing: 20) {
+            SettingsContentCard("外观") {
+                SettingsFieldRow("弹窗样式") {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Picker("弹窗样式", selection: Binding(
+                            get: { settingsStore.panelStyle },
+                            set: { settingsStore.setPanelStyle($0) }
+                        )) {
+                            ForEach(RequirementPanelStyle.allCases) { style in
+                                Text(style.title).tag(style)
+                            }
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.segmented)
+                        .frame(maxWidth: 380)
+                        Text(settingsStore.panelStyle.summary)
+                            .font(.system(size: 12))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            SettingsContentCard("系统日历") {
+                SettingsFieldRow("访问权限") {
+                    HStack(spacing: 12) {
+                        Label(calendarAccessManager.statusTitle, systemImage: calendarAccessManager.statusSystemImage)
+                            .foregroundStyle(calendarAccessTint)
+                        Spacer(minLength: 12)
+                        Button(calendarAccessManager.isRequesting ? "请求中…" : calendarAccessManager.actionTitle) {
+                            calendarAccessManager.performPrimaryAction()
+                        }
+                        .disabled(calendarAccessManager.isRequesting
+                            || calendarAccessManager.state == .fullAccess
+                            || calendarAccessManager.state == .unavailable)
+                    }
+                }
+                Text("允许小组件读取系统日历中的节假日订阅和日程，仅用于本机展示。")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let errorMessage = calendarAccessManager.errorMessage {
+                    Text(errorMessage).font(.callout).foregroundStyle(.red)
+                }
+            }
+            SettingsContentCard("列表排序") {
+                HStack {
+                    Text("状态页").foregroundStyle(.secondary)
+                    Picker("状态页", selection: $selectedSortFilter) {
+                        ForEach(RequirementStatusFilter.allCases) { filter in
+                            Text(filter.title).tag(filter)
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(width: 150)
                     Spacer()
-
-                    sortFilterSegmentedControl
-
-                    if !isDefault {
-                        Button {
-                            settingsStore.resetTabSortRules(for: selectedSortFilter)
-                        } label: {
-                            Image(systemName: "arrow.counterclockwise")
-                                .font(.system(size: 10, weight: .semibold))
-                                .frame(width: 24, height: 24)
-                        }
-                        .buttonStyle(.plain)
-                        .foregroundStyle(Color.black.opacity(0.48))
-                        .help("恢复默认排序")
-                        .pointingHandCursor()
-                    }
+                    Button("恢复默认排序") { settingsStore.resetTabSortRules(for: selectedSortFilter) }
+                        .disabled(isDefault)
                 }
-
-                VStack(spacing: 7) {
+                Divider()
+                VStack(spacing: 4) {
                     ForEach(Array(rules.enumerated()), id: \.element.id) { index, rule in
-                        tabSortRuleRow(
-                            statusFilter: selectedSortFilter,
-                            rule: rule,
-                            index: index,
-                            count: rules.count
-                        )
+                        tabSortRuleRow(statusFilter: selectedSortFilter, rule: rule, index: index, count: rules.count)
                     }
                 }
-                .padding(10)
-                .background(Color.white.opacity(0.60), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .strokeBorder(Color.black.opacity(0.075), lineWidth: 0.6)
-                )
-            }
-            .padding(20)
-        }
-    }
-
-    private var panelStyleSelector: some View {
-        HStack(spacing: 8) {
-            ForEach(RequirementPanelStyle.allCases) { style in
-                let isSelected = settingsStore.panelStyle == style
-
-                Button {
-                    withAnimation(.easeInOut(duration: 0.18)) {
-                        settingsStore.setPanelStyle(style)
-                    }
-                } label: {
-                    HStack(spacing: 9) {
-                        Image(systemName: style.systemImage)
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(isSelected ? DesignColor.doing : Color.black.opacity(0.42))
-                            .frame(width: 24, height: 24)
-
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(style.title)
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(DesignColor.textPrimary)
-
-                            Text(style.summary)
-                                .font(.system(size: 9.5))
-                                .foregroundStyle(Color.black.opacity(0.46))
-                                .lineLimit(2)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-
-                        Spacer(minLength: 2)
-
-                        Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(isSelected ? DesignColor.doing : Color.black.opacity(0.18))
-                    }
-                    .padding(.horizontal, 10)
-                    .frame(maxWidth: .infinity, minHeight: 58)
-                    .background(
-                        isSelected ? DesignColor.doing.opacity(0.085) : Color.white.opacity(0.56),
-                        in: RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 9, style: .continuous)
-                            .strokeBorder(
-                                isSelected ? DesignColor.doing.opacity(0.22) : Color.black.opacity(0.075),
-                                lineWidth: 0.6
-                            )
-                    )
-                    .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("弹窗样式：\(style.title)")
-                .accessibilityAddTraits(isSelected ? .isSelected : [])
-                .pointingHandCursor()
+                Text("使用右侧箭头调整状态顺序，点击时间方向切换组内排序。")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
             }
         }
-    }
-
-    private var calendarAccessCard: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            HStack(spacing: 10) {
-                Image(systemName: "calendar.badge.clock")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(DesignColor.doing)
-                    .frame(width: 28, height: 28)
-                    .background(DesignColor.doing.opacity(0.09), in: Circle())
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("系统日历")
-                        .font(.system(size: 12.5, weight: .semibold))
-                        .foregroundStyle(DesignColor.textPrimary)
-
-                    Text("允许小组件读取 macOS 日历中的节假日订阅和日程，只用于本机展示。")
-                        .font(.system(size: 9.5))
-                        .foregroundStyle(Color.black.opacity(0.46))
-                }
-
-                Spacer(minLength: 8)
-
-                Label(
-                    calendarAccessManager.statusTitle,
-                    systemImage: calendarAccessManager.statusSystemImage
-                )
-                .font(.system(size: 9.5, weight: .semibold))
-                .foregroundStyle(calendarAccessTint)
-
-                Button {
-                    calendarAccessManager.performPrimaryAction()
-                } label: {
-                    Text(calendarAccessManager.isRequesting ? "请求中…" : calendarAccessManager.actionTitle)
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .disabled(
-                    calendarAccessManager.isRequesting
-                        || calendarAccessManager.state == .fullAccess
-                        || calendarAccessManager.state == .unavailable
-                )
-                .pointingHandCursor(
-                    !calendarAccessManager.isRequesting
-                        && calendarAccessManager.state != .fullAccess
-                        && calendarAccessManager.state != .unavailable
-                )
-            }
-
-            if let errorMessage = calendarAccessManager.errorMessage {
-                Text(errorMessage)
-                    .font(.system(size: 9.5, weight: .medium))
-                    .foregroundStyle(DesignColor.stopped)
-                    .padding(.leading, 38)
-            }
-        }
-        .padding(10)
-        .background(Color.white.opacity(0.60), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(Color.black.opacity(0.075), lineWidth: 0.6)
-        )
     }
 
     private var calendarAccessTint: Color {
@@ -322,112 +171,34 @@ struct RequirementSettingsView: View {
         }
     }
 
-    private var sortFilterSegmentedControl: some View {
-        HStack(spacing: 2) {
-            ForEach(RequirementStatusFilter.allCases) { statusFilter in
-                let isSelected = selectedSortFilter == statusFilter
-
-                Button {
-                    withAnimation(.easeInOut(duration: 0.18)) {
-                        selectedSortFilter = statusFilter
-                    }
-                } label: {
-                    Text(statusFilter.title)
-                        .font(.system(size: 10.5, weight: isSelected ? .semibold : .medium))
-                        .foregroundStyle(isSelected ? DesignColor.doing : Color.black.opacity(0.48))
-                        .frame(minWidth: 42)
-                        .frame(height: 24)
-                        .background {
-                            if isSelected {
-                                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                    .fill(DesignColor.doing.opacity(0.12))
-                                    .overlay {
-                                        RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                            .strokeBorder(DesignColor.doing.opacity(0.16), lineWidth: 0.5)
-                                    }
-                                    .matchedGeometryEffect(
-                                        id: "sort-filter-selection",
-                                        in: sortFilterSelectionNamespace
-                                    )
-                            }
-                        }
-                        .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("切换到\(statusFilter.title)")
-                .accessibilityAddTraits(isSelected ? .isSelected : [])
-                .pointingHandCursor()
-            }
-        }
-        .padding(3)
-        .background(Color.black.opacity(0.035), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .strokeBorder(Color.black.opacity(0.06), lineWidth: 0.5)
-        }
-    }
-
     private func tabSortRuleRow(
         statusFilter: RequirementStatusFilter,
         rule: RequirementTabSortRule,
         index: Int,
         count: Int
     ) -> some View {
-        let tint = settingsStatusTint(rule.status)
-
-        return HStack(spacing: 10) {
+        HStack(spacing: 12) {
             Text("\(index + 1)")
-                .font(.system(size: 10.5, weight: .bold, design: .rounded))
-                .foregroundStyle(tint)
-                .frame(width: 25, height: 25)
-                .background(tint.opacity(0.12), in: Circle())
-
-            Text(rule.status.title)
-                .font(.system(size: 12.5, weight: .semibold))
-                .foregroundStyle(DesignColor.textPrimary)
-
+                .font(.system(size: 12, design: .monospaced))
+                .foregroundStyle(.secondary)
+                .frame(width: 20)
+            Circle().fill(settingsStatusTint(rule.status)).frame(width: 7, height: 7)
+            Text(rule.status.title).font(.system(size: 13))
             Spacer()
-
             Button {
                 settingsStore.toggleTabSortDirection(for: statusFilter, ruleID: rule.id)
             } label: {
-                HStack(spacing: 3) {
-                    Image(systemName: rule.ascending ? "arrow.up" : "arrow.down")
-                        .font(.system(size: 9, weight: .bold))
-
-                    Text(rule.ascending ? "旧→新" : "新→旧")
-                        .font(.system(size: 10, weight: .semibold))
-                }
-                .foregroundStyle(tint)
-                .padding(.horizontal, 8)
-                .frame(height: 25)
-                .background(Color.white.opacity(0.64), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-                .contentShape(Rectangle())
+                Label(rule.ascending ? "旧 → 新" : "新 → 旧", systemImage: rule.ascending ? "arrow.up" : "arrow.down")
+                    .frame(width: 76)
             }
-            .buttonStyle(.plain)
-            .help(rule.ascending ? "组内时间早的在前，点击切换为倒序" : "组内时间新的在前，点击切换为正序")
-            .pointingHandCursor()
-
-            if count > 1 {
-                reorderButtons(
-                    canMoveUp: index > 0,
-                    canMoveDown: index < count - 1,
-                    onMoveUp: {
-                        settingsStore.moveTabSortRule(for: statusFilter, ruleID: rule.id, offset: -1)
-                    },
-                    onMoveDown: {
-                        settingsStore.moveTabSortRule(for: statusFilter, ruleID: rule.id, offset: 1)
-                    }
-                )
-            }
+            .help("切换组内时间排序")
+            reorderButtons(
+                canMoveUp: index > 0, canMoveDown: index < count - 1,
+                onMoveUp: { settingsStore.moveTabSortRule(for: statusFilter, ruleID: rule.id, offset: -1) },
+                onMoveDown: { settingsStore.moveTabSortRule(for: statusFilter, ruleID: rule.id, offset: 1) }
+            )
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .background(tint.opacity(0.055), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .strokeBorder(tint.opacity(0.13), lineWidth: 0.5)
-        )
+        .frame(minHeight: 36)
     }
 
     private func reorderButtons(
@@ -440,22 +211,20 @@ struct RequirementSettingsView: View {
             Button(action: onMoveUp) {
                 Image(systemName: "chevron.up")
                     .font(.system(size: 10, weight: .semibold))
-                    .frame(width: 18, height: 18)
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(SettingsIconButtonStyle())
             .disabled(!canMoveUp)
-            .foregroundStyle(Color.black.opacity(canMoveUp ? 0.55 : 0.18))
+            .foregroundStyle(DesignColor.textPrimary.opacity(canMoveUp ? 0.55 : 0.18))
             .help("上移")
             .pointingHandCursor(canMoveUp)
 
             Button(action: onMoveDown) {
                 Image(systemName: "chevron.down")
                     .font(.system(size: 10, weight: .semibold))
-                    .frame(width: 18, height: 18)
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(SettingsIconButtonStyle())
             .disabled(!canMoveDown)
-            .foregroundStyle(Color.black.opacity(canMoveDown ? 0.55 : 0.18))
+            .foregroundStyle(DesignColor.textPrimary.opacity(canMoveDown ? 0.55 : 0.18))
             .help("下移")
             .pointingHandCursor(canMoveDown)
         }
@@ -465,7 +234,7 @@ struct RequirementSettingsView: View {
         VStack(spacing: 10) {
             Image(systemName: icon)
                 .font(.system(size: 30, weight: .medium))
-                .foregroundStyle(Color.black.opacity(0.35))
+                .foregroundStyle(DesignColor.textSecondary)
 
             Text(title)
                 .font(.system(size: 15, weight: .semibold))
@@ -474,254 +243,102 @@ struct RequirementSettingsView: View {
     }
 
     private var scriptConfigurationView: some View {
-        HStack(alignment: .top, spacing: 16) {
-            projectList
-                .frame(width: 210)
-
-            Group {
-                if showsGlobalCommands {
-                    GlobalCommandRegistrationView(command: selectedGlobalCommand)
-                        .id(selectedGlobalCommand)
-                } else {
-                    scriptDetail
+        VStack(alignment: .leading, spacing: 20) {
+            SettingsContentCard("脚本来源") {
+                HStack(spacing: 12) {
+                    Picker("选择命令或项目", selection: scriptSourceSelection) {
+                        Section("全局命令") {
+                            ForEach(DeveloperCommand.allCases) { command in
+                                Text(command.rawValue).tag("command:" + command.rawValue)
+                            }
+                        }
+                        Section("项目脚本") {
+                            ForEach(settingsStore.configuration.scriptProjects) { project in
+                                Text(project.name.isEmpty ? "未命名项目" : project.name).tag(project.id.uuidString)
+                            }
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(maxWidth: 320)
+                    Spacer(minLength: 8)
+                    Button("添加项目", action: chooseProjectFolder)
+                    Button("删除项目", role: .destructive) {
+                        if !showsGlobalCommands, let selectedProjectID {
+                            settingsStore.deleteScriptProject(id: selectedProjectID)
+                        }
+                    }
+                    .disabled(showsGlobalCommands || selectedProjectID == nil)
+                }
+                if !showsGlobalCommands, let project = selectedProject,
+                   let index = settingsStore.configuration.scriptProjects.firstIndex(where: { $0.id == project.id }) {
+                    HStack {
+                        Text("项目显示顺序").font(.system(size: 12)).foregroundStyle(.secondary)
+                        Spacer()
+                        reorderButtons(
+                            canMoveUp: index > 0,
+                            canMoveDown: index < settingsStore.configuration.scriptProjects.count - 1,
+                            onMoveUp: { settingsStore.moveScriptProject(id: project.id, offset: -1) },
+                            onMoveDown: { settingsStore.moveScriptProject(id: project.id, offset: 1) }
+                        )
+                    }
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            if showsGlobalCommands {
+                GlobalCommandRegistrationView(command: selectedGlobalCommand).id(selectedGlobalCommand)
+            } else {
+                scriptDetail
+            }
         }
-        .padding(18)
     }
 
-    private var projectList: some View {
-        VStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("全局命令")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 4)
-
-                ForEach(DeveloperCommand.allCases) { command in
-                    Button {
-                        selectedGlobalCommand = command
-                        showsGlobalCommands = true
-                    } label: {
-                        HStack(spacing: 9) {
-                            Image(systemName: "terminal")
-                                .font(.system(size: 16))
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(command.rawValue)
-                                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                                Text(command.summary)
-                                    .font(.system(size: 10))
-                                    .foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                        }
-                        .foregroundStyle(showsGlobalCommands && selectedGlobalCommand == command ? DesignColor.doing : DesignColor.textPrimary)
-                        .padding(10)
-                        .background(
-                            showsGlobalCommands && selectedGlobalCommand == command ? DesignColor.doing.opacity(0.11) : Color.clear,
-                            in: RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        )
-                        .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-                    }
-                    .buttonStyle(.plain)
-                    .pointingHandCursor()
-                }
+    private var scriptSourceSelection: Binding<String> {
+        Binding {
+            showsGlobalCommands ? "command:" + selectedGlobalCommand.rawValue : (selectedProjectID?.uuidString ?? "")
+        } set: { value in
+            if let command = DeveloperCommand.allCases.first(where: { "command:" + $0.rawValue == value }) {
+                selectedGlobalCommand = command
+                showsGlobalCommands = true
+            } else if let project = settingsStore.configuration.scriptProjects.first(where: { $0.id.uuidString == value }) {
+                selectedProjectID = project.id
+                showsGlobalCommands = false
             }
-            .padding(8)
-
-            GlassDivider()
-
-            HStack {
-                Text("项目脚本")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.secondary)
-
-                Text("\(settingsStore.configuration.scriptProjects.count)")
-                    .font(.system(size: 9.5, weight: .bold, design: .rounded))
-                    .foregroundStyle(DesignColor.doing)
-                    .padding(.horizontal, 6)
-                    .frame(height: 18)
-                    .background(DesignColor.doing.opacity(0.09), in: Capsule())
-
-                Spacer()
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-
-            ScrollView(.vertical, showsIndicators: true) {
-                LazyVStack(spacing: 5) {
-                    if settingsStore.configuration.scriptProjects.isEmpty {
-                        Text("添加项目后可配置常用脚本")
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, 4)
-                            .padding(.vertical, 8)
-                    }
-                    ForEach(
-                        Array(settingsStore.configuration.scriptProjects.enumerated()),
-                        id: \.element.id
-                    ) { index, project in
-                        HStack(spacing: 3) {
-                            Button {
-                                selectedProjectID = project.id
-                                showsGlobalCommands = false
-                            } label: {
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text(project.name.isEmpty ? "未命名项目" : project.name)
-                                        .font(.system(size: 12, weight: .semibold))
-                                        .foregroundStyle(DesignColor.textPrimary)
-                                        .lineLimit(1)
-
-                                    Text(project.directoryPath)
-                                        .font(.system(size: 10))
-                                        .foregroundStyle(Color.black.opacity(0.38))
-                                        .lineLimit(1)
-                                        .truncationMode(.middle)
-                                }
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                            }
-                            .buttonStyle(.plain)
-                            .help(project.directoryPath)
-                            .pointingHandCursor()
-
-                            reorderButtons(
-                                canMoveUp: index > 0,
-                                canMoveDown: index < settingsStore.configuration.scriptProjects.count - 1,
-                                onMoveUp: {
-                                    settingsStore.moveScriptProject(id: project.id, offset: -1)
-                                },
-                                onMoveDown: {
-                                    settingsStore.moveScriptProject(id: project.id, offset: 1)
-                                }
-                            )
-                        }
-                        .padding(.horizontal, 9)
-                        .padding(.vertical, 7)
-                        .background(
-                            !showsGlobalCommands && project.id == selectedProjectID
-                                ? DesignColor.doing.opacity(0.11)
-                                : Color.black.opacity(0.018),
-                            in: RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                                .strokeBorder(
-                                    !showsGlobalCommands && project.id == selectedProjectID
-                                        ? DesignColor.doing.opacity(0.18)
-                                        : Color.clear,
-                                    lineWidth: 0.5
-                                )
-                        )
-                    }
-                }
-                .padding(.horizontal, 8)
-            }
-
-            GlassDivider()
-
-            HStack(spacing: 10) {
-                Button {
-                    chooseProjectFolder()
-                } label: {
-                    Label("添加项目", systemImage: "plus")
-                        .font(.system(size: 10.5, weight: .medium))
-                }
-                .buttonStyle(.plain)
-                .help("添加项目")
-                .pointingHandCursor()
-
-                Button {
-                    if !showsGlobalCommands, let selectedProjectID {
-                        settingsStore.deleteScriptProject(id: selectedProjectID)
-                    }
-                } label: {
-                    Label("删除", systemImage: "minus")
-                        .font(.system(size: 10.5, weight: .medium))
-                }
-                .buttonStyle(.plain)
-                .disabled(showsGlobalCommands || selectedProjectID == nil)
-                .help("删除项目")
-                .pointingHandCursor(!showsGlobalCommands && selectedProjectID != nil)
-
-                Spacer()
-            }
-            .foregroundStyle(Color.black.opacity(0.62))
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
         }
-        .frame(maxHeight: .infinity)
-        .background(Color.white.opacity(0.64), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(Color.black.opacity(0.08), lineWidth: 0.7)
-        )
     }
 
     @ViewBuilder
     private var scriptDetail: some View {
         if let project = selectedProject {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(spacing: 8) {
-                    Text("项目脚本")
-                        .font(.system(size: 13.5, weight: .bold))
-                        .foregroundStyle(DesignColor.textPrimary)
-
-                    Text("\(project.scripts.count) 个脚本")
-                        .font(.system(size: 9.5, weight: .semibold))
-                        .foregroundStyle(DesignColor.doing)
-                        .padding(.horizontal, 7)
-                        .frame(height: 19)
-                        .background(DesignColor.doing.opacity(0.09), in: Capsule())
-
-                    Spacer()
-
-                    Button {
-                        settingsStore.addScript(to: project.id)
-                    } label: {
-                        Label("添加脚本", systemImage: "plus")
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .pointingHandCursor()
+            SettingsContentCard("项目") {
+                SettingsFieldRow("项目名称") {
+                    SettingsTextInput("项目名称", text: projectNameBinding(projectID: project.id))
                 }
-
-                TextField("项目名称", text: projectNameBinding(projectID: project.id))
-                    .textFieldStyle(.roundedBorder)
-
-                Label(project.directoryPath, systemImage: "folder")
-                    .font(.system(size: 10.5))
-                    .foregroundStyle(Color.black.opacity(0.40))
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .help(project.directoryPath)
-
-                ScrollView(.vertical, showsIndicators: true) {
-                    LazyVStack(spacing: 10) {
-                        if project.scripts.isEmpty {
-                            Text("暂无脚本，点击右上角“添加脚本”开始配置。")
-                                .font(.system(size: 12))
-                                .foregroundStyle(.secondary)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.vertical, 24)
-                        }
-                        ForEach(Array(project.scripts.enumerated()), id: \.element.id) { index, script in
-                            scriptEditor(
-                                projectID: project.id,
-                                script: script,
-                                index: index,
-                                count: project.scripts.count
-                            )
-                        }
-                    }
-                    .padding(.vertical, 2)
+                SettingsFieldRow("项目目录") {
+                    Text(project.directoryPath)
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-
+            }
+            HStack {
+                Text("常用脚本 · \(project.scripts.count)").font(.system(size: 14, weight: .semibold))
+                Spacer()
+                Button { settingsStore.addScript(to: project.id) } label: {
+                    Label("添加脚本", systemImage: "plus")
+                }
+            }
+            if project.scripts.isEmpty {
+                Text("暂无脚本，点击“添加脚本”开始配置。")
+                    .foregroundStyle(.secondary)
+            }
+            ForEach(Array(project.scripts.enumerated()), id: \.element.id) { index, script in
+                SettingsContentCard {
+                    scriptEditor(projectID: project.id, script: script, index: index, count: project.scripts.count)
+                }
             }
         } else {
-            placeholder(icon: "terminal", title: "脚本配置")
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            placeholder(icon: "terminal", title: "选择或添加项目")
+                .frame(maxWidth: .infinity).padding(32)
         }
     }
 
@@ -733,9 +350,8 @@ struct RequirementSettingsView: View {
     ) -> some View {
         VStack(alignment: .leading, spacing: 7) {
             HStack(spacing: 8) {
-                TextField("脚本名称", text: scriptNameBinding(projectID: projectID, scriptID: script.id))
-                    .textFieldStyle(.roundedBorder)
-
+                Text("名称").foregroundStyle(.secondary).frame(width: 52, alignment: .leading)
+                SettingsTextInput("脚本名称", text: scriptNameBinding(projectID: projectID, scriptID: script.id))
                 reorderButtons(
                     canMoveUp: index > 0,
                     canMoveDown: index < count - 1,
@@ -752,80 +368,45 @@ struct RequirementSettingsView: View {
                 } label: {
                     Image(systemName: "trash")
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(SettingsIconButtonStyle())
                 .help("删除脚本")
                 .pointingHandCursor()
             }
 
+            Text("命令").font(.system(size: 12)).foregroundStyle(.secondary)
             SettingsMultilineEditor(text: scriptBodyBinding(projectID: projectID, scriptID: script.id))
-                .frame(minHeight: 74)
-                .padding(6)
-                .background(Color.white.opacity(0.84), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .frame(height: 96)
+                .padding(10)
+                .background(DesignColor.surface.opacity(0.84), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .strokeBorder(Color.black.opacity(0.10), lineWidth: 0.7)
+                        .strokeBorder(DesignColor.textPrimary.opacity(0.10), lineWidth: 0.7)
                 )
         }
-        .padding(12)
-        .background(Color.white.opacity(0.58), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(Color.black.opacity(0.07), lineWidth: 0.6)
-        )
+
     }
 
     private var quickLinksView: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .center) {
-                settingsPageHeader(
-                    title: "快捷访问"
-                )
-
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                Text("\(settingsStore.configuration.quickLinkItems.count) 个链接或分组")
+                    .font(.system(size: 13)).foregroundStyle(.secondary)
                 Spacer()
-
-                Button {
-                    settingsStore.addQuickLinkGroup()
-                } label: {
+                Button { settingsStore.addQuickLinkGroup() } label: {
                     Label("添加分组", systemImage: "folder.badge.plus")
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .pointingHandCursor()
-
-                Button {
-                    settingsStore.addQuickLink()
-                } label: {
+                Button { settingsStore.addQuickLink() } label: {
                     Label("添加链接", systemImage: "plus")
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .pointingHandCursor()
             }
-
-            ScrollView(.vertical, showsIndicators: true) {
-                LazyVStack(spacing: 10) {
-                    if settingsStore.configuration.quickLinkItems.isEmpty {
-                        Text("暂无快捷链接，可添加不分组链接或新分组")
-                            .font(.system(size: 12))
-                            .foregroundStyle(Color.secondary)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 28)
-                    } else {
-                        ForEach(
-                            Array(settingsStore.configuration.quickLinkItems.enumerated()),
-                            id: \.element.id
-                        ) { index, item in
-                            quickLinkTopLevelEditor(
-                                item,
-                                index: index,
-                                count: settingsStore.configuration.quickLinkItems.count
-                            )
-                        }
-                    }
-                }
+            if settingsStore.configuration.quickLinkItems.isEmpty {
+                Text("暂无快捷链接，可添加链接或分组。")
+                    .foregroundStyle(.secondary).padding(.vertical, 24)
+            }
+            ForEach(Array(settingsStore.configuration.quickLinkItems.enumerated()), id: \.element.id) { index, item in
+                quickLinkTopLevelEditor(item, index: index, count: settingsStore.configuration.quickLinkItems.count)
             }
         }
-        .padding(20)
     }
 
     @ViewBuilder
@@ -836,6 +417,7 @@ struct RequirementSettingsView: View {
     ) -> some View {
         switch item {
         case let .link(link):
+            SettingsContentCard {
             quickLinkEditor(
                 link,
                 groupID: nil,
@@ -848,6 +430,7 @@ struct RequirementSettingsView: View {
                     settingsStore.moveQuickLinkItem(id: link.id, offset: 1)
                 }
             )
+            }
         case let .group(group):
             quickLinkGroupEditor(group, index: index, count: count)
         }
@@ -858,15 +441,13 @@ struct RequirementSettingsView: View {
         index: Int,
         count: Int
     ) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        SettingsContentCard {
             HStack(spacing: 8) {
                 Image(systemName: "folder.fill")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(DesignColor.doing)
 
-                TextField("分组名称", text: quickLinkGroupNameBinding(groupID: group.id))
-                    .textFieldStyle(.roundedBorder)
-
+                SettingsTextInput("分组名称", text: quickLinkGroupNameBinding(groupID: group.id))
                 reorderButtons(
                     canMoveUp: index > 0,
                     canMoveDown: index < count - 1,
@@ -896,6 +477,7 @@ struct RequirementSettingsView: View {
                     .padding(.vertical, 6)
             } else {
                 ForEach(Array(group.links.enumerated()), id: \.element.id) { linkIndex, link in
+                    Divider()
                     quickLinkEditor(
                         link,
                         groupID: group.id,
@@ -911,12 +493,6 @@ struct RequirementSettingsView: View {
                 }
             }
         }
-        .padding(12)
-        .background(DesignColor.doing.opacity(0.045), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(DesignColor.doing.opacity(0.14), lineWidth: 0.7)
-        )
     }
 
     private func quickLinkEditor(
@@ -927,41 +503,29 @@ struct RequirementSettingsView: View {
         onMoveUp: @escaping () -> Void,
         onMoveDown: @escaping () -> Void
     ) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                TextField("链接标题", text: quickLinkNameBinding(linkID: link.id))
-                    .textFieldStyle(.roundedBorder)
-
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 12) {
+                Text("名称").foregroundStyle(.secondary).frame(width: 52, alignment: .leading)
+                SettingsTextInput("链接名称", text: quickLinkNameBinding(linkID: link.id))
+            }
+            HStack(spacing: 12) {
+                Text("地址").foregroundStyle(.secondary).frame(width: 52, alignment: .leading)
+                SettingsTextInput("https://…", text: quickLinkURLBinding(linkID: link.id))
+                    .accessibilityLabel("链接地址")
+            }
+            HStack(spacing: 12) {
+                Text("分组").foregroundStyle(.secondary).frame(width: 52, alignment: .leading)
                 quickLinkGroupMenu(linkID: link.id, currentGroupID: groupID)
-
-                reorderButtons(
-                    canMoveUp: canMoveUp,
-                    canMoveDown: canMoveDown,
-                    onMoveUp: onMoveUp,
-                    onMoveDown: onMoveDown
-                )
-
-                Button(role: .destructive) {
-                    settingsStore.deleteQuickLink(id: link.id)
-                } label: {
+                Spacer()
+                reorderButtons(canMoveUp: canMoveUp, canMoveDown: canMoveDown,
+                    onMoveUp: onMoveUp, onMoveDown: onMoveDown)
+                Button(role: .destructive) { settingsStore.deleteQuickLink(id: link.id) } label: {
                     Image(systemName: "trash")
                 }
-                .buttonStyle(.borderless)
-                .help("删除链接")
-                .pointingHandCursor()
+                .buttonStyle(SettingsIconButtonStyle()).help("删除链接")
             }
-
-            quickLinkURLEditor(linkID: link.id)
         }
-        .padding(groupID == nil ? 12 : 10)
-        .background(
-            Color.white.opacity(groupID == nil ? 0.62 : 0.74),
-            in: RoundedRectangle(cornerRadius: 9, style: .continuous)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .strokeBorder(Color.black.opacity(0.075), lineWidth: 0.6)
-        )
+        .font(.system(size: 13))
     }
 
     private func quickLinkGroupMenu(
@@ -999,7 +563,8 @@ struct RequirementSettingsView: View {
             .font(.system(size: 11))
         }
         .menuStyle(.borderlessButton)
-        .fixedSize()
+        .lineLimit(1)
+        .frame(width: 170, height: 28)
         .help("选择所属分组")
         .pointingHandCursor()
     }
@@ -1016,70 +581,51 @@ struct RequirementSettingsView: View {
     }
 
     private var pluginConfigurationView: some View {
-        ScrollView(.vertical, showsIndicators: true) {
-            VStack(alignment: .leading, spacing: 12) {
-                settingsPageHeader(
-                    title: "插件配置"
-                )
-
-                pluginSettingCard(title: "Jira 基础地址", help: "用于把 Jira 编号补全为 browse 地址") {
-                    TextField("http://jira.zstack.io/browse/", text: pluginJiraBaseURLBinding)
-                        .textFieldStyle(.roundedBorder)
+        VStack(alignment: .leading, spacing: 20) {
+            SettingsContentCard("站点配置") {
+                SettingsFieldRow("Jira 基础地址") {
+                    SettingsTextInput("http://jira.zstack.io/browse/", text: pluginJiraBaseURLBinding)
                 }
-
-                pluginSettingCard(title: "MR 域名", help: "插件会在这个域名页面上识别 MR") {
-                    TextField("gitlab.zstack.io", text: pluginMRHostBinding)
-                        .textFieldStyle(.roundedBorder)
+                SettingsFieldRow("MR 域名") {
+                    SettingsTextInput("gitlab.zstack.io", text: pluginMRHostBinding)
                 }
-
-                pluginSettingCard(
-                    title: "Chrome 扩展 ID",
-                    help: "从 chrome://extensions 复制扩展 ID，填入后点击右侧安装即可连接"
-                ) {
-                    VStack(alignment: .leading, spacing: 10) {
-                        TextField("从 chrome://extensions 复制", text: pluginChromeExtensionIDBinding)
-                            .textFieldStyle(.roundedBorder)
-
-                        HStack(spacing: 8) {
-                            Button {
-                                openPluginDirectory()
-                            } label: {
-                                Label("打开插件目录", systemImage: "folder")
-                            }
-                            .buttonStyle(.bordered)
-                            .pointingHandCursor()
-
-                            Button {
-                                openPluginTestPage()
-                            } label: {
-                                Label("打开测试页", systemImage: "testtube.2")
-                            }
-                            .buttonStyle(.bordered)
-                            .disabled(
-                                settingsStore.configuration.pluginSettings.chromeExtensionID
-                                    .trimmingCharacters(in: .whitespacesAndNewlines)
-                                    .isEmpty
-                            )
-                            .pointingHandCursor()
-
-                            nativeHostStatusInline
-                                .padding(.leading, 4)
-
-                            Spacer(minLength: 8)
-
-                            Button {
-                                installNativeHost()
-                            } label: {
-                                Label(isInstallingNativeHost ? "安装中..." : "安装 Native Host", systemImage: "tray.and.arrow.down")
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .disabled(isInstallingNativeHost || settingsStore.configuration.pluginSettings.chromeExtensionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                            .pointingHandCursor(!isInstallingNativeHost)
-                        }
-                    }
+                Text("用于补全 Jira 链接，以及识别 GitLab 合并请求页面。")
+                    .font(.system(size: 12)).foregroundStyle(.secondary)
+            }
+            SettingsContentCard("浏览器扩展") {
+                SettingsFieldRow("扩展 ID") {
+                    SettingsTextInput("从扩展管理页面复制 ID", text: pluginChromeExtensionIDBinding)
+                }
+                Text("在 chrome://extensions 中加载插件目录，再填入扩展 ID。")
+                    .font(.system(size: 12)).foregroundStyle(.secondary)
+                HStack(spacing: 10) {
+                    Button("打开插件目录", action: openPluginDirectory)
+                    Button("打开测试页", action: openPluginTestPage)
+                        .disabled(settingsStore.configuration.pluginSettings.chromeExtensionID
+                            .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    Spacer()
                 }
             }
-            .padding(20)
+            SettingsContentCard("本机连接") {
+                nativeHostStatusInline
+                HStack(alignment: .center, spacing: 16) {
+                    Text("安装连接组件，让浏览器与需求记录 App 通信。")
+                        .font(.system(size: 12)).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 8)
+                    Button(isInstallingNativeHost ? "安装中…" : "安装 Native Host", action: installNativeHost)
+                        .disabled(isInstallingNativeHost || settingsStore.configuration.pluginSettings.chromeExtensionID
+                            .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+            SettingsContentCard("MR 状态自动同步") {
+                SettingsFieldRow("打开需求 MR") { Label("已自测", systemImage: "checkmark.circle").foregroundStyle(DesignColor.tested) }
+                SettingsFieldRow("MR 合并") { Label("已合并", systemImage: "checkmark.circle.fill").foregroundStyle(DesignColor.merged) }
+                Divider()
+                Text("仅更新已记录且关联明确的需求。暂停、停止和历史 MR 不会自动推进；浏览器运行时每 15 分钟补查合并状态。")
+                    .font(.system(size: 12)).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 
@@ -1096,7 +642,7 @@ struct RequirementSettingsView: View {
 
             Text(nativeHostStatusDetail)
                 .font(.system(size: 11))
-                .foregroundStyle(Color.black.opacity(0.45))
+                .foregroundStyle(DesignColor.textSecondary)
                 .lineLimit(1)
                 .truncationMode(.middle)
 
@@ -1105,7 +651,7 @@ struct RequirementSettingsView: View {
             } label: {
                 Image(systemName: "arrow.clockwise")
                     .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(Color.black.opacity(0.50))
+                    .foregroundStyle(DesignColor.textSecondary)
             }
             .buttonStyle(.borderless)
             .help("刷新连接状态")
@@ -1118,7 +664,7 @@ struct RequirementSettingsView: View {
 
     private var nativeHostStatusColor: Color {
         guard let nativeHostStatus else {
-            return Color.black.opacity(0.25)
+            return DesignColor.textPrimary.opacity(0.25)
         }
 
         return nativeHostStatus.isConnected
@@ -1163,18 +709,6 @@ struct RequirementSettingsView: View {
         )
     }
 
-    private func settingsPageHeader(title: String, help: String? = nil) -> some View {
-        HStack(spacing: 5) {
-            Text(title)
-                .font(.system(size: 15, weight: .bold))
-                .foregroundStyle(DesignColor.textPrimary)
-
-            if let help {
-                SettingsHelpIcon(text: help)
-            }
-        }
-    }
-
     private func settingsStatusTint(_ status: RequirementTimelineStatus) -> Color {
         switch status {
         case .pending:
@@ -1191,43 +725,6 @@ struct RequirementSettingsView: View {
             DesignColor.paused
         case .stopped:
             DesignColor.stopped
-        }
-    }
-
-    private func pluginSettingCard<Content: View>(
-        title: String,
-        help: String? = nil,
-        @ViewBuilder content: () -> Content
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            settingField(title: title, help: help, content: content)
-        }
-        .padding(15)
-        .background(Color.white.opacity(0.66), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 11, style: .continuous)
-                .strokeBorder(Color.black.opacity(0.075), lineWidth: 0.6)
-        )
-        .shadow(color: Color.black.opacity(0.025), radius: 4, y: 1)
-    }
-
-    private func settingField<Content: View>(
-        title: String,
-        help: String? = nil,
-        @ViewBuilder content: () -> Content
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 7) {
-            HStack(spacing: 5) {
-                Text(title)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(DesignColor.textPrimary)
-
-                if let help {
-                    SettingsHelpIcon(text: help)
-                }
-            }
-
-            content()
         }
     }
 
@@ -1316,30 +813,6 @@ struct RequirementSettingsView: View {
                 project.scripts[index].script = value
             }
         }
-    }
-
-    /// URL 编辑框：单行内容、最多三行换行展示，超出部分滚动查看。
-    private func quickLinkURLEditor(linkID: RequirementQuickLink.ID) -> some View {
-        let binding = quickLinkURLBinding(linkID: linkID)
-
-        return SettingsMultilineEditor(text: binding, disallowsLineBreaks: true)
-            .frame(height: 48)
-            .padding(6)
-            .background(Color.white.opacity(0.84), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .strokeBorder(Color.black.opacity(0.10), lineWidth: 0.7)
-            )
-            .overlay(alignment: .topLeading) {
-                if binding.wrappedValue.isEmpty {
-                    Text("https://...")
-                        .font(.system(size: 12, design: .monospaced))
-                        .foregroundStyle(Color.black.opacity(0.28))
-                        .padding(.leading, 8)
-                        .padding(.top, 6)
-                        .allowsHitTesting(false)
-                }
-            }
     }
 
     private func quickLinkNameBinding(linkID: RequirementQuickLink.ID) -> Binding<String> {
@@ -1439,78 +912,6 @@ struct RequirementSettingsView: View {
     }
 }
 
-private struct SettingsHelpIcon: View {
-    let text: String
-    @State private var isPopoverPresented = false
-    @State private var isPinned = false
-    @State private var isPointerInside = false
-
-    var body: some View {
-        Button {
-            isPinned.toggle()
-            isPopoverPresented = isPinned
-        } label: {
-            Text("?")
-                .font(.system(size: 9, weight: .bold))
-                .foregroundStyle(Color.secondary)
-                .frame(width: 16, height: 16)
-                .background(Color.secondary.opacity(0.08), in: Circle())
-                .overlay {
-                    Circle()
-                        .strokeBorder(Color.secondary.opacity(0.16), lineWidth: 0.5)
-                }
-                .contentShape(Circle())
-        }
-        .buttonStyle(.plain)
-        .onHover(perform: updatePointerState)
-        .popover(
-            isPresented: popoverPresentation,
-            attachmentAnchor: .rect(.bounds),
-            arrowEdge: .top
-        ) {
-            Text(text)
-                .font(.system(size: 11.5))
-                .foregroundStyle(Color.primary)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(width: 220, alignment: .leading)
-                .padding(11)
-                .onHover(perform: updatePointerState)
-        }
-        .pointingHandCursor()
-        .accessibilityLabel("说明")
-        .accessibilityHint(text)
-    }
-
-    private var popoverPresentation: Binding<Bool> {
-        Binding(
-            get: {
-                isPopoverPresented
-            },
-            set: { isPresented in
-                isPopoverPresented = isPresented
-                if !isPresented {
-                    isPinned = false
-                }
-            }
-        )
-    }
-
-    private func updatePointerState(_ isInside: Bool) {
-        isPointerInside = isInside
-
-        if isInside {
-            isPopoverPresented = true
-            return
-        }
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-            if !isPointerInside && !isPinned {
-                isPopoverPresented = false
-            }
-        }
-    }
-}
-
 private enum RequirementSettingsTab: String, CaseIterable, Identifiable {
     case base
     case plugin
@@ -1529,6 +930,15 @@ private enum RequirementSettingsTab: String, CaseIterable, Identifiable {
             "脚本配置"
         case .quickLinks:
             "快捷访问"
+        }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .base: "调整菜单栏外观、日历访问和需求排序。"
+        case .plugin: "连接浏览器扩展，管理 Jira 与 GitLab 站点。"
+        case .scripts: "管理全局命令与项目常用脚本。"
+        case .quickLinks: "整理常用链接，在菜单栏快速访问。"
         }
     }
 
@@ -1580,14 +990,16 @@ private struct SettingsMultilineEditor: NSViewRepresentable {
     }
 
     func makeNSView(context: Context) -> NSScrollView {
-        let scrollView = NSScrollView()
+        let scrollView = TextEditorScrollView()
         scrollView.drawsBackground = false
         scrollView.hasVerticalScroller = false
         scrollView.hasHorizontalScroller = false
         scrollView.autohidesScrollers = true
         scrollView.borderType = .noBorder
 
-        let textView = NSTextView()
+        let textView = NSTextView(frame: NSRect(x: 0, y: 0, width: 1, height: 1))
+        textView.autoresizingMask = [.width]
+        textView.string = text
         textView.isRichText = false
         textView.isAutomaticQuoteSubstitutionEnabled = false
         textView.isAutomaticDashSubstitutionEnabled = false
@@ -1596,8 +1008,8 @@ private struct SettingsMultilineEditor: NSViewRepresentable {
         textView.backgroundColor = .clear
         textView.drawsBackground = false
         textView.textContainerInset = NSSize(width: 0, height: 0)
+        textView.textContainer?.lineFragmentPadding = 0
         textView.textContainer?.widthTracksTextView = true
-        textView.textContainer?.containerSize = NSSize(width: scrollView.contentSize.width, height: CGFloat.greatestFiniteMagnitude)
         textView.minSize = .zero
         textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         textView.isVerticallyResizable = true
@@ -1613,9 +1025,12 @@ private struct SettingsMultilineEditor: NSViewRepresentable {
             return
         }
 
+        context.coordinator.updateBinding($text)
         if textView.string != text {
             textView.string = text
+            textView.sizeToFit()
         }
+        scrollView.needsLayout = true
     }
 
     final class Coordinator: NSObject, NSTextViewDelegate {
@@ -1625,6 +1040,10 @@ private struct SettingsMultilineEditor: NSViewRepresentable {
         init(text: Binding<String>, disallowsLineBreaks: Bool) {
             _text = text
             self.disallowsLineBreaks = disallowsLineBreaks
+        }
+
+        func updateBinding(_ text: Binding<String>) {
+            _text = text
         }
 
         func textDidChange(_ notification: Notification) {
@@ -1647,5 +1066,95 @@ private struct SettingsMultilineEditor: NSViewRepresentable {
             return commandSelector == #selector(NSResponder.insertNewline(_:))
                 || commandSelector == #selector(NSResponder.insertNewlineIgnoringFieldEditor(_:))
         }
+    }
+}
+
+private struct SettingsIconButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 12, weight: .medium))
+            .frame(width: 28, height: 28)
+            .background(
+                DesignColor.textPrimary.opacity(configuration.isPressed ? 0.10 : 0.035),
+                in: RoundedRectangle(cornerRadius: 6)
+            )
+            .contentShape(Rectangle())
+            .opacity(isEnabled ? 1 : 0.35)
+    }
+}
+
+// 设置内容自行控制列宽和间距，避免 Form 的自动标签布局改变编辑控件的位置。
+struct SettingsContentCard<Content: View>: View {
+    private let title: String?
+    private let content: Content
+
+    init(_ title: String? = nil, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.content = content()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            if let title { Text(title).font(.system(size: 14, weight: .semibold)) }
+            content
+        }
+        .font(.system(size: 13))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(20)
+        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 10))
+        .overlay {
+            RoundedRectangle(cornerRadius: 10).strokeBorder(Color.primary.opacity(0.09), lineWidth: 0.5)
+        }
+    }
+}
+
+private struct SettingsFieldRow<Content: View>: View {
+    let title: String
+    let content: Content
+
+    init(_ title: String, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.content = content()
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 16) {
+            Text(title)
+                .font(.system(size: 13))
+                .foregroundStyle(.secondary)
+                .frame(width: 112, height: 34, alignment: .leading)
+            content
+                .frame(maxWidth: .infinity, minHeight: 34, alignment: .leading)
+        }
+    }
+}
+
+private struct SettingsTextInput: View {
+    let title: String
+    @Binding var text: String
+    @FocusState private var isFocused: Bool
+
+    init(_ title: String, text: Binding<String>) {
+        self.title = title
+        _text = text
+    }
+
+    var body: some View {
+        TextField(title, text: $text)
+            .textFieldStyle(.plain)
+            .font(.system(size: 13))
+            .multilineTextAlignment(.leading)
+            .focused($isFocused)
+            .padding(.horizontal, 10)
+            .frame(height: 34)
+            .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
+            .overlay {
+                RoundedRectangle(cornerRadius: 6)
+                    .strokeBorder(isFocused ? Color.accentColor : Color.primary.opacity(0.16), lineWidth: isFocused ? 1.5 : 0.7)
+                    .allowsHitTesting(false)
+            }
+            .accessibilityLabel(title)
     }
 }

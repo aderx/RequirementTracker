@@ -245,8 +245,53 @@ function run() {
   }
 }
 
+function testAutomaticStatusPersistence() {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "requirement-auto-mr-"));
+  const dataFile = path.join(directory, "requirements.json");
+  const issueKey = "ZSTAC-23456";
+  const mrURL = "http://gitlab.zstack.io/g/p/-/merge_requests/100";
+  const sync = (extra = {}) => sendNativeMessage(dataFile, { type: "syncMRStatus", payload: { issueKey, mrURL, mrState: "open", ...extra } });
+  try {
+    assert.equal(sync({ allowInitialBinding: true }).action, "ignored", "Never create requirements automatically");
+    sendNativeMessage(dataFile, { type: "upsertJiraRequirement", payload: { issueKey } });
+    assert.equal(sync().action, "ignored", "Unbound MR requires explicit unambiguous ownership");
+    const updated = sync({ allowInitialBinding: true });
+    assert.equal(updated.ok, true);
+    assert.equal(updated.statusUpdated, true);
+    let record = readRecords(dataFile)[0];
+    assert.equal(record.mrURL, mrURL);
+    assert.equal(record.isTested, true);
+    const stable = fs.readFileSync(dataFile, "utf8");
+    assert.equal(sync().action, "unchanged");
+    assert.equal(fs.readFileSync(dataFile, "utf8"), stable, "Repeat visits must not write timestamps or history");
+    assert.equal(sync({ mrURL: "http://example.com/g/p/-/merge_requests/1", allowInitialBinding: true }).action, "ignored");
+    assert.equal(sync({ mrState: "closed" }).action, "ignored");
+    for (const stage of ["paused", "stopped"]) {
+      fs.writeFileSync(dataFile, JSON.stringify([{ ...record, stage }]));
+      assert.equal(sync({ mrState: "merged" }).action, "ignored");
+      assert.equal(readRecords(dataFile)[0].stage, stage);
+      assert.equal(sendNativeMessage(dataFile, { type: "listAutomaticMRMonitors", payload: {} }).monitors.length, 0);
+    }
+    fs.writeFileSync(dataFile, JSON.stringify([{ ...record, mrURL: `${mrURL}1`, mrHistory: [mrURL] }]));
+    assert.equal(sync({ mrState: "merged" }).action, "ignored", "Historic MR cannot advance current work");
+    fs.writeFileSync(dataFile, JSON.stringify([record, { ...record, id: "another", jiraKey: "ZSTAC-23457" }]));
+    assert.equal(sync({ mrState: "merged" }).action, "ignored", "Ambiguous saved bindings must not write");
+    fs.writeFileSync(dataFile, JSON.stringify([record]));
+    assert.equal(sendNativeMessage(dataFile, { type: "listAutomaticMRMonitors", payload: {} }).monitors.length, 1);
+    assert.equal(sync({ mrState: "merged" }).statusUpdated, true);
+    record = readRecords(dataFile)[0];
+    assert.equal(record.isMerged, true);
+    assert.equal(record.statusHistory.at(-1).status, "merged");
+    assert.equal(sync().action, "ignored", "Open MR must not downgrade merged status");
+    assert.equal(sendNativeMessage(dataFile, { type: "listAutomaticMRMonitors", payload: {} }).monitors.length, 0);
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+}
+
 try {
   run();
+  testAutomaticStatusPersistence();
   console.log("native-host.behavior.test.js passed");
 } catch (error) {
   console.error(error);

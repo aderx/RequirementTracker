@@ -6,6 +6,11 @@
   window.__jiraRequirementCaptureInstalled = true;
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    if (message?.type === "EXTRACT_AUTOMATIC_MR_CONTEXT") {
+      sendResponse({ ok: true, result: automaticMRContext(message.settings || {}) });
+      return false;
+    }
+
     if (message?.type === "EXTRACT_PAGE_OWNERSHIP") {
       sendResponse({
         ok: true,
@@ -32,6 +37,47 @@
 
     return true;
   });
+
+  // GitLab 合并后可能只更新页面局部；仅在 MR 身份或状态改变时通知后台。
+  if (typeof MutationObserver !== "undefined" && document.documentElement
+      && /\/-\/merge_requests\/\d+/.test(location.pathname || "")) {
+    let scheduled = false;
+    let previousSignature = "";
+    const notifyChange = () => {
+      if (scheduled) return;
+      scheduled = true;
+      setTimeout(() => {
+        scheduled = false;
+        const signature = JSON.stringify(automaticMRContext({ mrHosts: [location.hostname] }));
+        if (signature === previousSignature) return;
+        previousSignature = signature;
+        chrome.runtime.sendMessage({ type: "MR_PAGE_CHANGED" }).catch(() => {});
+      }, 400);
+    };
+    new MutationObserver(notifyChange).observe(document.documentElement, {
+      subtree: true, childList: true, characterData: true,
+      attributes: true, attributeFilter: ["class", "data-state", "data-merge-request-state"]
+    });
+    notifyChange();
+  }
+
+  function automaticMRContext(settings) {
+    const pageURL = canonicalMRURL(normalizedURL(location.href));
+    if (!isMRPage(pageURL, settings.mrHosts || ["gitlab.zstack.io"])) return null;
+    const keys = new Set();
+    const title = textFromSelector("[data-testid='issuable-title']")
+      || textFromSelector(".issuable-title") || textFromSelector("h1");
+    for (const match of title.matchAll(/\b([A-Z][A-Z0-9]+-\d+)\b/gi)) keys.add(match[1].toUpperCase());
+    const jiraHost = hostFromURL(settings.jiraBaseURL || "http://jira.zstack.io/browse/");
+    for (const description of document.querySelectorAll(".description, .issuable-description, [data-testid='description']")) {
+      for (const link of description.querySelectorAll("a[href]")) {
+        if (hostFromURL(link.href) !== jiraHost) continue;
+        const key = issueKeyFromJiraDetailURL(normalizedURL(link.href));
+        if (key) keys.add(key);
+      }
+    }
+    return { mrURL: pageURL, mrState: extractMRState(false), issueKeys: [...keys], ownership: extractPageOwnership("mr") };
+  }
 
   function extractPageOwnership(pageType) {
     if (pageType === "jira") {
@@ -378,11 +424,10 @@
     return (baseURL.endsWith("/") ? baseURL : baseURL + "/") + issueKey;
   }
 
-  function extractMRState() {
+  function extractMRState(allowBodyFallback = true) {
     const selectors = [
       "[data-testid*='merge-request-state']",
       "[data-testid*='issuable-state']",
-      "[data-testid*='state']",
       ".issuable-status-box",
       ".status-box",
       "[class*='issuable-status']",
@@ -395,6 +440,7 @@
         .filter(Boolean);
 
       for (const value of values) {
+        if (!allowBodyFallback && !/^(merged|open|opened|closed|已合并|已打开|开启中|进行中|已关闭)$/i.test(value)) continue;
         const state = normalizeMRState(value);
         if (state) {
           return state;
@@ -402,7 +448,7 @@
       }
     }
 
-    return normalizeMRState(document.body?.innerText?.slice(0, 4000) || "");
+    return allowBodyFallback ? normalizeMRState(document.body?.innerText?.slice(0, 4000) || "") : "";
   }
 
   function normalizeMRState(value) {
@@ -415,7 +461,7 @@
       return "merged";
     }
 
-    if (/\bopen\b|已打开|开启中|进行中/.test(text)) {
+    if (/\b(?:open|opened)\b|已打开|开启中|进行中/.test(text)) {
       return "open";
     }
 
