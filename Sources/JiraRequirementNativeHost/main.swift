@@ -17,12 +17,23 @@ do {
 }
 
 private func handle(request: [String: Any]) throws -> [String: Any] {
-    let writer = RequirementJSONWriter(
-        dataFileURL: RequirementJSONWriter.defaultDataFileURL(),
-        settingsFileURL: RequirementJSONWriter.defaultSettingsFileURL()
+    let database = try RequirementDatabase(url: RequirementDatabaseWriter.defaultDataFileURL())
+    let writer = RequirementDatabaseWriter(
+        database: database,
+        settingsFileURL: RequirementDatabaseWriter.defaultSettingsFileURL()
     )
     writer.recordPluginHeartbeat()
 
+    let response = try database.transaction {
+        try dispatch(request: request, writer: writer)
+    }
+    if let action = response["action"] as? String, let key = response["issueKey"] as? String, response["dataFilePath"] != nil {
+        writer.notifyApp(action: action, issueKey: key)
+    }
+    return response
+}
+
+private func dispatch(request: [String: Any], writer: RequirementDatabaseWriter) throws -> [String: Any] {
     switch stringValue(request["type"]) {
     case "getPluginSettings":
         return try writer.pluginSettingsResponse()
@@ -55,8 +66,9 @@ private func requiredPayload(from request: [String: Any]) throws -> [String: Any
     return payload
 }
 
-private struct RequirementJSONWriter {
-    let dataFileURL: URL
+private struct RequirementDatabaseWriter {
+    let database: RequirementDatabase
+    var dataFileURL: URL { database.url }
     let settingsFileURL: URL
 
     func pluginSettingsResponse() throws -> [String: Any] {
@@ -453,7 +465,6 @@ private struct RequirementJSONWriter {
         let backupURL = try backupExistingFileIfNeeded(kind: "before-browser-import")
         try write(records: records)
         let snapshotURL = try backupExistingFileIfNeeded(kind: "after-browser-import")
-        notifyApp(action: action, issueKey: issueKey)
 
         var response: [String: Any] = [
             "ok": true,
@@ -484,7 +495,7 @@ private struct RequirementJSONWriter {
         return response
     }
 
-    private func notifyApp(action: String, issueKey: String) {
+    func notifyApp(action: String, issueKey: String) {
         DistributedNotificationCenter.default().postNotificationName(
             RequirementExternalUpdateNotification.name,
             object: hostName,
@@ -800,70 +811,27 @@ private struct RequirementJSONWriter {
     }
 
     private func loadRecords() throws -> [[String: Any]] {
-        guard FileManager.default.fileExists(atPath: dataFileURL.path) else {
-            return []
-        }
-
-        do {
-            let data = try Data(contentsOf: dataFileURL)
-            guard !data.isEmpty else {
-                return []
-            }
-
-            guard
-                let records = try JSONSerialization.jsonObject(with: data) as? [[String: Any]]
-            else {
-                throw HostError.invalidDataFile("requirements.json 顶层不是数组")
-            }
-
-            return records
-        } catch {
-            _ = try? backupExistingFileIfNeeded(kind: "corrupt")
-            throw HostError.invalidDataFile("读取 requirements.json 失败：\(error.localizedDescription)")
-        }
+        try database.loadRecords()
     }
 
     private func write(records: [[String: Any]]) throws {
-        try FileManager.default.createDirectory(
-            at: dataFileURL.deletingLastPathComponent(),
-            withIntermediateDirectories: true
-        )
-
-        let data = try JSONSerialization.data(
-            withJSONObject: records,
-            options: [.prettyPrinted, .sortedKeys]
-        )
-        try data.write(to: dataFileURL, options: [.atomic])
+        try database.replaceRecords(records)
     }
 
     private func backupExistingFileIfNeeded(kind: String) throws -> URL? {
-        guard FileManager.default.fileExists(atPath: dataFileURL.path) else {
-            return nil
-        }
-
-        let backupDirectory = dataFileURL
-            .deletingLastPathComponent()
-            .appendingPathComponent("Backups", isDirectory: true)
+        let backupDirectory = dataFileURL.deletingLastPathComponent().appendingPathComponent("Backups", isDirectory: true)
         try FileManager.default.createDirectory(at: backupDirectory, withIntermediateDirectories: true)
-
-        let timestamp = Self.backupTimestamp()
-        let backupURL = backupDirectory
-            .appendingPathComponent("requirements.\(kind).\(timestamp).json")
-
-        try FileManager.default.copyItem(at: dataFileURL, to: backupURL)
+        let backupURL = backupDirectory.appendingPathComponent("requirements.\(kind).\(Self.backupTimestamp()).\(UUID().uuidString).json")
+        try database.exportJSON(to: backupURL)
         return backupURL
     }
 
     static func defaultDataFileURL() -> URL {
-        if let overridePath = ProcessInfo.processInfo.environment["REQUIREMENT_TRACKER_DATA_FILE"],
-           !overridePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return URL(fileURLWithPath: overridePath)
+        if let overridePath = ProcessInfo.processInfo.environment["REQUIREMENT_TRACKER_DATA_FILE"], !overridePath.isEmpty {
+            let url = URL(fileURLWithPath: overridePath)
+            return url.pathExtension == "json" ? url.deletingPathExtension().appendingPathExtension("sqlite") : url
         }
-
-        let applicationSupport = applicationSupportDirectory()
-        return applicationSupport
-            .appendingPathComponent("RequirementTracker", isDirectory: true)
-            .appendingPathComponent("requirements.json")
+        return RequirementDatabase.defaultURL
     }
 
     static func defaultSettingsFileURL() -> URL {

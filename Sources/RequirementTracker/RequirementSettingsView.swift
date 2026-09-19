@@ -46,6 +46,7 @@ struct RequirementSettingsView: View {
                         switch selectedTab {
                         case .base: baseConfigurationView
                         case .plugin: pluginConfigurationView
+                        case .mcp: RequirementMCPSettingsView()
                         case .scripts: scriptConfigurationView
                         case .quickLinks: quickLinksView
                         }
@@ -915,6 +916,7 @@ struct RequirementSettingsView: View {
 private enum RequirementSettingsTab: String, CaseIterable, Identifiable {
     case base
     case plugin
+    case mcp
     case scripts
     case quickLinks
 
@@ -926,6 +928,8 @@ private enum RequirementSettingsTab: String, CaseIterable, Identifiable {
             "基础设置"
         case .plugin:
             "插件配置"
+        case .mcp:
+            "MCP"
         case .scripts:
             "脚本配置"
         case .quickLinks:
@@ -937,6 +941,7 @@ private enum RequirementSettingsTab: String, CaseIterable, Identifiable {
         switch self {
         case .base: "调整菜单栏外观、日历访问和需求排序。"
         case .plugin: "连接浏览器扩展，管理 Jira 与 GitLab 站点。"
+        case .mcp: "管理 AI 工具的需求查询与状态推进。"
         case .scripts: "管理全局命令与项目常用脚本。"
         case .quickLinks: "整理常用链接，在菜单栏快速访问。"
         }
@@ -948,6 +953,8 @@ private enum RequirementSettingsTab: String, CaseIterable, Identifiable {
             "gearshape"
         case .plugin:
             "puzzlepiece.extension"
+        case .mcp:
+            "point.3.connected.trianglepath.dotted"
         case .scripts:
             "terminal"
         case .quickLinks:

@@ -16,18 +16,16 @@ final class RequirementStore: ObservableObject {
     let dataFileURL: URL
     @Published var lastNotice: String?
 
+    private var database: RequirementDatabase?
+    private var savedSnapshot: [Requirement] = []
+    private var lastSaveSucceeded = true
     private var isBootstrapping = true
     private var isLoadingFromDisk = false
 
     init(dataFileURL: URL? = nil) {
-        self.dataFileURL = dataFileURL ?? Self.defaultDataFileURL()
-        let canSaveAfterLoading = loadFromDisk()
-
+        self.dataFileURL = dataFileURL ?? RequirementDatabase.defaultURL
+        _ = loadFromDisk()
         isBootstrapping = false
-
-        if canSaveAfterLoading {
-            save()
-        }
     }
 
     func requirement(id: Requirement.ID) -> Requirement? {
@@ -46,6 +44,7 @@ final class RequirementStore: ObservableObject {
         }
 
         requirements.append(contentsOf: parsed)
+        guard lastSaveSucceeded else { return 0 }
         lastNotice = "已添加 \(parsed.count) 个需求"
         return parsed.count
     }
@@ -61,22 +60,24 @@ final class RequirementStore: ObservableObject {
             return
         }
 
+        var edited = requirements[index]
         let now = Date()
-        let previousStatus = requirements[index].currentTimelineStatus
-        let previousMRURL = RequirementParser.normalizedURL(requirements[index].mrURL ?? "")
-        transform(&requirements[index])
-        let nextMRURL = RequirementParser.normalizedURL(requirements[index].mrURL ?? "")
+        let previousStatus = edited.currentTimelineStatus
+        let previousMRURL = RequirementParser.normalizedURL(edited.mrURL ?? "")
+        transform(&edited)
+        let nextMRURL = RequirementParser.normalizedURL(edited.mrURL ?? "")
         if resetsMRTrackingWhenURLChanges && nextMRURL != previousMRURL {
-            requirements[index].clearMRTracking()
+            edited.clearMRTracking()
         }
-        normalizeRequirement(at: index, now: now, allowsMergedWithoutMR: allowsMergedWithoutMR)
-        let nextStatus = requirements[index].currentTimelineStatus
+        normalizeRequirement(&edited, now: now, allowsMergedWithoutMR: allowsMergedWithoutMR)
+        let nextStatus = edited.currentTimelineStatus
         if nextStatus != previousStatus {
-            requirements[index].recordStatus(nextStatus, at: now)
+            edited.recordStatus(nextStatus, at: now)
         }
         if updatesTimestamp {
-            requirements[index].updatedAt = now
+            edited.updatedAt = now
         }
+        requirements[index] = edited
     }
 
     func setStage(id: Requirement.ID, stage: RequirementStage) {
@@ -118,34 +119,11 @@ final class RequirementStore: ObservableObject {
                 return
             }
 
-            if requirement.stage == .pending {
-                requirement.stage = .active
-                return
+            do {
+                try requirement.advanceToNextStatus(at: Date())
+            } catch {
+                lastNotice = error.localizedDescription
             }
-
-            if requirement.isTested {
-                guard requirement.hasMergeRequestURL else {
-                    lastNotice = "请先填写 MR 地址"
-                    return
-                }
-
-                requirement.isMerged = true
-                requirement.isDone = true
-                requirement.stage = .completed
-                requirement.completedAt = Date()
-                return
-            }
-
-            if requirement.isDone || requirement.stage == .completed {
-                requirement.isTested = true
-                requirement.isDone = true
-                requirement.stage = .completed
-                return
-            }
-
-            requirement.stage = .completed
-            requirement.isDone = true
-            requirement.completedAt = Date()
         }
     }
 
@@ -163,6 +141,7 @@ final class RequirementStore: ObservableObject {
             requirement.pauseReason = ""
             requirement.isMerged = true
         }
+        guard lastSaveSucceeded else { return }
         lastNotice = "已标为已完成"
     }
 
@@ -180,6 +159,7 @@ final class RequirementStore: ObservableObject {
             requirement.pauseReason = ""
             requirement.isMerged = true
         }
+        guard lastSaveSucceeded else { return }
         lastNotice = "已标为已完成"
     }
 
@@ -231,6 +211,7 @@ final class RequirementStore: ObservableObject {
             }
         }
 
+        guard lastSaveSucceeded else { return }
         lastNotice = "已更新为\(status.title)"
         if status == .merged {
             deliverPendingMRMergeNotifications()
@@ -245,6 +226,7 @@ final class RequirementStore: ObservableObject {
         update(id: id, updatesTimestamp: false) { requirement in
             requirement.isMRMergeMonitoringEnabled = isEnabled
         }
+        guard lastSaveSucceeded else { return }
         lastNotice = isEnabled ? "已创建 MR 合并监听" : "已停止 MR 合并监听"
     }
 
@@ -262,9 +244,12 @@ final class RequirementStore: ObservableObject {
 
         let notifiedAt = Date()
         let pendingIDs = Set(pending.map(\.id))
-        for index in requirements.indices where pendingIDs.contains(requirements[index].id) {
-            requirements[index].mrMergeNotifiedAt = notifiedAt
+        var updated = requirements
+        for index in updated.indices where pendingIDs.contains(updated[index].id) {
+            updated[index].mrMergeNotifiedAt = notifiedAt
         }
+        requirements = updated
+        guard lastSaveSucceeded else { return }
 
         for requirement in pending {
             MRMergeNotificationService.shared.notify(requirement: requirement)
@@ -273,6 +258,7 @@ final class RequirementStore: ObservableObject {
 
     func delete(id: Requirement.ID) {
         requirements.removeAll { $0.id == id }
+        guard lastSaveSucceeded else { return }
         lastNotice = "已删除需求"
     }
 
@@ -314,6 +300,7 @@ final class RequirementStore: ObservableObject {
 
     func openDataFolder() {
         save()
+        guard lastSaveSucceeded else { return }
         NSWorkspace.shared.activateFileViewerSelecting([dataFileURL])
         lastNotice = "已打开数据文件"
     }
@@ -327,56 +314,56 @@ final class RequirementStore: ObservableObject {
     }
 
     private func normalizeRequirement(
-        at index: Int,
+        _ requirement: inout Requirement,
         now: Date,
         allowsMergedWithoutMR: Bool = false
     ) {
-        if requirements[index].isMerged
-            && !requirements[index].hasMergeRequestURL
+        if requirement.isMerged
+            && !requirement.hasMergeRequestURL
             && !allowsMergedWithoutMR {
-            requirements[index].isMerged = false
+            requirement.isMerged = false
             lastNotice = "请先填写 MR 地址"
         }
 
-        if requirements[index].isMerged {
-            requirements[index].isTested = true
-            requirements[index].isDone = true
-            requirements[index].stage = .completed
-            requirements[index].completedAt = requirements[index].completedAt ?? now
+        if requirement.isMerged {
+            requirement.isTested = true
+            requirement.isDone = true
+            requirement.stage = .completed
+            requirement.completedAt = requirement.completedAt ?? now
         }
 
-        if requirements[index].stage != .paused && requirements[index].stage != .stopped {
-            if requirements[index].isTested {
-                requirements[index].isDone = true
-                requirements[index].stage = .completed
-                requirements[index].completedAt = requirements[index].completedAt ?? now
+        if requirement.stage != .paused && requirement.stage != .stopped {
+            if requirement.isTested {
+                requirement.isDone = true
+                requirement.stage = .completed
+                requirement.completedAt = requirement.completedAt ?? now
             }
 
-            if requirements[index].stage == .completed {
-                requirements[index].isDone = true
-                requirements[index].completedAt = requirements[index].completedAt ?? now
+            if requirement.stage == .completed {
+                requirement.isDone = true
+                requirement.completedAt = requirement.completedAt ?? now
             }
 
-            if requirements[index].isDone {
-                requirements[index].stage = .completed
-                requirements[index].completedAt = requirements[index].completedAt ?? now
+            if requirement.isDone {
+                requirement.stage = .completed
+                requirement.completedAt = requirement.completedAt ?? now
             }
         }
 
-        if !requirements[index].isDone, requirements[index].stage == .completed {
-            requirements[index].stage = .active
-            requirements[index].isTested = false
-            requirements[index].isMerged = false
-            requirements[index].completedAt = nil
+        if !requirement.isDone, requirement.stage == .completed {
+            requirement.stage = .active
+            requirement.isTested = false
+            requirement.isMerged = false
+            requirement.completedAt = nil
         }
 
-        if let key = RequirementParser.jiraKey(from: requirements[index].jiraURL) {
-            requirements[index].jiraKey = key
+        if let key = RequirementParser.jiraKey(from: requirement.jiraURL) {
+            requirement.jiraKey = key
         }
 
-        requirements[index].title = requirements[index].title.trimmingCharacters(in: .whitespacesAndNewlines)
-        requirements[index].normalizeMergeRequestURLs()
-        requirements[index].normalizeMRTracking()
+        requirement.title = requirement.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        requirement.normalizeMergeRequestURLs()
+        requirement.normalizeMRTracking()
     }
 
     func reloadAfterExternalUpdate(issueKey: String?) {
@@ -385,25 +372,21 @@ final class RequirementStore: ObservableObject {
         }
 
         if let issueKey, !issueKey.isEmpty {
-            lastNotice = "已从浏览器更新 \(issueKey)"
+            lastNotice = "已从外部工具更新 \(issueKey)"
         } else {
-            lastNotice = "已从浏览器更新数据"
+            lastNotice = "已从外部工具更新数据"
         }
     }
 
     private func loadFromDisk() -> Bool {
-        guard FileManager.default.fileExists(atPath: dataFileURL.path) else {
-            return true
-        }
-
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-
         do {
-            let data = try Data(contentsOf: dataFileURL)
-            let decoded = try decoder.decode([Requirement].self, from: data)
+            if database == nil {
+                database = try RequirementDatabase(url: dataFileURL)
+            }
+            let decoded = try database!.load()
             isLoadingFromDisk = true
             requirements = decoded
+            savedSnapshot = decoded
             isLoadingFromDisk = false
             return true
         } catch {
@@ -414,31 +397,22 @@ final class RequirementStore: ObservableObject {
     }
 
     private func save() {
-        do {
-            try FileManager.default.createDirectory(
-                at: dataFileURL.deletingLastPathComponent(),
-                withIntermediateDirectories: true
-            )
-
-            let encoder = JSONEncoder()
-            encoder.dateEncodingStrategy = .iso8601
-            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-
-            let data = try encoder.encode(requirements)
-            try data.write(to: dataFileURL, options: [.atomic])
-        } catch {
-            lastNotice = "保存失败：\(error.localizedDescription)"
+        lastSaveSucceeded = false
+        guard let database else {
+            lastNotice = "数据库未成功加载，未保存修改。"
+            return
         }
-    }
-
-    private static func defaultDataFileURL() -> URL {
-        let applicationSupport = FileManager.default.urls(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask
-        ).first ?? FileManager.default.temporaryDirectory
-
-        return applicationSupport
-            .appendingPathComponent("RequirementTracker", isDirectory: true)
-            .appendingPathComponent("requirements.json")
+        do {
+            let saved = try database.applyChanges(before: savedSnapshot, after: requirements)
+            isLoadingFromDisk = true
+            requirements = saved
+            savedSnapshot = saved
+            lastSaveSucceeded = true
+            isLoadingFromDisk = false
+        } catch {
+            let message = error.localizedDescription
+            _ = loadFromDisk()
+            lastNotice = "保存失败：\(message)"
+        }
     }
 }

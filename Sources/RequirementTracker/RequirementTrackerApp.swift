@@ -153,6 +153,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     @objc
     private func requirementsDidChangeExternally(_ notification: Notification) {
+        if let path = notification.userInfo?["databasePath"] as? String,
+           URL(fileURLWithPath: path).standardizedFileURL != store.dataFileURL.standardizedFileURL { return }
         let issueKey = notification.userInfo?["issueKey"] as? String
         store.reloadAfterExternalUpdate(issueKey: issueKey)
         store.deliverPendingMRMergeNotifications()
@@ -441,7 +443,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private static var appVersion: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
-            ?? "1.19.0"
+            ?? "2.0.0"
     }
 
     private static var githubURL: String? {

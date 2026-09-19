@@ -10,10 +10,12 @@ let package = Package(
     products: [
         .library(name: "RequirementCore", targets: ["RequirementCore"]),
         .executable(name: "RequirementTracker", targets: ["RequirementTracker"]),
-        .executable(name: "JiraRequirementNativeHost", targets: ["JiraRequirementNativeHost"])
+        .executable(name: "JiraRequirementNativeHost", targets: ["JiraRequirementNativeHost"]),
+        .executable(name: "RequirementTrackerMCP", targets: ["RequirementTrackerMCP"])
     ],
     targets: [
-        .target(name: "RequirementCore"),
+        .systemLibrary(name: "CSQLite"),
+        .target(name: "RequirementCore", dependencies: ["CSQLite"]),
         .target(name: "RequirementCalendarCore"),
         .executableTarget(
             name: "RequirementTracker",
@@ -25,6 +27,15 @@ let package = Package(
         .executableTarget(
             name: "JiraRequirementNativeHost",
             dependencies: ["RequirementCore"]
+        ),
+        .executableTarget(
+            name: "RequirementTrackerMCP",
+            dependencies: ["RequirementCore"]
+        ),
+        .executableTarget(
+            name: "RequirementDatabaseChecks",
+            dependencies: ["RequirementCore"],
+            path: "Checks/RequirementDatabaseChecks"
         ),
         .executableTarget(
             name: "RequirementCoreChecks",
