@@ -45,10 +45,22 @@ from the macOS widget gallery. Both widgets support the large and extra-large fa
 Runtime data is stored outside the repository:
 
 ```text
-~/Library/Application Support/RequirementTracker/requirements.json
+~/Library/Application Support/RequirementTracker/requirements.sqlite
 ```
 
-Back up this file before manually editing historical data.
+Version 2.0 migrates `requirements.json` once, keeps the original file, and saves
+a migration backup under `Backups/`. SQLite is the source of truth for the App,
+browser Native Host and MCP. MCP queries are read-only; optional next-step status
+maintenance is controlled in Settings → MCP. Settings remain in `settings.json`.
+Do not run 1.x writers against migrated data: they still write the old JSON.
+To roll back after using 2.0, export the latest database records to JSON first;
+the retained migration JSON only represents the pre-migration snapshot.
+
+Use SQLite's backup API or stop all writers before copying the database and its
+WAL files. Copying only an active `.sqlite` file can omit committed WAL data.
+
+See [MCP setup](Integrations/RequirementTrackerMCP/README.md) for Codex tools,
+development data isolation and validation commands.
 
 ## License
 

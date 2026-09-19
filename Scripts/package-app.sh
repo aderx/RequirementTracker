@@ -47,6 +47,11 @@ swift build \
     --package-path "$ROOT_DIR" \
     -c "$CONFIGURATION" \
     --product JiraRequirementNativeHost
+swift build \
+    --disable-sandbox \
+    --package-path "$ROOT_DIR" \
+    -c "$CONFIGURATION" \
+    --product RequirementTrackerMCP
 xcodebuild \
     -project "$WIDGET_PROJECT" \
     -scheme RequirementCalendarWidget \
@@ -80,6 +85,9 @@ install -m 755 "$BIN_DIR/RequirementTracker" "$STAGING_APP/Contents/MacOS/Requir
 install -m 755 \
     "$BIN_DIR/JiraRequirementNativeHost" \
     "$STAGING_APP/Contents/Resources/JiraRequirementNativeHost"
+install -m 755 \
+    "$BIN_DIR/RequirementTrackerMCP" \
+    "$STAGING_APP/Contents/Resources/RequirementTrackerMCP"
 ditto \
     "$ROOT_DIR/Integrations/JiraRequirementCapture/extension" \
     "$STAGING_APP/Contents/Resources/JiraRequirementCaptureExtension"
@@ -119,6 +127,7 @@ if [[ "$CONFIGURATION" == "debug" ]]; then
 fi
 
 codesign --force --sign - "$STAGING_APP/Contents/Resources/JiraRequirementNativeHost"
+codesign --force --sign - "$STAGING_APP/Contents/Resources/RequirementTrackerMCP"
 codesign \
     --force \
     --sign - \

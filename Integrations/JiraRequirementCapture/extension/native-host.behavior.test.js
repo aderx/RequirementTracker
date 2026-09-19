@@ -30,7 +30,17 @@ function sendNativeMessage(dataFile, message) {
 }
 
 function readRecords(dataFile) {
-  return JSON.parse(fs.readFileSync(dataFile, "utf8"));
+  const db = dataFile.replace(/\.json$/, ".sqlite");
+  const result = spawnSync("python3", ["-c", "import sqlite3,json,sys; c=sqlite3.connect(sys.argv[1]); print(json.dumps([json.loads(r[0]) for r in c.execute('SELECT payload FROM requirements ORDER BY position,id')]))", db], {encoding: "utf8"});
+  assert.equal(result.status, 0, result.stderr);
+  return JSON.parse(result.stdout);
+}
+
+// Each fixture starts a fresh migration; subsequent Native Host calls share SQLite.
+function writeFixture(dataFile, records) {
+  fs.writeFileSync(dataFile, JSON.stringify(records));
+  const db = dataFile.replace(/\.json$/, ".sqlite");
+  for (const suffix of ["", "-wal", "-shm"]) fs.rmSync(db + suffix, {force: true});
 }
 
 function run() {
@@ -93,7 +103,7 @@ function run() {
     assert.equal(record.mrHistory, undefined);
     assert.equal(record.mrTrackingStatus, "created");
 
-    const savedData = fs.readFileSync(dataFile, "utf8");
+    const savedData = JSON.stringify(readRecords(dataFile));
     const savedBinding = sendNativeMessage(dataFile, {
       type: "inspectByURL",
       payload: { mrURL: `${firstMR}?view=parallel#note_10` }
@@ -102,7 +112,7 @@ function run() {
     assert.equal(savedBinding.exists, true);
     assert.equal(savedBinding.issueKey, issueKey);
     assert.equal(savedBinding.jiraURL, jiraURL);
-    assert.equal(fs.readFileSync(dataFile, "utf8"), savedData);
+    assert.equal(JSON.stringify(readRecords(dataFile)), savedData);
 
     const unboundMR = sendNativeMessage(dataFile, {
       type: "inspectByURL",
@@ -115,7 +125,7 @@ function run() {
     record.mrTrackingStatus = "mergeRequested";
     record.isMRMergeMonitoringEnabled = true;
     const updatedAtBeforeTrackedMerge = record.updatedAt;
-    fs.writeFileSync(dataFile, JSON.stringify([record]));
+    writeFixture(dataFile, [record]);
 
     const monitors = sendNativeMessage(dataFile, {
       type: "listMRMergeMonitors",
@@ -191,7 +201,7 @@ function run() {
 
     for (const targetStatus of ["pending", "active"]) {
       record = JSON.parse(beforeInfoUpdate);
-      fs.writeFileSync(dataFile, JSON.stringify([record]));
+      writeFixture(dataFile, [record]);
       const reopened = sendNativeMessage(dataFile, {
         type: "upsertJiraRequirement",
         payload: { issueKey, title: "重新打开后的标题", targetStatus, reopen: true }
@@ -231,7 +241,7 @@ function run() {
     record.isDone = false;
     record.isTested = false;
     record.isMerged = false;
-    fs.writeFileSync(dataFile, JSON.stringify([record]));
+    writeFixture(dataFile, [record]);
 
     const pausedInspection = sendNativeMessage(dataFile, {
       type: "inspectRequirement",
@@ -261,22 +271,22 @@ function testAutomaticStatusPersistence() {
     let record = readRecords(dataFile)[0];
     assert.equal(record.mrURL, mrURL);
     assert.equal(record.isTested, true);
-    const stable = fs.readFileSync(dataFile, "utf8");
+    const stable = JSON.stringify(readRecords(dataFile));
     assert.equal(sync().action, "unchanged");
-    assert.equal(fs.readFileSync(dataFile, "utf8"), stable, "Repeat visits must not write timestamps or history");
+    assert.equal(JSON.stringify(readRecords(dataFile)), stable, "Repeat visits must not write timestamps or history");
     assert.equal(sync({ mrURL: "http://example.com/g/p/-/merge_requests/1", allowInitialBinding: true }).action, "ignored");
     assert.equal(sync({ mrState: "closed" }).action, "ignored");
     for (const stage of ["paused", "stopped"]) {
-      fs.writeFileSync(dataFile, JSON.stringify([{ ...record, stage }]));
+      writeFixture(dataFile, [{ ...record, stage }]);
       assert.equal(sync({ mrState: "merged" }).action, "ignored");
       assert.equal(readRecords(dataFile)[0].stage, stage);
       assert.equal(sendNativeMessage(dataFile, { type: "listAutomaticMRMonitors", payload: {} }).monitors.length, 0);
     }
-    fs.writeFileSync(dataFile, JSON.stringify([{ ...record, mrURL: `${mrURL}1`, mrHistory: [mrURL] }]));
+    writeFixture(dataFile, [{ ...record, mrURL: `${mrURL}1`, mrHistory: [mrURL] }]);
     assert.equal(sync({ mrState: "merged" }).action, "ignored", "Historic MR cannot advance current work");
-    fs.writeFileSync(dataFile, JSON.stringify([record, { ...record, id: "another", jiraKey: "ZSTAC-23457" }]));
+    writeFixture(dataFile, [record, { ...record, id: "00000000-0000-4000-8000-000000000002", jiraKey: "ZSTAC-23457" }]);
     assert.equal(sync({ mrState: "merged" }).action, "ignored", "Ambiguous saved bindings must not write");
-    fs.writeFileSync(dataFile, JSON.stringify([record]));
+    writeFixture(dataFile, [record]);
     assert.equal(sendNativeMessage(dataFile, { type: "listAutomaticMRMonitors", payload: {} }).monitors.length, 1);
     assert.equal(sync({ mrState: "merged" }).statusUpdated, true);
     record = readRecords(dataFile)[0];
