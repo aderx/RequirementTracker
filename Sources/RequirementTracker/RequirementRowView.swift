@@ -36,14 +36,14 @@ struct RequirementRowView: View {
             } else {
                 Text(requirement.title.isEmpty ? "暂无标题" : requirement.title)
                     .font(.system(size: 11))
-                    .foregroundStyle(requirement.title.isEmpty ? Color.black.opacity(0.24) : Color.black.opacity(0.74))
+                    .foregroundStyle(requirement.title.isEmpty ? DesignColor.textSecondary : DesignColor.textPrimary)
                     .lineLimit(2)
                     .frame(minHeight: 15, alignment: .leading)
 
                 if !requirement.note.isEmpty {
                     Text(requirement.note)
                         .font(.system(size: 10.5))
-                        .foregroundStyle(Color.black.opacity(0.56))
+                        .foregroundStyle(DesignColor.textSecondary)
                         .lineLimit(2)
                 }
 
@@ -83,15 +83,15 @@ struct RequirementRowView: View {
         .padding(.horizontal, 11)
         .padding(.bottom, 7)
         .clipped()
-        .background(Color(hex: 0xFAFAFA, opacity: isExpanded ? 0.96 : 0.92), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .background(DesignColor.card.opacity(isExpanded ? 0.96 : 0.92), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .fill(Color.black.opacity(isHoveringCard ? 0.018 : 0))
+                .fill(DesignColor.textPrimary.opacity(isHoveringCard ? 0.018 : 0))
                 .allowsHitTesting(false)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .strokeBorder(Color.black.opacity(0.09), lineWidth: 0.5)
+                .strokeBorder(DesignColor.textPrimary.opacity(0.09), lineWidth: 0.5)
                 .allowsHitTesting(false)
         )
         .shadow(color: Color.black.opacity(0.07), radius: 4, y: 1)
@@ -121,11 +121,11 @@ struct RequirementRowView: View {
                         .font(.system(size: 11.5, weight: .bold, design: .monospaced))
                         .lineLimit(1)
 
-                    if isHoveringCard || isHoveringTitle {
-                        Image(systemName: "arrow.up.right")
-                            .font(.system(size: 8, weight: .bold))
-                            .foregroundStyle(style.color)
-                    }
+                    Image(systemName: "arrow.up.right")
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundStyle(style.color)
+                        .opacity(isHoveringCard || isHoveringTitle ? 1 : 0)
+                        .accessibilityHidden(true)
                 }
             }
             .buttonStyle(.plain)
@@ -141,10 +141,10 @@ struct RequirementRowView: View {
                         Text(mrIdentifier)
                             .font(.system(size: 10, weight: .medium, design: .monospaced))
 
-                        if isHoveringCard || isHoveringMR {
-                            Image(systemName: "arrow.up.right")
-                                .font(.system(size: 7, weight: .bold))
-                        }
+                        Image(systemName: "arrow.up.right")
+                            .font(.system(size: 7, weight: .bold))
+                            .opacity(isHoveringCard || isHoveringMR ? 1 : 0)
+                            .accessibilityHidden(true)
                     }
                     .foregroundStyle(DesignColor.doing)
                     .padding(.horizontal, 4)
@@ -178,11 +178,12 @@ struct RequirementRowView: View {
                     isCopied = false
                 }
             } label: {
-                CopyGlyph(isCopied: isCopied, tint: isCopied ? style.color : Color.black.opacity(0.25))
+                CopyGlyph(isCopied: isCopied, tint: isCopied ? style.color : DesignColor.textSecondary)
             }
-            .buttonStyle(RowPlainIconButtonStyle(tint: isCopied ? style.color : Color.black.opacity(0.25)))
+            .buttonStyle(RowPlainIconButtonStyle(tint: isCopied ? style.color : DesignColor.textSecondary))
             .allowsHitTesting(!isCopied)
             .help("复制名称、Jira 与 MR")
+            .accessibilityLabel("复制名称、Jira 与 MR")
             .pointingHandCursor()
 
             rowMenu
@@ -260,7 +261,7 @@ struct RequirementRowView: View {
             return DesignColor.merged
         }
 
-        return Color.black.opacity(0.58)
+        return DesignColor.textPrimary.opacity(0.58)
     }
 
     private func priorityColor(for value: String) -> Color {
@@ -292,7 +293,7 @@ struct RequirementRowView: View {
         HStack(spacing: 5) {
             Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
                 .font(.system(size: 7, weight: .bold))
-                .foregroundStyle(Color.black.opacity(0.26))
+                .foregroundStyle(DesignColor.textPrimary.opacity(0.26))
                 .frame(width: 9, height: 8)
 
             statusIcon
@@ -305,7 +306,7 @@ struct RequirementRowView: View {
 
             Text("· \(relativeDateText(requirement.currentStatusDate))")
                 .font(.system(size: 10.5))
-                .foregroundStyle(Color.black.opacity(0.30))
+                .foregroundStyle(DesignColor.textPrimary.opacity(0.30))
                 .lineLimit(1)
                 .layoutPriority(2)
 
@@ -343,11 +344,11 @@ struct RequirementRowView: View {
         NativeIconMenuButton(
             kind: .more,
             contents: rowMenuContents,
-            size: CGSize(width: 18, height: 18),
-            tintAlpha: 0.35,
+            size: CGSize(width: 22, height: 22),
+            tintAlpha: 0.55,
             help: "更多操作"
         )
-        .frame(width: 18, height: 18)
+        .frame(width: 22, height: 22)
     }
 
     private var canPause: Bool {
@@ -498,7 +499,7 @@ struct RequirementRowView: View {
 
                     Text(timelineDateText(entry.date))
                         .font(.system(size: 10.5))
-                        .foregroundStyle(Color.black.opacity(0.38))
+                        .foregroundStyle(DesignColor.textSecondary)
 
                     Spacer()
                 }
@@ -506,7 +507,7 @@ struct RequirementRowView: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
-        .background(Color.black.opacity(0.035), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .background(DesignColor.textPrimary.opacity(0.035), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
         .padding(.top, 3)
     }
 
@@ -602,7 +603,7 @@ struct RequirementRowView: View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title)
                 .font(.system(size: 10.5, weight: .semibold))
-                .foregroundStyle(Color.black.opacity(0.55))
+                .foregroundStyle(DesignColor.textSecondary)
 
             if isMultiline {
                 ZStack(alignment: .topLeading) {
@@ -612,15 +613,15 @@ struct RequirementRowView: View {
                     if text.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                         Text(placeholder)
                             .font(.system(size: 11))
-                            .foregroundStyle(Color.black.opacity(0.38))
+                            .foregroundStyle(DesignColor.textSecondary)
                             .allowsHitTesting(false)
                     }
                 }
                 .padding(7)
-                .background(Color.white.opacity(0.92), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .background(DesignColor.surface.opacity(0.92), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .strokeBorder(Color.black.opacity(0.08), lineWidth: 0.5)
+                        .strokeBorder(DesignColor.textPrimary.opacity(0.08), lineWidth: 0.5)
                 )
             } else {
                 TextField(placeholder, text: text)
@@ -646,7 +647,7 @@ struct RequirementRowView: View {
             }
         }
         .padding(8)
-        .background(Color.black.opacity(0.035), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .background(DesignColor.textPrimary.opacity(0.035), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
     }
 
     private var timelineEntries: [TimelineEntry] {
@@ -861,7 +862,11 @@ private struct MultilineRowEditor: NSViewRepresentable {
     }
 
     func makeNSView(context: Context) -> NSScrollView {
-        let textView = NSTextView()
+        let textView = NSTextView(frame: NSRect(x: 0, y: 0, width: 1, height: 1))
+        textView.autoresizingMask = [.width]
+        textView.isHorizontallyResizable = false
+        textView.isVerticallyResizable = true
+        textView.textContainer?.widthTracksTextView = true
         textView.delegate = context.coordinator
         textView.drawsBackground = false
         textView.isRichText = false
@@ -871,7 +876,7 @@ private struct MultilineRowEditor: NSViewRepresentable {
         textView.textContainer?.lineFragmentPadding = 0
         textView.string = text
 
-        let scrollView = NSScrollView()
+        let scrollView = TextEditorScrollView()
         scrollView.drawsBackground = false
         scrollView.borderType = .noBorder
         scrollView.hasVerticalScroller = false
@@ -886,15 +891,22 @@ private struct MultilineRowEditor: NSViewRepresentable {
             return
         }
 
+        context.coordinator.updateBinding($text)
         if textView.string != text {
             textView.string = text
+            textView.sizeToFit()
         }
+        scrollView.needsLayout = true
     }
 
     final class Coordinator: NSObject, NSTextViewDelegate {
         @Binding var text: String
 
         init(text: Binding<String>) {
+            _text = text
+        }
+
+        func updateBinding(_ text: Binding<String>) {
             _text = text
         }
 
@@ -988,13 +1000,13 @@ private struct RequirementInlineEditor: View {
 }
 
 private struct RowPlainIconButtonStyle: ButtonStyle {
-    var tint = Color.black.opacity(0.25)
+    var tint = DesignColor.textSecondary
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(size: 11, weight: .medium))
             .foregroundStyle(configuration.isPressed ? tint.opacity(0.70) : tint)
-            .frame(width: 14, height: 14)
+            .frame(width: 22, height: 22)
             .contentShape(Rectangle())
     }
 }
@@ -1076,11 +1088,11 @@ private struct InlineCancelButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(size: 11, weight: .semibold))
-            .foregroundStyle(Color.black.opacity(0.62))
+            .foregroundStyle(DesignColor.textSecondary)
             .padding(.horizontal, 10)
             .frame(height: 24)
             .background(
-                Color.black.opacity(configuration.isPressed ? 0.09 : 0.04),
+                DesignColor.textPrimary.opacity(configuration.isPressed ? 0.09 : 0.04),
                 in: RoundedRectangle(cornerRadius: 7, style: .continuous)
             )
     }

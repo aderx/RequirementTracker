@@ -34,6 +34,10 @@ private func handle(request: [String: Any]) throws -> [String: Any] {
         return try writer.upsertJiraRequirement(payload: requiredPayload(from: request))
     case "attachMergeRequest":
         return try writer.attachMergeRequest(payload: requiredPayload(from: request))
+    case "syncMRStatus":
+        return try writer.syncMRStatus(payload: requiredPayload(from: request))
+    case "listAutomaticMRMonitors":
+        return try writer.listAutomaticMRMonitors()
     case "listMRMergeMonitors":
         return try writer.listMRMergeMonitors()
     case "markMRMergeMonitorMerged":
@@ -61,6 +65,7 @@ private struct RequirementJSONWriter {
             "ok": true,
             "host": hostName,
             "protocolVersion": RequirementNativeHostProtocol.currentVersion,
+            "supportsAutomaticMRStatus": true,
             "settings": [
                 "jiraBaseURL": settings.jiraBaseURL,
                 "mrHosts": settings.validMRHosts,
@@ -316,6 +321,66 @@ private struct RequirementJSONWriter {
             statusUpdated: statusUpdated,
             targetStatus: targetStatus?.rawValue
         )
+    }
+
+    // 自动推进仅更新已记录且关联明确的需求；人工暂停/停止和历史 MR 不参与。
+    func syncMRStatus(payload: [String: Any]) throws -> [String: Any] {
+        let mrURL = RequirementParser.normalizedURL(try requiredString(payload["mrURL"], field: "mrURL"))
+        let settings = try loadToolConfiguration().pluginSettings.normalized
+        guard let url = URL(string: mrURL),
+              ["http", "https"].contains(url.scheme ?? ""),
+              settings.validMRHosts.contains(url.host?.lowercased() ?? ""),
+              url.path.range(of: #"/-/merge_requests/\d+$"#, options: .regularExpression) != nil,
+              let state = stringValue(payload["mrState"]), ["open", "merged"].contains(state)
+        else { return ["ok": true, "action": "ignored"] }
+
+        var records = try loadRecords()
+        let bound = records.indices.filter { mergeRequests(in: records[$0]).allURLs.contains(mrURL) }
+        let candidates: [Int]
+        if !bound.isEmpty {
+            candidates = bound
+        } else if boolValue(payload["allowInitialBinding"]) == true,
+                  let key = stringValue(payload["issueKey"]) {
+            candidates = records.indices.filter {
+                matchesIssueKey(records[$0], issueKey: key) && mergeRequests(in: records[$0]).allURLs.isEmpty
+            }
+        } else {
+            candidates = []
+        }
+        guard candidates.count == 1, let index = candidates.first else {
+            return ["ok": true, "action": "ignored"]
+        }
+        let current = currentStatus(of: records[index])
+        let collection = mergeRequests(in: records[index])
+        guard current != .paused, current != .stopped, current != .merged,
+              collection.latest == nil || collection.latest == mrURL else {
+            return ["ok": true, "action": "ignored"]
+        }
+
+        let target: RequirementHostStatus = state == "merged" ? .merged : .tested
+        var didBind = false
+        if collection.latest == nil {
+            var updated = collection
+            didBind = updated.record(mrURL)
+            apply(mergeRequests: updated, to: &records[index])
+            resetMRTrackingForNewMR(in: &records[index])
+        }
+        let changed = applyTargetStatus(target, to: &records[index], startDate: Date(), formatter: ISO8601DateFormatter())
+        guard changed || didBind else { return ["ok": true, "action": "unchanged"] }
+        return try persist(records: records, action: "autoMRStatus",
+            issueKey: issueKey(from: records[index]), mrURL: mrURL,
+            statusUpdated: changed, targetStatus: target.rawValue)
+    }
+
+    func listAutomaticMRMonitors() throws -> [String: Any] {
+        let monitors = try loadRecords().compactMap { record -> [String: Any]? in
+            let status = currentStatus(of: record)
+            guard status != .paused, status != .stopped, status != .merged,
+                  let key = stringValue(record["jiraKey"]),
+                  let mrURL = mergeRequests(in: record).latest else { return nil }
+            return ["issueKey": key, "mrURL": mrURL, "automatic": true]
+        }
+        return ["ok": true, "monitors": monitors]
     }
 
     func listMRMergeMonitors() throws -> [String: Any] {

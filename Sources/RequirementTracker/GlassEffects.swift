@@ -56,11 +56,11 @@ struct GlassPanelBackground: View {
             .fill(.ultraThinMaterial)
             .overlay(
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .fill(Color.white.opacity(tintOpacity))
+                    .fill(DesignColor.surface.opacity(tintOpacity))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .strokeBorder(Color.white.opacity(strokeOpacity), lineWidth: 0.6)
+                    .strokeBorder(DesignColor.textPrimary.opacity(strokeOpacity * 0.25), lineWidth: 0.6)
             )
             .shadow(color: Color.black.opacity(0.05), radius: 10, y: 3)
     }
@@ -69,8 +69,28 @@ struct GlassPanelBackground: View {
 struct GlassDivider: View {
     var body: some View {
         Rectangle()
-            .fill(Color.white.opacity(0.34))
-            .frame(height: 0.7)
-            .overlay(Rectangle().fill(Color.black.opacity(0.05)).offset(y: 0.5))
+            .fill(DesignColor.border)
+            .frame(height: 0.5)
+    }
+}
+
+// 文本视图必须跟随实际视口宽度；SwiftUI 首次创建时视口尚未完成布局。
+final class TextEditorScrollView: NSScrollView {
+    private var lastViewportSize = NSSize.zero
+
+    override func layout() {
+        super.layout()
+        guard let editor = documentView as? NSTextView,
+              contentSize.width > 0, contentSize.height > 0,
+              contentSize != lastViewportSize else { return }
+        lastViewportSize = contentSize
+        editor.minSize = NSSize(width: 0, height: contentSize.height)
+        editor.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        editor.setFrameSize(NSSize(width: contentSize.width, height: max(editor.frame.height, contentSize.height)))
+        editor.textContainer?.containerSize = NSSize(
+            width: max(1, contentSize.width - editor.textContainerInset.width * 2),
+            height: .greatestFiniteMagnitude
+        )
+        editor.sizeToFit()
     }
 }

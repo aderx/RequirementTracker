@@ -8,14 +8,20 @@
 </head>
 <body>
   <main class="shell">
+    <header class="brand-header">
+      <span class="brand-name">需求记录</span>
+      <span class="brand-caption">Jira · GitLab</span>
+    </header>
     <section class="status-card" aria-live="polite">
       <div id="iconFrame" class="icon-frame blue">
         <canvas id="badgeIconCanvas" class="badge-icon-canvas hidden" width="96" height="96" aria-hidden="true"></canvas>
         <span id="statusIcon" class="icon-symbol" aria-hidden="true">✓</span>
       </div>
 
-      <h1 id="titleText">需求记录</h1>
-      <p id="statusText">正在识别当前页面...</p>
+      <div class="status-copy">
+        <h1 id="titleText">需求记录</h1>
+        <p id="statusText">正在识别当前页面...</p>
+      </div>
     </section>
 
     <section id="summaryPanel" class="info-card hidden" aria-label="识别结果"></section>
@@ -26,6 +32,7 @@
     </section>
 
     <section id="manualPanel" class="manual-card hidden" aria-label="手动输入">
+      <label for="manualJiraInput">关联 Jira 需求</label>
       <input id="manualJiraInput" type="text" placeholder="ZSTAC-12345 或完整 Jira 链接">
     </section>
 

@@ -214,7 +214,7 @@ struct RequirementPanelView: View {
 
             Text("\(items.count) 项")
                 .font(.system(size: 10.5))
-                .foregroundStyle(Color.black.opacity(0.38))
+                .foregroundStyle(DesignColor.textSecondary)
                 .padding(.leading, 2)
 
             Spacer()
@@ -237,7 +237,7 @@ struct RequirementPanelView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .strokeBorder(Color.black.opacity(0.13), lineWidth: 0.5)
+                        .strokeBorder(DesignColor.textPrimary.opacity(0.13), lineWidth: 0.5)
                 )
             } else {
                 if !scriptMenuContents.isEmpty {
@@ -313,14 +313,14 @@ struct RequirementPanelView: View {
         GlassEffectContainer(spacing: 4) {
             HStack(spacing: 6) {
                 modernStatusCluster(items)
-                    .glassEffect(.regular.interactive(), in: Capsule())
+                    .glassEffect(.regular, in: Capsule())
                     .glassEffectID("modern-status", in: modernGlassNamespace)
 
                 Spacer(minLength: 6)
 
                 if hasModernTopActions {
                     modernQuickActionsCluster
-                        .glassEffect(.regular.interactive(), in: Capsule())
+                        .glassEffect(.regular, in: Capsule())
                         .glassEffectID("modern-quick-actions", in: modernGlassNamespace)
                 }
             }
@@ -337,7 +337,7 @@ struct RequirementPanelView: View {
                 .background(.ultraThinMaterial, in: Capsule())
                 .overlay(
                     Capsule()
-                        .strokeBorder(Color.white.opacity(0.52), lineWidth: 0.6)
+                        .strokeBorder(DesignColor.border, lineWidth: 0.6)
                 )
                 .shadow(color: Color.black.opacity(0.08), radius: 8, y: 3)
 
@@ -348,7 +348,7 @@ struct RequirementPanelView: View {
                     .background(.ultraThinMaterial, in: Capsule())
                     .overlay(
                         Capsule()
-                            .strokeBorder(Color.white.opacity(0.52), lineWidth: 0.6)
+                            .strokeBorder(DesignColor.border, lineWidth: 0.6)
                     )
                     .shadow(color: Color.black.opacity(0.08), radius: 8, y: 3)
             }
@@ -365,18 +365,18 @@ struct RequirementPanelView: View {
             }
 
             Rectangle()
-                .fill(Color.black.opacity(0.09))
+                .fill(DesignColor.textPrimary.opacity(0.09))
                 .frame(width: 0.6, height: 14)
                 .padding(.horizontal, 4)
 
             Text("\(items.count) 项")
                 .font(.system(size: 10.5, weight: .medium))
-                .foregroundStyle(Color.black.opacity(0.42))
+                .foregroundStyle(DesignColor.textSecondary)
                 .padding(.trailing, 6)
                 .fixedSize()
         }
         .padding(.horizontal, 3)
-        .frame(height: 32)
+        .frame(height: 34)
         .fixedSize()
     }
 
@@ -391,9 +391,9 @@ struct RequirementPanelView: View {
                 .foregroundStyle(
                     statusFilter == filter
                         ? DesignColor.doing
-                        : Color.black.opacity(0.50)
+                        : DesignColor.textPrimary.opacity(0.50)
                 )
-                .frame(width: 24, height: 28)
+                .frame(width: 28, height: 28)
                 .contentShape(Rectangle())
         }
         .buttonStyle(FloatingIconButtonStyle(diameter: 24))
@@ -430,7 +430,7 @@ struct RequirementPanelView: View {
             }
         }
         .padding(.horizontal, 3)
-        .frame(height: 32)
+        .frame(height: 34)
         .fixedSize()
     }
 
@@ -442,10 +442,10 @@ struct RequirementPanelView: View {
         VStack(alignment: .leading, spacing: 8) {
             PlainTextEditor(text: $bulkInput)
                 .frame(height: 60)
-                .background(Color.white.opacity(0.92), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .background(DesignColor.surface.opacity(0.92), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .strokeBorder(Color.black.opacity(0.13), lineWidth: 0.5)
+                        .strokeBorder(DesignColor.textPrimary.opacity(0.13), lineWidth: 0.5)
                 )
                 .overlay {
                     if bulkInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -568,7 +568,7 @@ struct RequirementPanelView: View {
                 .background(minimalBarBackground(cornerRadius: 16))
                 .overlay(
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .strokeBorder(Color.black.opacity(0.10), lineWidth: 0.6)
+                        .strokeBorder(DesignColor.textPrimary.opacity(0.10), lineWidth: 0.6)
                 )
                 .shadow(color: Color.black.opacity(0.10), radius: 8, y: 3)
                 .padding(.horizontal, 10)
@@ -641,7 +641,7 @@ struct RequirementPanelView: View {
                             .foregroundStyle(
                                 statusFilter == filter
                                     ? DesignColor.doing
-                                    : Color.black.opacity(0.48)
+                                    : DesignColor.textPrimary.opacity(0.48)
                             )
                             .frame(width: 19, height: 26)
                             .contentShape(Rectangle())
@@ -661,7 +661,7 @@ struct RequirementPanelView: View {
 
                 Text("\(visibleRequirements.count) 项")
                     .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(Color.black.opacity(0.46))
+                    .foregroundStyle(DesignColor.textSecondary)
                     .fixedSize()
             }
 
@@ -702,7 +702,7 @@ struct RequirementPanelView: View {
         .background(minimalBarBackground())
         .overlay(
             RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .strokeBorder(Color.black.opacity(0.10), lineWidth: 0.6)
+                .strokeBorder(DesignColor.textPrimary.opacity(0.10), lineWidth: 0.6)
         )
         .shadow(color: Color.black.opacity(0.10), radius: 8, y: 3)
     }
@@ -711,7 +711,7 @@ struct RequirementPanelView: View {
         HStack(spacing: 6) {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 10.5, weight: .semibold))
-                .foregroundStyle(hasActiveFilter ? DesignColor.doing : Color.black.opacity(0.42))
+                .foregroundStyle(hasActiveFilter ? DesignColor.doing : DesignColor.textPrimary.opacity(0.42))
                 .frame(width: 18)
 
             inlineSearchField()
@@ -727,7 +727,7 @@ struct RequirementPanelView: View {
         .background(minimalBarBackground())
         .overlay(
             RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .strokeBorder(Color.black.opacity(0.10), lineWidth: 0.6)
+                .strokeBorder(DesignColor.textPrimary.opacity(0.10), lineWidth: 0.6)
         )
         .shadow(color: Color.black.opacity(0.10), radius: 8, y: 3)
     }
@@ -741,7 +741,7 @@ struct RequirementPanelView: View {
                 .foregroundStyle(
                     isSearchExpanded || hasActiveFilter
                         ? DesignColor.doing
-                        : Color.black.opacity(0.52)
+                        : DesignColor.textPrimary.opacity(0.52)
                 )
                 .frame(width: 22, height: 26)
                 .contentShape(Rectangle())
@@ -776,7 +776,7 @@ struct RequirementPanelView: View {
                 if showsCalendar {
                     calendarPanel
                         .glassEffect(
-                            .regular.interactive(),
+                            .regular,
                             in: RoundedRectangle(cornerRadius: 18, style: .continuous)
                         )
                         .glassEffectID("modern-calendar", in: modernGlassNamespace)
@@ -795,7 +795,7 @@ struct RequirementPanelView: View {
                         hoverShape: .circle,
                         hoverBackgroundSize: CGSize(width: 28, height: 28)
                     )
-                        .glassEffect(.regular.interactive(), in: Circle())
+                        .glassEffect(.regular, in: Circle())
                         .glassEffectID("modern-more", in: modernGlassNamespace)
                         .pointingHandCursor()
                 }
@@ -817,7 +817,7 @@ struct RequirementPanelView: View {
                     )
                     .overlay(
                         RoundedRectangle(cornerRadius: 18, style: .continuous)
-                            .strokeBorder(Color.white.opacity(0.52), lineWidth: 0.6)
+                            .strokeBorder(DesignColor.border, lineWidth: 0.6)
                     )
                     .shadow(color: Color.black.opacity(0.08), radius: 8, y: 3)
                     .padding(.horizontal, 10)
@@ -837,7 +837,7 @@ struct RequirementPanelView: View {
                     .background(.ultraThinMaterial, in: Circle())
                     .overlay(
                         Circle()
-                            .strokeBorder(Color.white.opacity(0.52), lineWidth: 0.6)
+                            .strokeBorder(DesignColor.border, lineWidth: 0.6)
                     )
                     .shadow(color: Color.black.opacity(0.08), radius: 8, y: 3)
                     .pointingHandCursor()
@@ -850,38 +850,21 @@ struct RequirementPanelView: View {
     }
 
     @available(macOS 26.0, *)
-    @ViewBuilder
     private var nativeModernSearchControl: some View {
-        if isSearchExpanded {
-            modernSearchCluster
-                .glassEffect(.regular.interactive(), in: Capsule())
-        } else {
-            modernSearchCluster
-                .frame(width: 34, height: 34)
-                .glassEffect(.regular.interactive(), in: Circle())
-        }
+        modernSearchCluster
+            .frame(width: isSearchExpanded ? nil : 34, height: 34)
+            .glassEffect(.regular, in: Capsule())
     }
 
-    @ViewBuilder
     private var fallbackModernSearchControl: some View {
-        if isSearchExpanded {
-            modernSearchCluster
-                .background(.ultraThinMaterial, in: Capsule())
-                .overlay(
-                    Capsule()
-                        .strokeBorder(Color.white.opacity(0.52), lineWidth: 0.6)
-                )
-                .shadow(color: Color.black.opacity(0.08), radius: 8, y: 3)
-        } else {
-            modernSearchCluster
-                .frame(width: 34, height: 34)
-                .background(.ultraThinMaterial, in: Circle())
-                .overlay(
-                    Circle()
-                        .strokeBorder(Color.white.opacity(0.52), lineWidth: 0.6)
-                )
-                .shadow(color: Color.black.opacity(0.08), radius: 8, y: 3)
-        }
+        modernSearchCluster
+            .frame(width: isSearchExpanded ? nil : 34, height: 34)
+            .background(.ultraThinMaterial, in: Capsule())
+            .overlay(
+                Capsule()
+                    .strokeBorder(DesignColor.border, lineWidth: 0.6)
+            )
+            .shadow(color: Color.black.opacity(0.08), radius: 8, y: 3)
     }
 
     private var modernSearchCluster: some View {
@@ -890,12 +873,14 @@ struct RequirementPanelView: View {
                 toggleSearch()
             } label: {
                 Image(systemName: isSearchExpanded ? "xmark" : "magnifyingglass")
-                    .font(.system(size: 11.5, weight: .semibold))
-                    .foregroundStyle(isSearchExpanded || hasActiveFilter ? DesignColor.doing : Color.black.opacity(0.62))
-                    .frame(width: 32, height: 32)
-                    .contentShape(Circle())
+                .font(.system(size: 11.5, weight: .semibold))
+                .foregroundStyle(isSearchExpanded || hasActiveFilter ? DesignColor.doing : DesignColor.textPrimary.opacity(0.62))
+                .frame(width: 32, height: 32)
+                .contentShape(Circle())
             }
             .buttonStyle(FloatingIconButtonStyle(diameter: 28))
+            .fixedSize()
+            .frame(width: 34, height: 34)
             .help(isSearchExpanded ? "关闭搜索" : "搜索")
             .pointingHandCursor()
 
@@ -909,7 +894,7 @@ struct RequirementPanelView: View {
                 dateFilterButton(maximumWidth: 62)
             }
         }
-        .padding(.horizontal, isSearchExpanded ? 4 : 2)
+        .padding(.trailing, isSearchExpanded ? 2 : 0)
         .frame(height: 34)
         .animation(.snappy(duration: 0.20), value: isSearchExpanded)
     }
@@ -932,7 +917,7 @@ struct RequirementPanelView: View {
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .font(.system(size: 9.5))
-                        .foregroundStyle(Color.black.opacity(0.30))
+                        .foregroundStyle(DesignColor.textPrimary.opacity(0.30))
                 }
                 .buttonStyle(.plain)
                 .help("清空搜索")
@@ -965,7 +950,7 @@ struct RequirementPanelView: View {
             .foregroundStyle(
                 showsCalendar || hasActiveDateFilter
                     ? DesignColor.doing
-                    : Color.black.opacity(0.58)
+                    : DesignColor.textPrimary.opacity(0.58)
             )
             .padding(.horizontal, 3)
             .frame(minWidth: 42, maxWidth: maximumWidth)
@@ -979,7 +964,7 @@ struct RequirementPanelView: View {
 
     private var compactDivider: some View {
         Rectangle()
-            .fill(Color.black.opacity(0.10))
+            .fill(DesignColor.textPrimary.opacity(0.10))
             .frame(width: 0.5, height: 15)
     }
 
@@ -1003,7 +988,7 @@ struct RequirementPanelView: View {
                         .frame(width: 24)
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(Color.black.opacity(0.40))
+                .foregroundStyle(DesignColor.textSecondary)
                 .pointingHandCursor()
 
                 Spacer()
@@ -1022,7 +1007,7 @@ struct RequirementPanelView: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(isDisplayingCurrentOrFutureMonth)
-                .foregroundStyle(isDisplayingCurrentOrFutureMonth ? Color.black.opacity(0.18) : Color.black.opacity(0.40))
+                .foregroundStyle(isDisplayingCurrentOrFutureMonth ? DesignColor.textPrimary.opacity(0.18) : DesignColor.textPrimary.opacity(0.40))
                 .pointingHandCursor()
             }
 
@@ -1030,7 +1015,7 @@ struct RequirementPanelView: View {
                 ForEach(weekdaySymbols, id: \.self) { weekday in
                     Text(weekday)
                         .font(.system(size: 10.5, weight: .semibold))
-                        .foregroundStyle(weekday == "六" || weekday == "日" ? Color.red.opacity(0.55) : Color.black.opacity(0.35))
+                        .foregroundStyle(weekday == "六" || weekday == "日" ? Color.red.opacity(0.55) : DesignColor.textPrimary.opacity(0.35))
                         .frame(height: 16)
                 }
 
@@ -1334,7 +1319,7 @@ struct RequirementPanelView: View {
 
     private func calendarDayForeground(_ date: Date) -> Color {
         if date > Date() {
-            return Color.black.opacity(0.20)
+            return DesignColor.textPrimary.opacity(0.20)
         }
 
         if calendarDayIsSelected(date) {
@@ -1567,7 +1552,11 @@ private struct PlainTextEditor: NSViewRepresentable {
     }
 
     func makeNSView(context: Context) -> NSScrollView {
-        let textView = NSTextView()
+        let textView = NSTextView(frame: NSRect(x: 0, y: 0, width: 1, height: 1))
+        textView.autoresizingMask = [.width]
+        textView.isHorizontallyResizable = false
+        textView.isVerticallyResizable = true
+        textView.textContainer?.widthTracksTextView = true
         textView.delegate = context.coordinator
         textView.drawsBackground = false
         textView.isRichText = false
@@ -1583,7 +1572,7 @@ private struct PlainTextEditor: NSViewRepresentable {
         textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         textView.string = text
 
-        let scrollView = NSScrollView()
+        let scrollView = TextEditorScrollView()
         scrollView.drawsBackground = false
         scrollView.borderType = .noBorder
         scrollView.hasVerticalScroller = false
@@ -1598,15 +1587,22 @@ private struct PlainTextEditor: NSViewRepresentable {
             return
         }
 
+        context.coordinator.updateBinding($text)
         if textView.string != text {
             textView.string = text
+            textView.sizeToFit()
         }
+        scrollView.needsLayout = true
     }
 
     final class Coordinator: NSObject, NSTextViewDelegate {
         @Binding var text: String
 
         init(text: Binding<String>) {
+            _text = text
+        }
+
+        func updateBinding(_ text: Binding<String>) {
             _text = text
         }
 
@@ -1645,7 +1641,7 @@ private struct FloatingIconFeedbackModifier: ViewModifier {
         content
             .background {
                 Circle()
-                    .fill(Color.black.opacity(feedbackOpacity))
+                    .fill(DesignColor.textPrimary.opacity(feedbackOpacity))
                     .frame(width: diameter, height: diameter)
                     .allowsHitTesting(false)
             }
@@ -1683,19 +1679,19 @@ private struct HeaderSegmentButtonStyle: ButtonStyle {
 
     private var foregroundColor: Color {
         if !isEnabled {
-            return Color.black.opacity(0.32)
+            return DesignColor.textPrimary.opacity(0.32)
         }
 
-        return isProminent ? Color.white : Color.black.opacity(0.60)
+        return isProminent ? Color.white : DesignColor.textPrimary.opacity(0.60)
     }
 
     private func backgroundColor(isPressed: Bool) -> Color {
         if !isEnabled {
-            return Color.black.opacity(0.06)
+            return DesignColor.textPrimary.opacity(0.06)
         }
 
         return isProminent ? DesignColor.doing.opacity(isPressed ? 0.78 : 1)
-            : Color.black.opacity(isPressed ? 0.08 : 0.04)
+            : DesignColor.textPrimary.opacity(isPressed ? 0.08 : 0.04)
     }
 }
 
@@ -1718,7 +1714,7 @@ private struct HeaderAddButtonStyle: ButtonStyle {
             .contentShape(Rectangle())
             .opacity(configuration.isPressed ? 0.55 : 1)
             .background(
-                Color.black.opacity(backgroundOpacity),
+                DesignColor.textPrimary.opacity(backgroundOpacity),
                 in: RoundedRectangle(cornerRadius: 6, style: .continuous)
             )
     }
@@ -1738,12 +1734,12 @@ private struct CalendarQuickButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 11, weight: isSelected ? .semibold : .medium))
-            .foregroundStyle(isSelected ? Color.white : Color.black.opacity(0.65))
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(isSelected ? Color.white : DesignColor.textPrimary.opacity(0.65))
             .frame(maxWidth: .infinity)
             .padding(.vertical, 4)
             .background(
-                isSelected ? DesignColor.doing : Color.black.opacity(configuration.isPressed ? 0.08 : 0.05),
+                isSelected ? DesignColor.doing : DesignColor.textPrimary.opacity(configuration.isPressed ? 0.08 : 0.05),
                 in: RoundedRectangle(cornerRadius: 6, style: .continuous)
             )
     }
@@ -1762,7 +1758,7 @@ private struct StatusSegmentBar: View {
                 } label: {
                     Text(filter.title)
                         .font(.system(size: 10.5, weight: selection == filter ? .semibold : .regular))
-                        .foregroundStyle(selection == filter ? DesignColor.textPrimary : Color.black.opacity(0.50))
+                        .foregroundStyle(selection == filter ? DesignColor.textPrimary : DesignColor.textPrimary.opacity(0.50))
                         .frame(maxWidth: .infinity)
                         .frame(height: 20)
                         .contentShape(Rectangle())
@@ -1770,7 +1766,7 @@ private struct StatusSegmentBar: View {
                             Group {
                                 if selection == filter {
                                     RoundedRectangle(cornerRadius: 5, style: .continuous)
-                                        .fill(Color.white.opacity(0.95))
+                                        .fill(DesignColor.surface.opacity(0.95))
                                         .shadow(color: Color.black.opacity(0.12), radius: 3, y: 1)
                                 }
                             }
@@ -1789,7 +1785,7 @@ private struct StatusSegmentBar: View {
         .frame(height: 24)
         .background(
             RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(Color.black.opacity(0.05))
+                .fill(DesignColor.textPrimary.opacity(0.05))
         )
     }
 }

@@ -86,6 +86,11 @@ function createBackground(nativeStub) {
     "  checkMonitoredMRs,",
     "  extractMRStateFromResponseText,",
     "  resolveState,",
+    "  synchronizeMRForTab,",
+    "  fetchMRState,",
+    "  setFetchStub(stub) { globalThis.fetch = stub; },",
+    "  setTabStub(stub) { chrome.tabs.get = stub; },",
+    "  setContextStub(stub) { chrome.tabs.sendMessage = stub; },",
     "  testStateFromURL,",
     "  setNativeMessageStub(stub) { sendNativeMessage = stub; },",
     "  setPageOwnershipStub(stub) { readPageOwnership = stub; },",
@@ -245,11 +250,12 @@ async function testMRMonitorMarksMergedWithoutChangingMainStatusItself() {
 
   await background.checkMonitoredMRs();
 
-  assert.equal(messages.length, 2);
-  assert.equal(messages[1].type, "markMRMergeMonitorMerged");
-  assert.equal(messages[1].payload.issueKey, "ZSTAC-12345");
+  const writes = messages.filter(message => message.type !== "getPluginSettings");
+  assert.equal(writes.length, 2);
+  assert.equal(writes[1].type, "markMRMergeMonitorMerged");
+  assert.equal(writes[1].payload.issueKey, "ZSTAC-12345");
   assert.equal(
-    messages[1].payload.mrURL,
+    writes[1].payload.mrURL,
     "http://gitlab.zstack.io/g/p/-/merge_requests/1"
   );
 }
@@ -326,7 +332,85 @@ async function testStatusTestPageDrivesTheRealToolbarStatePath() {
   assert.equal(background.actionCalls.titles.at(-1)?.title, "需求记录：已自测");
 }
 
+async function testAutomaticMRTransitionsAndGuards() {
+  const mrURL = "http://gitlab.zstack.io/g/p/-/merge_requests/123";
+  for (const scenario of [
+    { name: "bound open MR", exists: true, state: "open", expected: 1 },
+    { name: "bound merged MR", exists: true, state: "merged", expected: 1 },
+    { name: "initial explicit own association", exists: false, owner: "mine", keys: ["ZSTAC-123"], expected: 1 },
+    { name: "unknown author", exists: false, keys: ["ZSTAC-123"], expected: 0 },
+    { name: "ambiguous references", exists: false, owner: "mine", keys: ["ZSTAC-123", "ZSTAC-456"], expected: 0 },
+    { name: "unrecorded requirement", exists: false, owner: "mine", keys: ["ZSTAC-123"], missing: true, expected: 0 },
+    { name: "closed MR", exists: true, state: "closed", expected: 0 },
+    { name: "navigation raced", exists: true, moved: true, expected: 0 },
+    { name: "old Host", exists: true, old: true, expected: 0 }
+  ]) {
+    const writes = [];
+    const background = createBackground(async message => {
+      if (message.type === "getPluginSettings") return {
+        ok: true, protocolVersion: 3, supportsAutomaticMRStatus: !scenario.old,
+        settings: { jiraBaseURL: "http://jira.zstack.io/browse/", mrHosts: ["gitlab.zstack.io"] }
+      };
+      if (message.type === "inspectByURL") return { ok: true, exists: scenario.exists, issueKey: "ZSTAC-123" };
+      if (message.type === "inspectRequirement") return { ok: true, exists: !scenario.missing };
+      writes.push(message);
+      return { ok: true };
+    });
+    background.setContextStub(async () => ({ ok: true, result: {
+      mrURL, mrState: scenario.state || "open", ownership: scenario.owner || "unknown", issueKeys: scenario.keys || []
+    } }));
+    background.setTabStub(async () => ({ url: scenario.moved ? `${mrURL}4` : `${mrURL}/diffs` }));
+    await Promise.all([background.synchronizeMRForTab(42, mrURL), background.synchronizeMRForTab(42, mrURL)]);
+    assert.equal(writes.length, scenario.expected, scenario.name);
+    if (writes.length) {
+      assert.equal(writes[0].type, "syncMRStatus");
+      assert.equal(writes[0].payload.mrState, scenario.state || "open");
+    }
+  }
+}
+
+async function testAutomaticMergeMonitoring() {
+  const writes = [];
+  const background = createBackground(async message => {
+    if (message.type === "getPluginSettings") return { ok: true, protocolVersion: 3, supportsAutomaticMRStatus: true };
+    if (message.type === "listMRMergeMonitors") return { ok: true, monitors: [] };
+    if (message.type === "listAutomaticMRMonitors") return { ok: true, monitors: [
+      { issueKey: "ZSTAC-123", mrURL: "http://gitlab.zstack.io/g/p/-/merge_requests/1", automatic: true },
+      { issueKey: "ZSTAC-456", mrURL: "http://gitlab.zstack.io/g/p/-/merge_requests/2", automatic: true }
+    ] };
+    writes.push(message); return { ok: true };
+  });
+  background.setFetchMRStateStub(async (url, strict) => {
+    assert.equal(strict, true);
+    return url.endsWith("/1") ? "merged" : "open";
+  });
+  await background.checkMonitoredMRs();
+  assert.equal(writes.length, 1);
+  assert.equal(writes[0].type, "syncMRStatus");
+  assert.equal(writes[0].payload.mrState, "merged");
+}
+
+async function testAutomaticMonitorRejectsUnverifiedResponses() {
+  const url = "http://gitlab.zstack.io/g/p/-/merge_requests/123";
+  const background = createBackground(nativeStubFor({ exists: true }));
+  for (const [responseURL, body, expected] of [
+    [`${url}.json`, '{"state":"merged"}', "merged"],
+    [`${url}.json`, '{"merge_request":{"state":"opened"}}', "open"],
+    ["http://gitlab.zstack.io/users/sign_in", '{"state":"merged"}', ""],
+    [`${url}.json`, '<div data-state="merged">comment</div>', ""],
+    [`${url}.json`, '{"comments":[{"state":"merged"}]}', ""]
+  ]) {
+    background.setFetchStub(async () => ({ ok: true, url: responseURL, text: async () => body }));
+    assert.equal(await background.fetchMRState(url, true), expected);
+  }
+  background.setFetchStub(async () => { throw new Error("offline"); });
+  assert.equal(await background.fetchMRState(url, true), "");
+}
+
 async function run() {
+  await testAutomaticMonitorRejectsUnverifiedResponses();
+  await testAutomaticMRTransitionsAndGuards();
+  await testAutomaticMergeMonitoring();
   await testBadgeStylesDifferentiateMilestones();
   await testStatusIconsReplaceWholeIconAndUnsupportedRestoresLogo();
   await testMilestoneJiraUsesDedicatedBadge();

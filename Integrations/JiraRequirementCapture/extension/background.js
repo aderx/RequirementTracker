@@ -24,6 +24,9 @@ const TESTABLE_STATES = new Set(["unsupported", ...Object.keys(BADGE_STYLES)]);
 let cachedSettings = null;
 let cachedSettingsAt = 0;
 let cachedHostCompatible = false;
+let supportsAutomaticMRStatus = false;
+let automaticWriteQueue = Promise.resolve();
+const tabSynchronizations = new Map();
 
 chrome.runtime.onInstalled.addListener(() => {
   installTestPageContextMenu();
@@ -69,6 +72,13 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 chrome.runtime.onMessage.addListener(handleRuntimeMessage);
 
 function handleRuntimeMessage(message, sender, sendResponse) {
+  if (message?.type === "MR_PAGE_CHANGED" && Number.isInteger(sender.tab?.id)) {
+    updateBadgeForTab(sender.tab.id, sender.tab.url || "")
+      .then((state) => sendResponse({ ok: true, state }))
+      .catch(() => sendResponse({ ok: false }));
+    return true;
+  }
+
   if (message?.type === "REFRESH_ACTIVE_TAB_BADGE") {
     cachedSettings = null;
     refreshActiveTab();
@@ -115,6 +125,7 @@ function refreshActiveTab() {
 
 async function updateBadgeForTab(tabId, url) {
   try {
+    await synchronizeMRForTab(tabId, url);
     const state = await resolveState(url, tabId);
     await applyBadge(tabId, state);
     return state;
@@ -122,6 +133,46 @@ async function updateBadgeForTab(tabId, url) {
     await applyBadge(tabId, "unsupported");
     return "unsupported";
   }
+}
+
+// 后台、页面加载和局部更新共用入口；自动写入串行执行，重复事件不追加时间线。
+function writeAutomaticStatus(payload) {
+  const result = automaticWriteQueue.then(() => sendNativeMessage({ type: "syncMRStatus", payload }));
+  automaticWriteQueue = result.catch(() => {});
+  return result;
+}
+
+function synchronizeMRForTab(tabId, url) {
+  const key = `${tabId}:${canonicalPageURL(url)}`;
+  if (tabSynchronizations.has(key)) return tabSynchronizations.get(key);
+  const task = synchronizeMRPage(tabId, url).catch(() => {}).finally(() => tabSynchronizations.delete(key));
+  tabSynchronizations.set(key, task);
+  return task;
+}
+
+async function synchronizeMRPage(tabId, url) {
+  if (!Number.isInteger(tabId) || await detectPageType(url) !== "mr" || !supportsAutomaticMRStatus) return;
+  const mrURL = canonicalPageURL(url);
+  const response = await chrome.tabs.sendMessage(tabId, {
+    type: "EXTRACT_AUTOMATIC_MR_CONTEXT", settings: await loadSettings()
+  });
+  const context = response?.ok && response.result;
+  if (!context || canonicalPageURL(context.mrURL) !== mrURL) return;
+  const binding = await sendNativeMessage({ type: "inspectByURL", payload: { mrURL } });
+  if (!binding?.ok) return;
+  const issueKeys = Array.isArray(context.issueKeys) ? [...new Set(context.issueKeys)] : [];
+  if (!binding.exists && (context.ownership !== "mine" || issueKeys.length !== 1)) return;
+  const issueKey = binding.exists ? binding.issueKey : issueKeys[0];
+  if (!binding.exists) {
+    const requirement = await sendNativeMessage({ type: "inspectRequirement", payload: { issueKey } });
+    if (!requirement?.ok || !requirement.exists) return;
+  }
+  const mrState = context.mrState || await fetchMRState(mrURL, true);
+  if (!["open", "merged"].includes(mrState)) return;
+  // 异步识别期间可能已跳转到另一个 MR，旧页面结果不写回。
+  const currentTab = await chrome.tabs.get(tabId);
+  if (!currentTab?.url || canonicalPageURL(currentTab.url) !== mrURL) return;
+  await writeAutomaticStatus({ mrURL, issueKey, mrState, allowInitialBinding: !binding.exists });
 }
 
 async function resolveState(url, tabId) {
@@ -192,31 +243,35 @@ async function checkMonitoredMRs() {
     return;
   }
 
-  const monitors = Array.isArray(response?.monitors) ? response.monitors : [];
+  const manualMonitors = Array.isArray(response?.monitors) ? response.monitors : [];
+  await loadSettings();
+  let automaticMonitors = [];
+  if (supportsAutomaticMRStatus) {
+    try {
+      const automatic = await sendNativeMessage({ type: "listAutomaticMRMonitors", payload: {} });
+      automaticMonitors = Array.isArray(automatic?.monitors) ? automatic.monitors : [];
+    } catch { /* 旧版本 Host 不支持时保留原监听行为。 */ }
+  }
+  const automaticURLs = new Set(automaticMonitors.map(item => canonicalPageURL(item.mrURL)));
+  const monitors = [...automaticMonitors, ...manualMonitors.filter(item => !automaticURLs.has(canonicalPageURL(item.mrURL)))];
   for (const monitor of monitors) {
     const issueKey = String(monitor?.issueKey || "").trim();
     const mrURL = canonicalPageURL(monitor?.mrURL || "");
-    if (!issueKey || !mrURL) {
-      continue;
-    }
-
-    if (await fetchMRState(mrURL) !== "merged") {
-      continue;
-    }
-
+    if (!issueKey || !mrURL || await detectPageType(mrURL) !== "mr") continue;
+    if (await fetchMRState(mrURL, monitor.automatic === true) !== "merged") continue;
     try {
-      await sendNativeMessage({
-        type: "markMRMergeMonitorMerged",
-        payload: { issueKey, mrURL }
-      });
-    } catch {
-      // 单个 MR 写回失败不影响其它监听项。
-    }
+      if (monitor.automatic === true) {
+        await writeAutomaticStatus({ issueKey, mrURL, mrState: "merged" });
+      } else {
+        await sendNativeMessage({ type: "markMRMergeMonitorMerged", payload: { issueKey, mrURL } });
+      }
+    } catch { /* 单个 MR 写回失败不影响其它监听项。 */ }
   }
+  refreshActiveTab();
 }
 
-async function fetchMRState(mrURL) {
-  const candidates = [`${mrURL}.json`, mrURL];
+async function fetchMRState(mrURL, structuredOnly = false) {
+  const candidates = structuredOnly ? [`${mrURL}.json`] : [`${mrURL}.json`, mrURL];
   for (const candidate of candidates) {
     try {
       const response = await fetch(candidate, {
@@ -229,7 +284,17 @@ async function fetchMRState(mrURL) {
         continue;
       }
 
-      const state = extractMRStateFromResponseText(await response.text());
+      const text = await response.text();
+      let state;
+      if (structuredOnly) {
+        if (response.url && canonicalPageURL(response.url.replace(/\.json(?=[?#]|$)/, "")) !== mrURL) continue;
+        const payload = JSON.parse(text);
+        state = String(payload?.state || payload?.merge_request?.state || "").toLowerCase();
+        if (state === "opened") state = "open";
+        if (!["open", "merged", "closed"].includes(state)) continue;
+      } else {
+        state = extractMRStateFromResponseText(text);
+      }
       if (state) {
         return state;
       }
@@ -340,6 +405,7 @@ async function loadSettings() {
     const response = await sendNativeMessage({ type: "getPluginSettings", payload: {} });
     if (response?.ok) {
       cachedHostCompatible = Number(response.protocolVersion || 0) >= REQUIRED_NATIVE_HOST_PROTOCOL_VERSION;
+      supportsAutomaticMRStatus = cachedHostCompatible && response.supportsAutomaticMRStatus === true;
       cachedSettings = { ...FALLBACK_SETTINGS, ...(response.settings || {}) };
       cachedSettingsAt = now;
       return cachedSettings;
@@ -349,6 +415,7 @@ async function loadSettings() {
   }
 
   cachedHostCompatible = false;
+  supportsAutomaticMRStatus = false;
   cachedSettings = cachedSettings || FALLBACK_SETTINGS;
   cachedSettingsAt = now;
   return cachedSettings;

@@ -25,7 +25,7 @@ struct RequirementAboutView: View {
 
                     Text("版本 \(version)")
                         .font(.system(size: 12, design: .monospaced))
-                        .foregroundStyle(Color.black.opacity(0.54))
+                        .foregroundStyle(DesignColor.textSecondary)
                 }
 
                 Spacer(minLength: 12)

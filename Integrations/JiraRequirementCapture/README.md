@@ -28,6 +28,14 @@ Chrome/Edge unpacked extension and Native Messaging host for capturing the curre
 7. Pin the extension to the browser toolbar.
 8. Open a Jira issue page or GitLab MR page and click the extension icon once.
 
+## Automatic MR status (1.19.0)
+
+- Opening an MR already bound to a recorded requirement advances it to `已自测`. A merged MR advances it to `已合并`.
+- For the first MR binding, the page must clearly belong to the signed-in user and identify exactly one existing requirement in its title/description. Existing MR bindings take precedence. New requirements are never created automatically.
+- Paused/stopped requirements and historical MRs are excluded; repeat visits do not append duplicate history or change timestamps. A different MR must be bound manually before it can advance an existing MR association.
+- GitLab page updates trigger synchronization without opening the popup. While Chrome runs, the existing 15-minute alarm also checks the latest MR of recorded, active requirements. Background automatic merge checks require a structured GitLab response; login redirects, network errors and unknown responses leave data unchanged.
+- Both the extension and Native Host must be updated. During development, load the extension from the development app's `Contents/Resources/JiraRequirementCaptureExtension`, then set its extension ID and install Native Host from that development app's plugin settings. Reload existing MR tabs after updating the extension.
+
 ## Status test page
 
 - Right-click the extension icon and choose **打开状态测试页**.
@@ -39,9 +47,9 @@ Chrome/Edge unpacked extension and Native Messaging host for capturing the curre
 
 ## Notes
 
-- The popup uses `activeTab` to read requirement details after you click the extension. A small content script reads only the current Jira assignee or GitLab MR author plus the signed-in identity so the background service worker can decide whether to show the orange `+` badge.
+- The popup uses `activeTab` to read requirement details after you click the extension. The content script reads page identity for badge eligibility and extracts the MR state plus scoped title/description references for automatic synchronization.
 - For an unrecorded Jira issue or GitLab MR, the orange `+` badge is hidden only when the page clearly belongs to another user. Unknown or unsupported page identity keeps the existing addable behavior, and opening the popup still allows an explicit add.
-- A saved MR starts at `MR 已创建`. The card's top-level menu can move it to `MR 已提交合并`, then optionally enable merge monitoring. While Chrome is running, the extension checks monitored MRs every 15 minutes using the existing GitLab login. A merged result updates only the MR sub-status and reminder fields through Native Host; it never advances the requirement's main status or its normal sorting timestamp.
+- A saved MR starts at `MR 已创建`. The card's top-level menu can move it to `MR 已提交合并`, then optionally enable merge monitoring. While Chrome is running, the extension checks monitored MRs every 15 minutes using the existing GitLab login. In 1.19.0 the automatic path advances eligible requirements to merged; the legacy explicit reminder path remains available for records excluded from automatic status progression.
 - The icon shows a bottom-right status badge per tab: orange `+` for an unrecorded supported page, green `↻` for a recorded requirement, green `✓` for a merged requirement, amber `Ⅱ` for a paused requirement, and red `■` for a stopped requirement. Unsupported pages have no badge. The popup shows the pause/stop reason in a separate highlighted row below the summary card.
 - When adding or updating a Jira, the popup also offers a `确认并开始开发` button. It saves the issue and, if the requirement is not started yet (or does not exist), creates it / moves it to `开发中`. Requirements already in progress or completed keep their status. The countdown default stays on the original confirm/close button.
 - Jira issue pages are detected by `/browse/<KEY>`. Non-detail Jira pages and unsupported pages show a short popup and close automatically.

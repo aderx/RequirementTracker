@@ -262,7 +262,7 @@ struct RequirementOverviewView: View {
                 }
             }
         }
-        .background(Color.white.opacity(0.24))
+        .background(DesignColor.surface.opacity(0.24))
     }
 
     private func overviewListRow(_ requirement: Requirement, index: Int) -> some View {
@@ -342,7 +342,7 @@ struct RequirementOverviewView: View {
         .frame(height: overviewTopHeaderHeight)
         .overlay(alignment: .bottom) {
             Rectangle()
-                .fill(Color.black.opacity(0.07))
+                .fill(DesignColor.textPrimary.opacity(0.07))
                 .frame(height: 0.5)
         }
     }
@@ -382,14 +382,11 @@ struct RequirementOverviewView: View {
                 } label: {
                     Image(systemName: "calendar")
                         .font(.system(size: 10, weight: .semibold))
+                        .modifier(OverviewControlSurface(isSelected: selectedDateFilter != .all, width: 24, height: 20))
                 }
-                .buttonStyle(
-                    OverviewIconButtonStyle(
-                        isSelected: selectedDateFilter != .all,
-                        width: 24,
-                        height: 20
-                    )
-                )
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
                 .help(selectedDateFilter == .all ? "选择时间范围" : "时间范围：\(selectedDateFilter.overviewTitle)")
                 .pointingHandCursor()
 
@@ -409,14 +406,11 @@ struct RequirementOverviewView: View {
                 } label: {
                     Image(systemName: "arrow.up.arrow.down")
                         .font(.system(size: 9.5, weight: .semibold))
+                        .modifier(OverviewControlSurface(isSelected: overviewSortMode == .updatedAt, width: 24, height: 20))
                 }
-                .buttonStyle(
-                    OverviewIconButtonStyle(
-                        isSelected: overviewSortMode == .updatedAt,
-                        width: 24,
-                        height: 20
-                    )
-                )
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
                 .help("排序：\(overviewSortMode.title)")
                 .pointingHandCursor()
 
@@ -476,7 +470,7 @@ struct RequirementOverviewView: View {
         }
         .overlay(alignment: .bottom) {
             Rectangle()
-                .fill(Color.black.opacity(0.06))
+                .fill(DesignColor.textPrimary.opacity(0.06))
                 .frame(height: 0.5)
         }
     }
@@ -487,7 +481,7 @@ struct RequirementOverviewView: View {
             HStack(spacing: 6) {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(Color.black.opacity(0.34))
+                    .foregroundStyle(DesignColor.textPrimary.opacity(0.34))
 
                 TextField("搜索 Jira / MR / 标题 / 备注 / 原因", text: $searchText)
                     .font(.system(size: 11))
@@ -499,7 +493,7 @@ struct RequirementOverviewView: View {
                     } label: {
                         Image(systemName: "xmark.circle.fill")
                             .font(.system(size: 10))
-                            .foregroundStyle(Color.black.opacity(0.32))
+                            .foregroundStyle(DesignColor.textPrimary.opacity(0.32))
                     }
                     .buttonStyle(.plain)
                     .help("清除搜索")
@@ -508,10 +502,10 @@ struct RequirementOverviewView: View {
             }
             .padding(.horizontal, 8)
             .frame(height: 25)
-            .background(Color.white.opacity(0.72), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .background(DesignColor.surface.opacity(0.72), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .strokeBorder(Color.black.opacity(0.10), lineWidth: 0.5)
+                    .strokeBorder(DesignColor.textPrimary.opacity(0.10), lineWidth: 0.5)
             )
             .padding(.horizontal, 10)
             .padding(.bottom, 6)
@@ -584,14 +578,15 @@ struct RequirementOverviewView: View {
 
                     Text(requirement.title)
                         .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(Color.black.opacity(0.56))
-                        .lineLimit(nil)
+                        .foregroundStyle(DesignColor.textSecondary)
+                        .lineLimit(3)
                         .fixedSize(horizontal: false, vertical: true)
                         .multilineTextAlignment(.leading)
+                        .help(requirement.title)
 
                     Text("\(relativeDateText(requirement.activityDate))更新")
                         .font(.system(size: 10))
-                        .foregroundStyle(Color.black.opacity(0.40))
+                        .foregroundStyle(DesignColor.textSecondary)
                 }
 
                 Spacer()
@@ -603,10 +598,11 @@ struct RequirementOverviewView: View {
                 .pointingHandCursor()
             }
             .padding(.horizontal, 20)
-            .frame(height: overviewTopHeaderHeight)
+            .padding(.vertical, 10)
+            .frame(minHeight: overviewTopHeaderHeight)
             .overlay(alignment: .bottom) {
                 Rectangle()
-                    .fill(Color.black.opacity(0.07))
+                    .fill(DesignColor.textPrimary.opacity(0.07))
                     .frame(height: 0.5)
             }
 
@@ -764,10 +760,11 @@ struct RequirementOverviewView: View {
 
                     Text(requirement.title)
                         .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(Color.black.opacity(0.56))
-                        .lineLimit(nil)
+                        .foregroundStyle(DesignColor.textSecondary)
+                        .lineLimit(3)
                         .fixedSize(horizontal: false, vertical: true)
                         .multilineTextAlignment(.leading)
+                        .help(requirement.title)
                         .textSelection(.enabled)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -789,10 +786,11 @@ struct RequirementOverviewView: View {
                 .pointingHandCursor(canSaveDraft)
             }
             .padding(.horizontal, 20)
-            .frame(height: overviewTopHeaderHeight)
+            .padding(.vertical, 10)
+            .frame(minHeight: overviewTopHeaderHeight)
             .overlay(alignment: .bottom) {
                 Rectangle()
-                    .fill(Color.black.opacity(0.07))
+                    .fill(DesignColor.textPrimary.opacity(0.07))
                     .frame(height: 0.5)
             }
 
@@ -801,7 +799,7 @@ struct RequirementOverviewView: View {
                     VStack(alignment: .leading, spacing: 10) {
                         Text("状态")
                             .font(.system(size: 10, weight: .bold))
-                            .foregroundStyle(Color.black.opacity(0.40))
+                            .foregroundStyle(DesignColor.textSecondary)
 
                         LazyVGrid(
                             columns: [
@@ -835,7 +833,7 @@ struct RequirementOverviewView: View {
                     .padding(.bottom, 16)
                     .overlay(alignment: .bottom) {
                         Rectangle()
-                            .fill(Color.black.opacity(0.06))
+                            .fill(DesignColor.textPrimary.opacity(0.06))
                             .frame(height: 0.5)
                     }
 
@@ -960,7 +958,7 @@ struct RequirementOverviewView: View {
         return VStack(alignment: .leading, spacing: 10) {
             Text("状态记录")
                 .font(.system(size: 10, weight: .bold))
-                .foregroundStyle(Color.black.opacity(0.30))
+                .foregroundStyle(DesignColor.textPrimary.opacity(0.30))
 
             VStack(spacing: 0) {
                 ForEach(Array(entries.enumerated()), id: \.element.id) { index, entry in
@@ -972,12 +970,12 @@ struct RequirementOverviewView: View {
 
                         Text(entry.status.title)
                             .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(Color.black.opacity(0.65))
+                            .foregroundStyle(DesignColor.textSecondary)
                             .frame(width: 58, alignment: .leading)
 
                         Text(timelineDateText(entry.date))
                             .font(.system(size: 10))
-                            .foregroundStyle(Color.black.opacity(0.35))
+                            .foregroundStyle(DesignColor.textSecondary)
 
                         Spacer()
                     }
@@ -986,12 +984,12 @@ struct RequirementOverviewView: View {
 
                     if index < entries.count - 1 {
                         Rectangle()
-                            .fill(Color.black.opacity(0.05))
+                            .fill(DesignColor.textPrimary.opacity(0.05))
                             .frame(height: 0.5)
                     }
                 }
             }
-            .background(Color.black.opacity(0.03), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .background(DesignColor.textPrimary.opacity(0.03), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
         }
         .padding(.top, 20)
     }
@@ -1009,11 +1007,11 @@ struct RequirementOverviewView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(isConfirmingDeletion ? "删除确认" : "修改确认")
                         .font(.system(size: 14, weight: .bold))
-                        .foregroundStyle(isConfirmingDeletion ? DesignColor.stopped : Color(hex: 0x0055CC))
+                        .foregroundStyle(isConfirmingDeletion ? DesignColor.stopped : DesignColor.doing)
 
                     Text(isConfirmingDeletion ? "确认删除该需求？该操作会从总览和弹窗列表中移除。" : "检测到 \(pendingChanges.count) 个修改，确认提交？还原某项可单独撤销该修改")
                         .font(.system(size: 11))
-                        .foregroundStyle(Color.black.opacity(0.60))
+                        .foregroundStyle(DesignColor.textSecondary)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 20)
@@ -1021,7 +1019,7 @@ struct RequirementOverviewView: View {
                 .background(Rectangle().fill(DesignColor.doing.opacity(0.06)))
                 .overlay(alignment: .bottom) {
                     Rectangle()
-                        .fill(Color.black.opacity(0.07))
+                        .fill(DesignColor.textPrimary.opacity(0.07))
                         .frame(height: 0.5)
                 }
 
@@ -1058,16 +1056,16 @@ struct RequirementOverviewView: View {
                 .padding(.vertical, 14)
                 .overlay(alignment: .top) {
                     Rectangle()
-                        .fill(Color.black.opacity(0.07))
+                        .fill(DesignColor.textPrimary.opacity(0.07))
                         .frame(height: 0.5)
                 }
             }
             .frame(width: 520)
-            .background(Color.white.opacity(0.96))
+            .background(DesignColor.surface.opacity(0.96))
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(Color.black.opacity(0.10), lineWidth: 0.5)
+                    .strokeBorder(DesignColor.textPrimary.opacity(0.10), lineWidth: 0.5)
             )
             .shadow(color: Color.black.opacity(0.22), radius: 24, y: 12)
         }
@@ -1787,11 +1785,11 @@ private struct OverviewRequirementListRow: View {
             HStack(spacing: 6) {
                 Text("#\(index)")
                     .font(.system(size: 9.5, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(isSelected ? DesignColor.doing : Color.black.opacity(0.42))
+                    .foregroundStyle(isSelected ? DesignColor.doing : DesignColor.textPrimary.opacity(0.42))
                     .padding(.horizontal, 5)
                     .frame(height: 17)
                     .background(
-                        Color.black.opacity(isSelected ? 0.06 : 0.035),
+                        DesignColor.textPrimary.opacity(isSelected ? 0.06 : 0.035),
                         in: RoundedRectangle(cornerRadius: 4, style: .continuous)
                     )
 
@@ -1815,13 +1813,13 @@ private struct OverviewRequirementListRow: View {
 
             Text(title.isEmpty ? "暂无标题" : title)
                 .font(.system(size: 10.5, weight: .medium))
-                .foregroundStyle(Color.black.opacity(title.isEmpty ? 0.34 : 0.62))
+                .foregroundStyle(DesignColor.textPrimary.opacity(title.isEmpty ? 0.34 : 0.62))
                 .lineLimit(1)
                 .truncationMode(.tail)
 
             Text(summaryText)
                 .font(.system(size: 10))
-                .foregroundStyle(Color.black.opacity(0.45))
+                .foregroundStyle(DesignColor.textSecondary)
                 .lineLimit(1)
 
             metadataTags
@@ -1846,7 +1844,7 @@ private struct OverviewRequirementListRow: View {
         }
 
         if isHovering {
-            return Color.black.opacity(0.045)
+            return DesignColor.textPrimary.opacity(0.045)
         }
 
         return .clear
@@ -1937,7 +1935,7 @@ private func overviewIssueTypeColor(for value: String) -> Color {
         return DesignColor.merged
     }
 
-    return Color.black.opacity(0.52)
+    return DesignColor.textPrimary.opacity(0.52)
 }
 
 private func overviewPriorityColor(for value: String) -> Color {
@@ -1982,7 +1980,7 @@ private struct OverviewStatTile: View {
 
                         Text(filter.title)
                             .font(.system(size: 9.5, weight: isSelected ? .semibold : .regular))
-                            .foregroundStyle(Color.black.opacity(0.55))
+                            .foregroundStyle(DesignColor.textSecondary)
                             .lineLimit(1)
                     }
                 } else {
@@ -2005,7 +2003,7 @@ private struct OverviewStatTile: View {
             .frame(height: isPrimary ? 46 : 21)
             .background(
                 isPrimary
-                    ? Color.black.opacity(0.03)
+                    ? DesignColor.textPrimary.opacity(0.03)
                     : tint.opacity(isSelected ? 0.15 : 0.07),
                 in: RoundedRectangle(cornerRadius: 8, style: .continuous)
             )
@@ -2025,6 +2023,27 @@ private struct OverviewStatTile: View {
     }
 }
 
+private struct OverviewControlSurface: ViewModifier {
+    let isSelected: Bool
+    var width: CGFloat? = nil
+    var height: CGFloat = 20
+    var isPressed = false
+
+    func body(content: Content) -> some View {
+        content
+            .foregroundStyle(isSelected ? DesignColor.doing : DesignColor.textSecondary)
+            .frame(width: width, height: height)
+            .background(
+                isSelected ? DesignColor.doing.opacity(0.10) : DesignColor.textPrimary.opacity(isPressed ? 0.07 : 0.035),
+                in: RoundedRectangle(cornerRadius: 6)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 6)
+                    .strokeBorder(isSelected ? DesignColor.doing.opacity(0.25) : DesignColor.border, lineWidth: 0.5)
+            }
+    }
+}
+
 private struct OverviewIconButtonStyle: ButtonStyle {
     let isSelected: Bool
     var width: CGFloat = 34
@@ -2033,17 +2052,7 @@ private struct OverviewIconButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(size: 11, weight: .semibold))
-            .foregroundStyle(isSelected ? DesignColor.doing : Color.black.opacity(0.56))
-            .frame(width: width)
-            .frame(height: height)
-            .background(
-                (isSelected ? DesignColor.doing.opacity(0.10) : Color.black.opacity(configuration.isPressed ? 0.07 : 0.035)),
-                in: RoundedRectangle(cornerRadius: 6, style: .continuous)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .strokeBorder(isSelected ? DesignColor.doing.opacity(0.25) : Color.black.opacity(0.10), lineWidth: 0.5)
-            )
+            .modifier(OverviewControlSurface(isSelected: isSelected, width: width, height: height, isPressed: configuration.isPressed))
     }
 }
 
@@ -2082,37 +2091,15 @@ private struct OverviewMetadataFilterMenu: View {
                 Image(systemName: "chevron.down")
                     .font(.system(size: 7.5, weight: .semibold))
             }
-            .frame(maxWidth: .infinity)
-        }
-        .buttonStyle(OverviewMetadataFilterButtonStyle(isSelected: !selection.isEmpty))
-        .help(selection.isEmpty ? "筛选\(title)" : "\(title)：\(selection)")
-        .pointingHandCursor()
-    }
-}
-
-private struct OverviewMetadataFilterButtonStyle: ButtonStyle {
-    let isSelected: Bool
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.system(size: 9.5, weight: isSelected ? .semibold : .medium))
-            .foregroundStyle(isSelected ? DesignColor.doing : Color.black.opacity(0.54))
+            .font(.system(size: 9.5, weight: .medium))
             .padding(.horizontal, 6)
             .frame(maxWidth: .infinity)
-            .frame(height: 20)
-            .background(
-                isSelected
-                    ? DesignColor.doing.opacity(0.10)
-                    : Color.black.opacity(configuration.isPressed ? 0.07 : 0.035),
-                in: RoundedRectangle(cornerRadius: 5, style: .continuous)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 5, style: .continuous)
-                    .strokeBorder(
-                        isSelected ? DesignColor.doing.opacity(0.24) : Color.black.opacity(0.09),
-                        lineWidth: 0.5
-                    )
-            )
+            .modifier(OverviewControlSurface(isSelected: !selection.isEmpty))
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .help(selection.isEmpty ? "筛选\(title)" : "\(title)：\(selection)")
+        .pointingHandCursor()
     }
 }
 
@@ -2123,11 +2110,11 @@ private struct OverviewListEmptyState: View {
         VStack(spacing: 7) {
             Image(systemName: isSearching ? "magnifyingglass" : "tray")
                 .font(.system(size: 20, weight: .medium))
-                .foregroundStyle(Color.black.opacity(0.22))
+                .foregroundStyle(DesignColor.textPrimary.opacity(0.22))
 
             Text(isSearching ? "没有匹配结果" : "当前状态暂无需求")
                 .font(.system(size: 11.5, weight: .semibold))
-                .foregroundStyle(Color.black.opacity(0.42))
+                .foregroundStyle(DesignColor.textSecondary)
         }
         .frame(maxWidth: .infinity)
     }
@@ -2149,7 +2136,7 @@ private struct OverviewStatusBadge: View {
 
 private struct OverviewDetailRow<Content: View>: View {
     let label: String
-    var labelColor = Color.black.opacity(0.40)
+    var labelColor = DesignColor.textPrimary.opacity(0.40)
     var alignment: VerticalAlignment = .center
     var labelTopPadding: CGFloat = 0
     var labelWeight: Font.Weight = .regular
@@ -2169,7 +2156,7 @@ private struct OverviewDetailRow<Content: View>: View {
         .padding(.vertical, 12)
         .overlay(alignment: .bottom) {
             Rectangle()
-                .fill(Color.black.opacity(0.06))
+                .fill(DesignColor.textPrimary.opacity(0.06))
                 .frame(height: 0.5)
         }
     }
@@ -2185,7 +2172,7 @@ private struct OverviewEditFieldRow<Content: View>: View {
         HStack(alignment: alignment, spacing: 12) {
             Text(label)
                 .font(.system(size: 11))
-                .foregroundStyle(Color.black.opacity(0.45))
+                .foregroundStyle(DesignColor.textSecondary)
                 .frame(width: 64, alignment: .leading)
                 .padding(.top, labelTopPadding)
 
@@ -2195,7 +2182,7 @@ private struct OverviewEditFieldRow<Content: View>: View {
         .padding(.vertical, 14)
         .overlay(alignment: .bottom) {
             Rectangle()
-                .fill(Color.black.opacity(0.06))
+                .fill(DesignColor.textPrimary.opacity(0.06))
                 .frame(height: 0.5)
         }
     }
@@ -2210,7 +2197,7 @@ private struct OverviewLinkValue: View {
             Text(emptyText)
                 .font(.system(size: 12))
                 .italic()
-                .foregroundStyle(Color.black.opacity(0.30))
+                .foregroundStyle(DesignColor.textPrimary.opacity(0.30))
         } else {
             Button {
                 open(text)
@@ -2240,7 +2227,7 @@ private struct OverviewTextValue: View {
     let text: String
     let emptyText: String
     let isMonospaced: Bool
-    var textColor: Color = Color.black.opacity(0.70)
+    var textColor: Color = DesignColor.textPrimary.opacity(0.70)
 
     var body: some View {
         let isEmpty = text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -2248,7 +2235,7 @@ private struct OverviewTextValue: View {
         if isEmpty {
             Text(emptyText)
                 .font(.system(size: 12, design: isMonospaced ? .monospaced : .default))
-                .foregroundStyle(Color.black.opacity(0.30))
+                .foregroundStyle(DesignColor.textPrimary.opacity(0.30))
                 .italic()
                 .lineSpacing(2)
                 .textSelection(.enabled)
@@ -2271,10 +2258,10 @@ private struct OverviewTextEditor: View {
             .frame(height: height)
             .padding(.horizontal, 6)
             .padding(.vertical, 5)
-            .background(Color.white.opacity(0.90), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .background(DesignColor.surface.opacity(0.90), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .strokeBorder(Color.black.opacity(0.15), lineWidth: 0.5)
+                    .strokeBorder(DesignColor.textPrimary.opacity(0.15), lineWidth: 0.5)
             )
     }
 }
@@ -2287,7 +2274,11 @@ private struct OverviewPlainTextEditor: NSViewRepresentable {
     }
 
     func makeNSView(context: Context) -> NSScrollView {
-        let textView = NSTextView()
+        let textView = NSTextView(frame: NSRect(x: 0, y: 0, width: 1, height: 1))
+        textView.autoresizingMask = [.width]
+        textView.isHorizontallyResizable = false
+        textView.isVerticallyResizable = true
+        textView.textContainer?.widthTracksTextView = true
         textView.delegate = context.coordinator
         textView.drawsBackground = false
         textView.isRichText = false
@@ -2304,7 +2295,7 @@ private struct OverviewPlainTextEditor: NSViewRepresentable {
         textView.autoresizingMask = [.width]
         textView.string = text
 
-        let scrollView = NSScrollView()
+        let scrollView = TextEditorScrollView()
         scrollView.drawsBackground = false
         scrollView.borderType = .noBorder
         scrollView.hasVerticalScroller = false
@@ -2319,15 +2310,22 @@ private struct OverviewPlainTextEditor: NSViewRepresentable {
             return
         }
 
+        context.coordinator.updateBinding($text)
         if textView.string != text {
             textView.string = text
+            textView.sizeToFit()
         }
+        scrollView.needsLayout = true
     }
 
     final class Coordinator: NSObject, NSTextViewDelegate {
         @Binding var text: String
 
         init(text: Binding<String>) {
+            _text = text
+        }
+
+        func updateBinding(_ text: Binding<String>) {
             _text = text
         }
 
@@ -2350,7 +2348,7 @@ private struct OverviewChangeCard: View {
             HStack {
                 Text(change.title)
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Color.black.opacity(0.85))
+                    .foregroundStyle(DesignColor.textPrimary.opacity(0.85))
 
                 Spacer()
 
@@ -2368,10 +2366,10 @@ private struct OverviewChangeCard: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
-            .background(Color.black.opacity(0.03))
+            .background(DesignColor.textPrimary.opacity(0.03))
             .overlay(alignment: .bottom) {
                 Rectangle()
-                    .fill(Color.black.opacity(0.07))
+                    .fill(DesignColor.textPrimary.opacity(0.07))
                     .frame(height: 0.5)
             }
 
@@ -2380,17 +2378,17 @@ private struct OverviewChangeCard: View {
 
                 Text("→")
                     .font(.system(size: 18, weight: .medium))
-                    .foregroundStyle(Color.black.opacity(0.25))
+                    .foregroundStyle(DesignColor.textPrimary.opacity(0.25))
                     .padding(.top, 24)
 
                 changeValueBlock(title: "之后", text: change.afterText, status: change.afterStatus)
             }
             .padding(12)
         }
-        .background(Color.white.opacity(0.98), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .background(DesignColor.surface.opacity(0.98), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .strokeBorder(Color.black.opacity(0.09), lineWidth: 0.5)
+                .strokeBorder(DesignColor.textPrimary.opacity(0.09), lineWidth: 0.5)
         )
     }
 
@@ -2400,7 +2398,7 @@ private struct OverviewChangeCard: View {
         return VStack(alignment: .leading, spacing: 6) {
             Text(title)
                 .font(.system(size: 10))
-                .foregroundStyle(Color.black.opacity(0.45))
+                .foregroundStyle(DesignColor.textSecondary)
 
             if let status {
                 OverviewStatusBadge(status: status)
@@ -2408,12 +2406,12 @@ private struct OverviewChangeCard: View {
             } else {
                 Text(isEmpty ? "无数据" : text)
                     .font(.system(size: 11))
-                    .foregroundStyle(isEmpty ? Color.black.opacity(0.28) : Color.black.opacity(0.65))
+                    .foregroundStyle(isEmpty ? DesignColor.textPrimary.opacity(0.28) : DesignColor.textPrimary.opacity(0.65))
                     .lineSpacing(2)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 8)
-                    .background(Color.black.opacity(0.04), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .background(DesignColor.textPrimary.opacity(0.04), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -2425,11 +2423,11 @@ private struct OverviewEmptyState: View {
         VStack(spacing: 8) {
             Image(systemName: "square.grid.2x2")
                 .font(.system(size: 28, weight: .medium))
-                .foregroundStyle(Color.black.opacity(0.22))
+                .foregroundStyle(DesignColor.textPrimary.opacity(0.22))
 
             Text("暂无需求")
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(Color.black.opacity(0.55))
+                .foregroundStyle(DesignColor.textSecondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -2459,16 +2457,16 @@ private struct OverviewSecondaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(size: 12, weight: .semibold))
-            .foregroundStyle(Color.black.opacity(0.65))
+            .foregroundStyle(DesignColor.textSecondary)
             .padding(.horizontal, 14)
             .frame(height: 28)
             .background(
-                Color.black.opacity(configuration.isPressed ? 0.07 : 0.03),
+                DesignColor.textPrimary.opacity(configuration.isPressed ? 0.07 : 0.03),
                 in: RoundedRectangle(cornerRadius: 6, style: .continuous)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .strokeBorder(Color.black.opacity(0.12), lineWidth: 0.5)
+                    .strokeBorder(DesignColor.textPrimary.opacity(0.12), lineWidth: 0.5)
             )
             .pointingHandCursor(isEnabled)
     }
@@ -2480,16 +2478,16 @@ private struct OverviewSmallSecondaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(size: 10, weight: .semibold))
-            .foregroundStyle(Color.black.opacity(0.60))
+            .foregroundStyle(DesignColor.textSecondary)
             .padding(.horizontal, 8)
             .frame(height: 22)
             .background(
-                Color.black.opacity(configuration.isPressed ? 0.07 : 0.03),
+                DesignColor.textPrimary.opacity(configuration.isPressed ? 0.07 : 0.03),
                 in: RoundedRectangle(cornerRadius: 4, style: .continuous)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 4, style: .continuous)
-                    .strokeBorder(Color.black.opacity(0.12), lineWidth: 0.5)
+                    .strokeBorder(DesignColor.textPrimary.opacity(0.12), lineWidth: 0.5)
             )
             .pointingHandCursor(isEnabled)
     }
@@ -2501,16 +2499,16 @@ private struct OverviewSearchResetButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(size: 11, weight: .semibold))
-            .foregroundStyle(Color.black.opacity(0.58))
+            .foregroundStyle(DesignColor.textSecondary)
             .padding(.horizontal, 9)
             .frame(height: 28)
             .background(
-                Color.black.opacity(configuration.isPressed ? 0.07 : 0.035),
+                DesignColor.textPrimary.opacity(configuration.isPressed ? 0.07 : 0.035),
                 in: RoundedRectangle(cornerRadius: 7, style: .continuous)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .strokeBorder(Color.black.opacity(0.10), lineWidth: 0.5)
+                    .strokeBorder(DesignColor.textPrimary.opacity(0.10), lineWidth: 0.5)
             )
             .pointingHandCursor(isEnabled)
     }
@@ -2523,17 +2521,17 @@ private struct OverviewDestructiveSecondaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(size: 11.5, weight: .semibold))
-            .foregroundStyle(isMarked ? Color.black.opacity(0.62) : DesignColor.stopped)
+            .foregroundStyle(isMarked ? DesignColor.textPrimary.opacity(0.62) : DesignColor.stopped)
             .padding(.horizontal, 10)
             .frame(height: 28)
             .background(
-                (isMarked ? Color.black.opacity(0.035) : DesignColor.stopped.opacity(0.08))
+                (isMarked ? DesignColor.textPrimary.opacity(0.035) : DesignColor.stopped.opacity(0.08))
                     .opacity(configuration.isPressed ? 0.80 : 1),
                 in: RoundedRectangle(cornerRadius: 6, style: .continuous)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .strokeBorder(isMarked ? Color.black.opacity(0.12) : DesignColor.stopped.opacity(0.24), lineWidth: 0.5)
+                    .strokeBorder(isMarked ? DesignColor.textPrimary.opacity(0.12) : DesignColor.stopped.opacity(0.24), lineWidth: 0.5)
             )
             .pointingHandCursor(isEnabled)
     }
