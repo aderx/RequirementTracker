@@ -407,7 +407,36 @@ async function testAutomaticMonitorRejectsUnverifiedResponses() {
   assert.equal(await background.fetchMRState(url, true), "");
 }
 
+async function testListLookupIsLimitedToConfiguredJiraAndBatched() {
+  const reads = [];
+  const background = createBackground(async (message) => {
+    if (message.type === "getPluginSettings") return {
+      ok: true, protocolVersion: 3, supportsBatchInspection: true,
+      settings: { jiraBaseURL: "http://jira.zstack.io/browse/" }
+    };
+    reads.push(message);
+    return { ok: true, requirements: [{ issueKey: "ZSTAC-1", exists: true, status: "paused" }] };
+  });
+  const lookup = (url, issueKeys = ["ZSTAC-1"]) => new Promise((resolve) => {
+    const waiting = background.handleRuntimeMessage(
+      { type: "LOOKUP_REQUIREMENT_LIST", issueKeys }, { tab: { url } }, resolve
+    );
+    assert.equal(waiting, true);
+  });
+  for (const url of ["http://example.com/issues/", "http://jira.zstack.io/browse/ZSTAC-1"]) {
+    assert.equal((await lookup(url)).ok, false);
+  }
+  assert.equal((await lookup("http://jira.zstack.io/issues/", ["bad key"])).ok, false);
+  assert.equal((await lookup("http://jira.zstack.io/issues/", Array(101).fill("ZSTAC-1"))).ok, false);
+  assert.equal(reads.length, 0);
+  const result = await lookup("http://jira.zstack.io/issues/?filter=-1");
+  assert.equal(result.requirements[0].status, "paused");
+  assert.equal(reads.length, 1);
+  assert.equal(reads[0].type, "inspectRequirements");
+}
+
 async function run() {
+  await testListLookupIsLimitedToConfiguredJiraAndBatched();
   await testAutomaticMonitorRejectsUnverifiedResponses();
   await testAutomaticMRTransitionsAndGuards();
   await testAutomaticMergeMonitoring();

@@ -41,6 +41,10 @@ private func dispatch(request: [String: Any], writer: RequirementDatabaseWriter)
         return try writer.inspect(payload: requiredPayload(from: request))
     case "inspectByURL":
         return try writer.inspectByURL(payload: requiredPayload(from: request))
+    case "inspectRequirements":
+        return try writer.inspectRequirements(payload: requiredPayload(from: request))
+    case "updateRequirementStatus":
+        return try writer.updateRequirementStatus(payload: requiredPayload(from: request))
     case "upsertRequirement", "upsertJiraRequirement":
         return try writer.upsertJiraRequirement(payload: requiredPayload(from: request))
     case "attachMergeRequest":
@@ -78,6 +82,7 @@ private struct RequirementDatabaseWriter {
             "host": hostName,
             "protocolVersion": RequirementNativeHostProtocol.currentVersion,
             "supportsAutomaticMRStatus": true,
+            "supportsBatchInspection": true,
             "settings": [
                 "jiraBaseURL": settings.jiraBaseURL,
                 "mrHosts": settings.validMRHosts,
@@ -120,6 +125,7 @@ private struct RequirementDatabaseWriter {
             "ok": true,
             "host": hostName,
             "exists": record != nil,
+            "supportsStatusActions": true,
             "issueKey": issueKey,
             "jiraURL": jiraURL,
             "dataFilePath": dataFileURL.path
@@ -143,6 +149,7 @@ private struct RequirementDatabaseWriter {
             response["isMRMergeMonitoringEnabled"] = boolValue(record["isMRMergeMonitoringEnabled"]) ?? false
             response["mrMergeReminderPending"] = boolValue(record["mrMergeReminderPending"]) ?? false
             copyIfPresent("pauseReason", from: record, to: &response)
+            copyIfPresent("note", from: record, to: &response)
             copyIfPresent("issueType", from: record, to: &response)
             copyIfPresent("priority", from: record, to: &response)
             copyIfPresent("targetVersion", from: record, to: &response)
@@ -151,6 +158,72 @@ private struct RequirementDatabaseWriter {
         }
 
         return response
+    }
+
+    // Jira 列表只读取本地状态，不因浏览列表新增需求或修改时间线。
+    func inspectRequirements(payload: [String: Any]) throws -> [String: Any] {
+        guard let keys = payload["issueKeys"] as? [String], keys.count <= 100 else {
+            throw HostError.invalidRequest("每次最多查询 100 个 Jira 编号")
+        }
+        let keysToInspect = try Set(keys.map { raw -> String in
+            let key = raw.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+            guard RequirementParser.jiraKey(from: key) == key else {
+                throw HostError.invalidRequest("Jira 编号无效")
+            }
+            return key
+        })
+        let records = try loadRecords()
+        let results: [[String: Any]] = keysToInspect.sorted().map { key in
+            let matches = records.filter { matchesIssueKey($0, issueKey: key) }
+            var result: [String: Any] = ["issueKey": key, "exists": !matches.isEmpty]
+            if matches.count > 1 {
+                result["ambiguous"] = true
+            } else if let record = matches.first {
+                result["status"] = currentStatus(of: record).rawValue
+                copyIfPresent("pauseReason", from: record, to: &result)
+            }
+            return result
+        }
+        return ["ok": true, "requirements": results]
+    }
+
+    // 人工校正允许跨阶段切换；必须填写本次说明，且不触发 Jira 或 MR 操作。
+    func updateRequirementStatus(payload: [String: Any]) throws -> [String: Any] {
+        let issueKey = try issueKey(from: payload)
+        guard let rawStatus = stringValue(payload["targetStatus"]),
+              let target = RequirementHostStatus(rawValue: rawStatus),
+              [.paused, .stopped, .merged].contains(target) else {
+            throw HostError.invalidRequest("不支持的人工状态操作")
+        }
+        var records = try loadRecords()
+        let indices = records.indices.filter { matchesIssueKey(records[$0], issueKey: issueKey) }
+        guard indices.count == 1, let index = indices.first else {
+            throw HostError.invalidRequest(indices.isEmpty ? "请先添加需求记录" : "Jira 编号对应多条记录，请在 App 中确认")
+        }
+        let current = currentStatus(of: records[index])
+        guard stringValue(payload["expectedStatus"]) == current.rawValue else {
+            throw HostError.invalidRequest("需求状态已变化，请重新打开插件后操作")
+        }
+        guard current != target else {
+            throw HostError.invalidRequest("需求已经处于此状态，无需重复操作")
+        }
+        let reason = (stringValue(payload["reason"]) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if reason.isEmpty {
+            throw HostError.invalidRequest(target == .merged ? "请填写完成说明" : "请填写暂停或停止原因")
+        }
+        let now = ISO8601DateFormatter().string(from: Date())
+        if target == .merged {
+            applyStatusFields(.merged, to: &records[index], date: now)
+            if !reason.isEmpty { records[index]["note"] = reason }
+        } else {
+            records[index]["stage"] = target.rawValue
+            records[index]["pauseReason"] = reason
+            records[index]["isMerged"] = false
+        }
+        appendStatusEvent(to: &records[index], status: target.rawValue, date: now)
+        records[index]["updatedAt"] = now
+        return try persist(records: records, action: "statusUpdated", issueKey: issueKey,
+                           statusUpdated: current != target, targetStatus: target.rawValue)
     }
 
     /// 按页面地址判断是否已记录：Jira 详情页按编号匹配，其它页面按 Jira/MR 地址匹配。

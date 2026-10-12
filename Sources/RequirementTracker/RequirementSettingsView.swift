@@ -15,7 +15,7 @@ struct RequirementSettingsView: View {
     @StateObject private var calendarAccessManager = CalendarAccessManager()
 
     var body: some View {
-        NavigationSplitView(columnVisibility: .constant(.all)) {
+        HStack(spacing: 0) {
             List(selection: Binding<RequirementSettingsTab?>(
                 get: { selectedTab },
                 set: { if let tab = $0 { selectedTab = tab } }
@@ -29,8 +29,8 @@ struct RequirementSettingsView: View {
                 }
             }
             .listStyle(.sidebar)
-            .navigationSplitViewColumnWidth(min: 160, ideal: 180, max: 220)
-        } detail: {
+            .frame(width: 180)
+
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
                     VStack(alignment: .leading, spacing: 6) {
@@ -58,7 +58,6 @@ struct RequirementSettingsView: View {
             }
             .navigationTitle("设置")
         }
-        .navigationSplitViewStyle(.balanced)
         .toolbar(.hidden, for: .windowToolbar)
         .frame(minWidth: 960, idealWidth: 1040, minHeight: 640, idealHeight: 700)
         .onAppear {

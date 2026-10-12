@@ -299,9 +299,88 @@ function testAutomaticStatusPersistence() {
   }
 }
 
+function testManualActionsAndBatchInspection() {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "requirement-status-actions-"));
+  const dataFile = path.join(directory, "requirements.json");
+  const issueKey = "ZSTAC-101";
+  const send = (type, payload) => sendNativeMessage(dataFile, { type, payload });
+  const change = (targetStatus, expectedStatus, reason = "") => send("updateRequirementStatus", {
+    issueKey, targetStatus, expectedStatus, reason
+  });
+  try {
+    assert.equal(send("upsertJiraRequirement", { issueKey, targetStatus: "active" }).ok, true);
+    let before = JSON.stringify(readRecords(dataFile));
+    const batch = send("inspectRequirements", { issueKeys: [issueKey, "ZSTAC-102", issueKey.toLowerCase()] });
+    assert.equal(batch.ok, true);
+    assert.equal(batch.requirements.length, 2);
+    assert.equal(batch.requirements[0].status, "active");
+    assert.equal(batch.requirements[1].exists, false);
+    assert.equal(JSON.stringify(readRecords(dataFile)), before, "List inspection must not change records");
+    assert.equal(change("paused", "active", "  ").ok, false);
+    assert.equal(JSON.stringify(readRecords(dataFile)), before);
+    assert.equal(change("paused", "active", "  等待接口  ").ok, true);
+    let record = readRecords(dataFile)[0];
+    assert.equal(record.stage, "paused");
+    assert.equal(record.pauseReason, "等待接口");
+    const count = record.statusHistory.length;
+    assert.equal(change("paused", "paused", "等待字段确认").ok, false);
+    assert.equal(readRecords(dataFile)[0].statusHistory.length, count, "Repeated status must not duplicate history");
+    before = JSON.stringify(readRecords(dataFile));
+    assert.equal(change("stopped", "active", "过期窗口").ok, false);
+    assert.equal(JSON.stringify(readRecords(dataFile)), before, "Stale actions must not overwrite newer status");
+    assert.equal(change("stopped", "paused", "需求取消").ok, true);
+    assert.equal(change("merged", "stopped", "完成").ok, true);
+    assert.equal(send("upsertJiraRequirement", { issueKey, targetStatus: "active", reopen: true }).ok, true);
+    assert.equal(change("merged", "active").ok, false);
+    assert.equal(change("merged", "active", "无需代码修改，配置已完成").ok, true);
+    record = readRecords(dataFile)[0];
+    assert.equal(record.isMerged, true);
+    assert.equal(record.isDone, true);
+    assert.equal(record.isTested, true);
+    assert.equal(record.pauseReason, "");
+    assert.equal(record.note, "无需代码修改，配置已完成");
+    assert.equal(record.statusHistory.at(-1).status, "merged");
+    assert.ok(!record.statusHistory.some((event) => ["done", "tested"].includes(event.status)),
+      "Direct completion must not invent intermediate operations");
+    assert.equal(change("paused", "merged", "需要补充验收").ok, true);
+    assert.equal(readRecords(dataFile)[0].note, record.note);
+
+    send("upsertJiraRequirement", { issueKey, targetStatus: "active", reopen: true });
+    send("attachMergeRequest", { issueKey, mrURL: "http://gitlab.zstack.io/g/p/-/merge_requests/101" });
+    assert.equal(change("merged", "active").ok, false, "All manual completion needs an explanation");
+    assert.equal(change("merged", "active", "验收完成").ok, true);
+    record = readRecords(dataFile)[0];
+
+    // 人工校正覆盖所有来源状态；关联 MR 与历史不能随着状态回退丢失。
+    for (const source of ["pending", "active", "done", "tested", "paused", "stopped", "merged"]) {
+      for (const target of ["paused", "stopped", "merged"]) {
+        const fixture = { ...record, stage: ["done", "tested", "merged"].includes(source) ? "completed" : source,
+          isDone: ["done", "tested", "merged"].includes(source), isTested: ["tested", "merged"].includes(source),
+          isMerged: source === "merged", pauseReason: "旧原因",
+          statusHistory: [{ id: "00000000-0000-4000-8000-000000000003", status: source, date: record.updatedAt }] };
+        writeFixture(dataFile, [fixture]);
+        const result = change(target, source, "人工确认调整");
+        assert.equal(result.ok, source !== target, `${source} -> ${target}`);
+        const updated = readRecords(dataFile)[0];
+        assert.equal(updated.mrURL, fixture.mrURL);
+        assert.equal(updated.statusHistory[0].status, source);
+        assert.equal(updated.statusHistory.length, source === target ? 1 : 2);
+        assert.equal(send("inspectRequirement", { issueKey }).status, source === target ? source : target);
+        if (source !== target && target !== "merged") assert.equal(updated.isMerged, false);
+      }
+    }
+    writeFixture(dataFile, [record, { ...record, id: "00000000-0000-4000-8000-000000000002" }]);
+    assert.equal(send("inspectRequirements", { issueKeys: [issueKey] }).requirements[0].ambiguous, true);
+    assert.equal(change("paused", "merged", "重复记录").ok, false);
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+}
+
 try {
   run();
   testAutomaticStatusPersistence();
+  testManualActionsAndBatchInspection();
   console.log("native-host.behavior.test.js passed");
 } catch (error) {
   console.error(error);

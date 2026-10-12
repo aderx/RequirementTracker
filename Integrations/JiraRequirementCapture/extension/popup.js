@@ -97,11 +97,21 @@ const elements = {
   badgeIconCanvas: document.getElementById("badgeIconCanvas"),
   statusIcon: document.getElementById("statusIcon"),
   summaryPanel: document.getElementById("summaryPanel"),
+  listVisibilityPanel: document.getElementById("listVisibilityPanel"),
+  listVisibilitySwitch: document.getElementById("listVisibilitySwitch"),
   statusReasonPanel: document.getElementById("statusReasonPanel"),
   statusReasonLabel: document.getElementById("statusReasonLabel"),
   statusReasonText: document.getElementById("statusReasonText"),
   manualPanel: document.getElementById("manualPanel"),
   manualJiraInput: document.getElementById("manualJiraInput"),
+  statusActionPanel: document.getElementById("statusActionPanel"),
+  statusActionLabel: document.getElementById("statusActionLabel"),
+  statusActionReason: document.getElementById("statusActionReason"),
+  statusMenuContainer: document.getElementById("statusMenuContainer"),
+  statusMenuButton: document.getElementById("statusMenuButton"),
+  statusMenu: document.getElementById("statusMenu"),
+  statusMenuItems: document.getElementById("statusMenuItems"),
+  statusMenuHint: document.getElementById("statusMenuHint"),
   actions: document.getElementById("actions"),
   countdownText: document.getElementById("countdownText")
 };
@@ -112,6 +122,21 @@ let countdownButton = null;
 let countdownBaseLabel = "";
 
 document.addEventListener("DOMContentLoaded", run);
+elements.statusMenuButton.addEventListener("click", () => {
+  clearTimers();
+  const opening = elements.statusMenu.classList.contains("hidden");
+  elements.statusMenu.classList.toggle("hidden", !opening);
+  elements.statusMenuButton.setAttribute("aria-expanded", String(opening));
+});
+document.addEventListener("click", (event) => {
+  if (!elements.statusMenuContainer.contains(event.target)) closeStatusMenu();
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !elements.statusMenu.classList.contains("hidden")) {
+    closeStatusMenu();
+    elements.statusMenuButton.focus();
+  }
+});
 
 async function run() {
   clearTimers();
@@ -167,7 +192,12 @@ async function run() {
   }
 
   try {
-    await handlePageResult(result, settingsResult.hostError);
+    // 插件更新不会自动注入已经打开的列表页，允许直接补上标记而无需刷新 Jira。
+    if (result?.pageType === "jira-list" && !settingsResult.hostError) {
+      await chrome.scripting.insertCSS({ target: { tabId: tab.id }, files: ["jira-list.css"] });
+      await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ["badge-renderer.js", "jira-list.js"] });
+    }
+    await handlePageResult(result, settingsResult.hostError, tab.id);
   } catch (error) {
     showOperationError(error.message || "操作失败");
   }
@@ -218,7 +248,7 @@ function showTestPageState(state) {
   ]);
 }
 
-async function handlePageResult(result, hostError) {
+async function handlePageResult(result, hostError, tabId) {
   if (!result || result.pageType === "unsupported") {
     showUnsupported(result?.reason || "");
     return;
@@ -234,6 +264,24 @@ async function handlePageResult(result, hostError) {
     return;
   }
 
+  if (result.pageType === "jira-list") {
+    hideSummary();
+    setView({
+      tone: "blue", icon: "✓", title: "Jira 问题列表",
+      message: "编号后展示插件状态图标，悬停查看图标和完整状态名称。"
+    });
+    await configureListVisibility(tabId);
+    setActions([button("刷新列表状态", "primary-button", () => {
+      if (elements.listVisibilitySwitch.getAttribute("aria-checked") !== "true") {
+        setStatus("悬浮状态已关闭，可打开上方开关显示。");
+        return;
+      }
+      requestBadgeRefresh();
+      setStatus("已请求刷新，请查看列表中的状态标记");
+    }), button("关闭", "secondary-button", closePopup)]);
+    return;
+  }
+
   if (result.pageType === "mr") {
     await handleMRPage(result.payload);
     return;
@@ -242,7 +290,38 @@ async function handlePageResult(result, hostError) {
   showUnsupported();
 }
 
+async function configureListVisibility(tabId) {
+  const toggle = elements.listVisibilitySwitch;
+  elements.listVisibilityPanel.classList.remove("hidden");
+  toggle.disabled = true;
+  try {
+    const response = await chrome.tabs.sendMessage(tabId, { type: "GET_REQUIREMENT_LIST_VISIBILITY" });
+    if (!response?.ok || typeof response.enabled !== "boolean") throw new Error("无法读取悬浮状态开关");
+    toggle.setAttribute("aria-checked", String(response.enabled));
+    toggle.disabled = false;
+  } catch (error) {
+    setStatus(error.message || "无法读取悬浮状态开关", "error");
+    return;
+  }
+  toggle.onclick = async () => {
+    const enabled = toggle.getAttribute("aria-checked") !== "true";
+    toggle.disabled = true;
+    try {
+      const response = await chrome.tabs.sendMessage(tabId, { type: "SET_REQUIREMENT_LIST_VISIBILITY", enabled });
+      if (!response?.ok || response.enabled !== enabled) throw new Error("无法切换悬浮状态显示");
+      toggle.setAttribute("aria-checked", String(response.enabled));
+      setStatus(enabled ? "悬浮状态已开启。" : "本次页面已隐藏悬浮状态，刷新后恢复开启。");
+    } catch (error) {
+      setStatus(error.message || "无法切换悬浮状态显示", "error");
+    } finally {
+      toggle.disabled = false;
+    }
+  };
+}
+
 async function handleJiraPage(payload) {
+  hideStatusMenu();
+  hideStatusAction();
   hideManualInput();
   hideStatusReason();
   const issueKey = payload.issueKey || payload.jiraKey || "未识别";
@@ -328,6 +407,7 @@ async function handleJiraPage(payload) {
         button("开始开发", "start-button", () => saveJira(payload, { targetStatus: "active", reopen: true }))
       );
     }
+    configureStatusMenu(payload, inspect, () => handleJiraPage(payload));
     setActions(actions);
     return;
   }
@@ -344,6 +424,88 @@ async function handleJiraPage(payload) {
     button("添加", "primary-button", () => saveJira(payload)),
     button("添加并开始开发", "start-button", () => saveJira(payload, { targetStatus: "active" }))
   ]);
+}
+
+function configureStatusMenu(payload, inspect, onCancel) {
+  hideStatusMenu();
+  if (!inspect.exists) return;
+  const actions = [["暂停", "paused"], ["停止", "stopped"], ["一键完成", "merged"]].map(([label, target]) => {
+    const current = target === inspect.status;
+    const action = button(current ? `${label}（当前）` : label,
+      `status-menu-item${target === "stopped" ? " danger" : ""}`,
+      () => showStatusAction(payload, inspect, target, onCancel));
+    action.disabled = current || !inspect.supportsStatusActions;
+    return action;
+  });
+  elements.statusMenuItems.replaceChildren(...actions);
+  elements.statusMenuHint.textContent = "本机通信程序版本较旧，请更新需求记录 App 或连接配套的开发版 Native Host，然后重新打开插件。";
+  elements.statusMenuHint.classList.toggle("hidden", Boolean(inspect.supportsStatusActions));
+  elements.statusMenuContainer.classList.remove("hidden");
+}
+
+function closeStatusMenu() {
+  elements.statusMenu.classList.add("hidden");
+  elements.statusMenuButton.setAttribute("aria-expanded", "false");
+}
+
+function hideStatusMenu() {
+  closeStatusMenu();
+  elements.statusMenuContainer.classList.add("hidden");
+}
+
+function showStatusAction(payload, inspect, targetStatus, onCancel) {
+  clearTimers();
+  hideStatusMenu();
+  hideStatusReason();
+  const completing = targetStatus === "merged";
+  const label = completing ? "一键完成" : targetStatus === "paused" ? "暂停" : "停止";
+  elements.statusActionPanel.classList.remove("hidden");
+  elements.statusActionLabel.textContent = completing
+    ? "完成说明（必填）"
+    : `${label}原因（必填）`;
+  elements.statusActionReason.value = "";
+  elements.statusActionReason.placeholder = completing ? "说明需求完成情况..." : `说明${label}原因...`;
+  setView({ badgeState: badgeStateForRequirementStatus(targetStatus), title: label, message: "" });
+  const submit = button(`确认${label}`, completing ? "start-button" : "primary-button", async () => {
+    const reason = elements.statusActionReason.value.trim();
+    if (!reason) {
+      setStatus(completing ? "请填写完成说明" : `请填写${label}原因`, "error");
+      elements.statusActionReason.focus();
+      return;
+    }
+    setActions([]);
+    elements.statusActionReason.disabled = true;
+    setStatus("正在保存...");
+    try {
+      const response = await sendNativeMessage({
+        type: "updateRequirementStatus",
+        payload: {
+          issueKey: inspect.issueKey || payload.issueKey || payload.jiraKey,
+          targetStatus,
+          expectedStatus: inspect.status,
+          reason
+        }
+      });
+      if (!response?.ok) throw new Error(response?.error || "保存失败");
+      requestBadgeRefresh();
+      showSuccess("已保存", completing ? "需求已标记为已完成" : `需求已${label}，原因已保存`, targetStatus);
+    } catch (error) {
+      setStatus(error.message || "保存失败", "error");
+      setActions([cancel, submit]);
+    } finally {
+      elements.statusActionReason.disabled = false;
+    }
+  });
+  const cancel = button("取消", "secondary-button", async () => {
+    hideStatusAction();
+    await onCancel();
+  });
+  setActions([cancel, submit]);
+  elements.statusActionReason.focus();
+}
+
+function hideStatusAction() {
+  elements.statusActionPanel.classList.add("hidden");
 }
 
 async function saveJira(payload, { targetStatus = "", reopen = false } = {}) {
@@ -378,7 +540,7 @@ async function saveJira(payload, { targetStatus = "", reopen = false } = {}) {
   } else {
     actionText = "页面信息已更新";
   }
-  showSuccess("完成", actionText);
+  showSuccess("完成", actionText, response.statusUpdated ? (response.targetStatus || targetStatus) : "");
 }
 
 async function handleMRPage(payload) {
@@ -405,6 +567,8 @@ async function handleMRPage(payload) {
 
 async function attachMRWithInspection(payload) {
   clearTimers();
+  hideStatusMenu();
+  hideStatusAction();
   hideManualInput();
   setActions([]);
   setView({
@@ -466,8 +630,8 @@ async function attachMRWithInspection(payload) {
     });
 
     const closeButton = button("关闭", "text-button muted", closePopup);
+    configureStatusMenu(target, inspect, () => attachMRWithInspection(payload));
     setActions([closeButton]);
-    scheduleClose(DEFAULT_DELAY_SECONDS, closeButton);
     return;
   }
 
@@ -494,6 +658,7 @@ async function attachMRWithInspection(payload) {
   const actionLabel = requestedTargetStatus
     ? "转为" + statusName(requestedTargetStatus)
     : "保存 MR";
+  if (isRecorded) configureStatusMenu(target, inspect, () => attachMRWithInspection(payload));
   setActions([
     button(actionLabel, "primary-button", () => attachMR({
       issueKey: target.issueKey,
@@ -538,7 +703,7 @@ async function attachMR(payload) {
 
   showSuccess("完成", response.statusUpdated
     ? `${actionText}，${statusSuccessText(response.targetStatus)}`
-    : actionText);
+    : actionText, response.statusUpdated ? response.targetStatus : "");
 }
 
 function showManualJiraInput(payload, message = "当前 MR 页面没有找到 Jira 链接") {
@@ -578,7 +743,7 @@ function showUnsupported(message = "") {
     tone: "warning",
     icon: "!",
     title: "此页面暂不支持",
-    message: message || "支持 Jira 详情页和 GitLab MR 页面"
+    message: message || "支持 Jira 详情、问题列表和 GitLab MR 页面"
   });
 
   const closeButton = button("关闭", "text-button muted", closePopup);
@@ -600,12 +765,13 @@ function showNativeHostError(message = "") {
   setActions([closeButton]);
 }
 
-function showSuccess(title, message) {
+function showSuccess(title, message, status = "") {
   hideSummary();
   hideManualInput();
   setView({
     tone: "success",
     icon: "✓",
+    badgeState: status ? badgeStateForRequirementStatus(status) : "",
     title,
     message
   });
@@ -728,7 +894,7 @@ function resetContent() {
   setActions([]);
 }
 
-function setView({ tone, icon, badgeState = "", title, message }) {
+function setView({ tone, icon = "", badgeState = "", title, message }) {
   const showsBadge = Boolean(globalThis.BadgeIconRenderer?.styles?.[badgeState]);
   elements.badgeIconCanvas.className = showsBadge
     ? "badge-icon-canvas"
@@ -850,8 +1016,11 @@ function openButtonFor(value) {
 }
 
 function hideSummary() {
+  hideStatusMenu();
   elements.summaryPanel.classList.add("hidden");
+  elements.listVisibilityPanel.classList.add("hidden");
   hideStatusReason();
+  hideStatusAction();
 }
 
 function hideManualInput() {
