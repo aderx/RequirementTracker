@@ -259,6 +259,9 @@
     }
 
     if (jiraHost && location.hostname === jiraHost) {
+      if (/^\/issues(?:\/|$)/.test(new URL(pageURL).pathname)) {
+        return { pageType: "jira-list" };
+      }
       return {
         pageType: "unsupported",
         reason: "当前 Jira 页面不是详情页"

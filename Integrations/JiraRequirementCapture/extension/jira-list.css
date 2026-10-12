@@ -1,0 +1,68 @@
+/* 重载插件后，旧内容脚本可能仍在已打开页面中补回自己的标记。 */
+.rt-requirement-status,
+#rt-requirement-overlays { display: none !important; }
+
+/* 只给链接追加一个无文本图标，不改原链接样式；鼠标仍命中原链接。 */
+.rt-requirement-inline-status {
+  all: initial;
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  margin-inline-start: 4px;
+  vertical-align: -2px;
+  line-height: 0;
+  opacity: .55;
+  pointer-events: none;
+  user-select: none;
+  transition: opacity 120ms;
+}
+.rt-requirement-inline-status canvas {
+  all: initial;
+  display: block;
+  width: 14px;
+  height: 14px;
+  pointer-events: none;
+}
+.rt-requirement-inline-status[data-expanded="true"] { opacity: 1; }
+.rt-requirement-inline-status[hidden],
+#rt-requirement-status-tooltip[hidden] { display: none !important; }
+
+/* 全称放在独立提示层中，展开不参与表格排版，也不拦截页面点击。 */
+#rt-requirement-status-tooltip {
+  all: initial;
+  position: fixed;
+  z-index: 2147483000;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 9px;
+  border: 1px solid #dfe4ec;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 3px 12px #172b4d26;
+  pointer-events: none;
+}
+#rt-requirement-status-tooltip canvas {
+  all: initial;
+  display: block;
+  flex: 0 0 18px;
+  width: 18px;
+  height: 18px;
+  pointer-events: none;
+}
+#rt-requirement-status-tooltip span {
+  all: initial;
+  color: #253858;
+  font: 12px/20px -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.rt-requirement-inline-status[data-state="loading"] canvas,
+.rt-requirement-inline-status[data-state="error"] canvas,
+.rt-requirement-inline-status[data-state="ambiguous"] canvas,
+#rt-requirement-status-tooltip[data-state="loading"] canvas,
+#rt-requirement-status-tooltip[data-state="error"] canvas,
+#rt-requirement-status-tooltip[data-state="ambiguous"] canvas { filter: grayscale(1); }
+@media (prefers-reduced-motion: reduce) {
+  .rt-requirement-inline-status { transition: none; }
+}

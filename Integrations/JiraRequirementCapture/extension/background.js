@@ -25,6 +25,7 @@ let cachedSettings = null;
 let cachedSettingsAt = 0;
 let cachedHostCompatible = false;
 let supportsAutomaticMRStatus = false;
+let supportsBatchInspection = false;
 let automaticWriteQueue = Promise.resolve();
 const tabSynchronizations = new Map();
 
@@ -72,6 +73,13 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 chrome.runtime.onMessage.addListener(handleRuntimeMessage);
 
 function handleRuntimeMessage(message, sender, sendResponse) {
+  if (message?.type === "LOOKUP_REQUIREMENT_LIST") {
+    inspectJiraList(message.issueKeys, sender.tab?.url || "")
+      .then(sendResponse)
+      .catch((error) => sendResponse({ ok: false, error: error.message || "读取本地状态失败" }));
+    return true;
+  }
+
   if (message?.type === "MR_PAGE_CHANGED" && Number.isInteger(sender.tab?.id)) {
     updateBadgeForTab(sender.tab.id, sender.tab.url || "")
       .then((state) => sendResponse({ ok: true, state }))
@@ -82,6 +90,7 @@ function handleRuntimeMessage(message, sender, sendResponse) {
   if (message?.type === "REFRESH_ACTIVE_TAB_BADGE") {
     cachedSettings = null;
     refreshActiveTab();
+    refreshJiraLists();
     return false;
   }
 
@@ -101,6 +110,32 @@ function handleRuntimeMessage(message, sender, sendResponse) {
   }
 
   return false;
+}
+
+async function inspectJiraList(issueKeys, pageURL) {
+  const settings = await loadSettings();
+  const url = new URL(pageURL);
+  if (!/^https?:$/.test(url.protocol) || url.host !== new URL(settings.jiraBaseURL).host
+      || !/^\/issues(?:\/|$)/.test(url.pathname)) {
+    throw new Error("仅支持 Jira 问题列表");
+  }
+  if (!Array.isArray(issueKeys) || issueKeys.length > 100
+      || issueKeys.some((key) => typeof key !== "string" || !/^[A-Z][A-Z0-9]+-\d+$/.test(key))) {
+    throw new Error("Jira 编号列表无效");
+  }
+  if (!cachedHostCompatible || !supportsBatchInspection) {
+    throw new Error("请更新需求记录 App 的 Native Host 后查看列表状态");
+  }
+  return sendNativeMessage({ type: "inspectRequirements", payload: { issueKeys } });
+}
+
+function refreshJiraLists() {
+  chrome.tabs.query({}, (tabs) => {
+    for (const tab of tabs || []) {
+      if (!tab.url || !/^https?:\/\/[^/]+\/issues(?:\/|\?|$)/.test(tab.url)) continue;
+      chrome.tabs.sendMessage(tab.id, { type: "REFRESH_REQUIREMENT_LIST" }).catch(() => {});
+    }
+  });
 }
 
 function installTestPageContextMenu() {
@@ -406,6 +441,7 @@ async function loadSettings() {
     if (response?.ok) {
       cachedHostCompatible = Number(response.protocolVersion || 0) >= REQUIRED_NATIVE_HOST_PROTOCOL_VERSION;
       supportsAutomaticMRStatus = cachedHostCompatible && response.supportsAutomaticMRStatus === true;
+      supportsBatchInspection = cachedHostCompatible && response.supportsBatchInspection === true;
       cachedSettings = { ...FALLBACK_SETTINGS, ...(response.settings || {}) };
       cachedSettingsAt = now;
       return cachedSettings;
@@ -416,6 +452,7 @@ async function loadSettings() {
 
   cachedHostCompatible = false;
   supportsAutomaticMRStatus = false;
+  supportsBatchInspection = false;
   cachedSettings = cachedSettings || FALLBACK_SETTINGS;
   cachedSettingsAt = now;
   return cachedSettings;

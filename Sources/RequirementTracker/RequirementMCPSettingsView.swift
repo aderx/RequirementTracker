@@ -275,7 +275,7 @@ private enum MCPSettingsSupport {
         }
         if action == .test {
             let requests: [[String: Any]] = [
-                ["jsonrpc": "2.0", "id": 1, "method": "initialize", "params": ["protocolVersion": "2025-06-18", "capabilities": [:], "clientInfo": ["name": "RequirementTracker Settings", "version": "2.0.0"]]],
+                ["jsonrpc": "2.0", "id": 1, "method": "initialize", "params": ["protocolVersion": "2025-06-18", "capabilities": [:], "clientInfo": ["name": "RequirementTracker Settings", "version": "2.1.0"]]],
                 ["jsonrpc": "2.0", "method": "notifications/initialized"],
                 ["jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": ["name": "get_requirement_stats", "arguments": [:]]]
             ]

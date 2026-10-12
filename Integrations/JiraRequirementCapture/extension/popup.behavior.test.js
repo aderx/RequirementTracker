@@ -40,6 +40,9 @@ function createElement(id = "") {
       this.children.push(child);
       return child;
     },
+    replaceChildren(...children) { this.children = children; },
+    setAttribute(name, value) { this[name] = value; },
+    getAttribute(name) { return this[name]; },
     focus() {}
   };
 }
@@ -139,6 +142,7 @@ globalThis.__popup = {
   showUnsupported,
   loadPluginSettings,
   clearTimers,
+  setTabMessageStub(stub) { chrome.tabs.sendMessage = stub; },
   setNativeMessageStub(stub) { sendNativeMessage = stub; }
 };`,
     sandbox
@@ -633,7 +637,7 @@ async function testRecordedMergedMRShowsTerminalCompletion() {
   assert.equal(popup.elements.iconFrame.className, "icon-frame badge");
   assert.equal(popup.elements.statusIcon.className, "icon-symbol hidden");
   assert.equal(popup.elements.actions.children.length, 1);
-  assert.equal(popup.elements.actions.children[0].textContent, "关闭（5s）");
+  assert.equal(popup.elements.actions.children[0].textContent, "关闭");
 
   const rows = summaryRows(popup);
   assert.equal(rows[1].label, "MR 状态");
@@ -758,7 +762,134 @@ async function testUnboundMRStillRequestsJiraAndLookupErrorsAreReported() {
   await assert.rejects(() => failedPopup.handleMRPage(payload), /读取需求失败/);
 }
 
+async function testManualStatusActionsRequireReasonsAndPreserveFailures() {
+  const popup = createPopupSandbox();
+  const writes = [];
+  const record = { ok: true, exists: true, issueKey: "ZSTAC-12345", status: "active", supportsStatusActions: true, hasMR: false };
+  let failure = false;
+  popup.setNativeMessageStub(async (message) => {
+    if (message.type === "inspectRequirement") return record;
+    writes.push(message);
+    return failure ? { ok: false, error: "需求状态已变化" } : { ok: true };
+  });
+  const action = (text) => popup.elements.actions.children.find((element) => element.textContent === text);
+  const menuItem = (text) => popup.elements.statusMenuItems.children.find((element) => element.textContent === text);
+  await popup.handleJiraPage({ issueKey: record.issueKey });
+  assert.equal(popup.elements.statusMenuContainer.classList.contains("hidden"), false);
+  assert.ok(menuItem("暂停") && menuItem("停止") && menuItem("一键完成"));
+  assert.equal(action("暂停"), undefined, "Status actions belong in the header menu");
+  await popup.elements.statusMenuButton.onclick();
+  assert.equal(popup.elements.statusMenuButton["aria-expanded"], "true");
+  await menuItem("暂停").onclick();
+  assert.equal(popup.elements.statusMenuButton["aria-expanded"], "false");
+  assert.equal(popup.badgeDraws.at(-1).state, "paused");
+  await action("确认暂停").onclick();
+  assert.equal(writes.length, 0, "Blank reason must not write");
+  assert.match(popup.elements.statusText.textContent, /请填写暂停原因/);
+  popup.elements.statusActionReason.value = "  等待后端确认  ";
+  failure = true;
+  await action("确认暂停").onclick();
+  assert.equal(popup.elements.statusActionReason.value, "  等待后端确认  ");
+  assert.match(popup.elements.statusText.textContent, /需求状态已变化/);
+  assert.equal(popup.badgeDraws.at(-1).state, "paused", "A save error must preserve the target status icon");
+  assert.equal(writes[0].type, "updateRequirementStatus");
+  assert.equal(writes[0].payload.reason, "等待后端确认");
+  assert.equal(writes[0].payload.expectedStatus, "active");
+  await action("取消").onclick();
+  assert.ok(menuItem("一键完成"));
+  await menuItem("一键完成").onclick();
+  await action("确认一键完成").onclick();
+  assert.equal(writes.length, 1, "Completion without MR needs a note");
+  popup.elements.statusActionReason.value = "配置调整完成，无需 MR";
+  failure = false;
+  await action("确认一键完成").onclick();
+  assert.equal(writes.at(-1).payload.targetStatus, "merged");
+  assert.equal(popup.elements.statusActionPanel.classList.contains("hidden"), true);
+  assert.equal(popup.badgeDraws.at(-1).state, "merged", "Saved status must use the same icon as its form");
+
+  for (const status of ["pending", "active", "done", "tested", "paused", "stopped", "merged"]) {
+    record.status = status;
+    await popup.handleJiraPage({ issueKey: record.issueKey });
+    assert.equal(popup.elements.statusMenuItems.children.length, 3);
+    for (const [label, target] of [["暂停", "paused"], ["停止", "stopped"], ["一键完成", "merged"]]) {
+      assert.equal(menuItem(target === status ? `${label}（当前）` : label).disabled, target === status);
+      if (target !== status) {
+        await menuItem(label).onclick();
+        assert.equal(popup.badgeDraws.at(-1).state, target, `${status} → ${target} must use the toolbar status renderer`);
+        await action("取消").onclick();
+      }
+    }
+  }
+  await menuItem("暂停").onclick();
+  record.status = "active";
+  record.hasMR = true;
+  record.note = "旧完成说明";
+  await popup.handleJiraPage({ issueKey: record.issueKey });
+  await menuItem("一键完成").onclick();
+  const count = writes.length;
+  assert.equal(popup.elements.statusActionReason.value, "", "A transition needs its own explanation");
+  await action("确认一键完成").onclick();
+  assert.equal(writes.length, count, "An MR does not replace a manual completion explanation");
+
+  record.supportsStatusActions = false;
+  await popup.handleJiraPage({ issueKey: record.issueKey });
+  assert.ok(popup.elements.statusMenuItems.children.every((item) => item.disabled));
+  assert.equal(popup.elements.statusMenuHint.classList.contains("hidden"), false);
+  assert.match(popup.elements.statusMenuHint.textContent, /版本较旧/);
+
+  record.exists = false;
+  await popup.handleJiraPage({ issueKey: record.issueKey });
+  assert.equal(popup.elements.statusMenuContainer.classList.contains("hidden"), true);
+}
+
+async function testListVisibilityUsesOnlyCurrentDocumentAndPreservesFailures() {
+  let enabled = true;
+  let failWrite = false;
+  const messages = [];
+  const tabMessage = async (tabId, message) => {
+    assert.equal(tabId, 42, "The switch only targets the active Jira list tab");
+    messages.push(message);
+    if (message.type === "SET_REQUIREMENT_LIST_VISIBILITY") {
+      if (failWrite) throw new Error("页面连接已断开");
+      enabled = message.enabled;
+    }
+    return { ok: true, enabled };
+  };
+  const popup = createPopupSandbox();
+  popup.setTabMessageStub(tabMessage);
+  await popup.handlePageResult({ pageType: "jira-list" }, null, 42);
+  const toggle = popup.elements.listVisibilitySwitch;
+  assert.equal(popup.elements.listVisibilityPanel.classList.contains("hidden"), false);
+  assert.equal(toggle["aria-checked"], "true");
+  await toggle.onclick();
+  assert.equal(enabled, false);
+  assert.equal(toggle["aria-checked"], "false");
+  assert.match(popup.elements.statusText.textContent, /刷新后恢复开启/);
+
+  const reopened = createPopupSandbox();
+  reopened.setTabMessageStub(tabMessage);
+  await reopened.handlePageResult({ pageType: "jira-list" }, null, 42);
+  assert.equal(reopened.elements.listVisibilitySwitch["aria-checked"], "false");
+  failWrite = true;
+  await reopened.elements.listVisibilitySwitch.onclick();
+  assert.equal(reopened.elements.listVisibilitySwitch["aria-checked"], "false", "Failed toggles keep the actual page state");
+  assert.equal(reopened.elements.listVisibilitySwitch.disabled, false);
+  assert.match(reopened.elements.statusText.textContent, /页面连接已断开/);
+  failWrite = false;
+  await reopened.elements.listVisibilitySwitch.onclick();
+  assert.equal(enabled, true);
+  assert.equal(reopened.elements.listVisibilitySwitch["aria-checked"], "true");
+  assert.deepEqual(messages.map((message) => message.type), [
+    "GET_REQUIREMENT_LIST_VISIBILITY", "SET_REQUIREMENT_LIST_VISIBILITY",
+    "GET_REQUIREMENT_LIST_VISIBILITY", "SET_REQUIREMENT_LIST_VISIBILITY", "SET_REQUIREMENT_LIST_VISIBILITY"
+  ]);
+  reopened.showUnsupported();
+  assert.equal(reopened.elements.listVisibilityPanel.classList.contains("hidden"), true);
+}
+
 async function run() {
+  await testListVisibilityUsesOnlyCurrentDocumentAndPreservesFailures();
+  await testManualStatusActionsRequireReasonsAndPreserveFailures();
   await testUnsupportedCountdownLivesOnCloseButton();
   await testTestPageStateIsReadFromTheExtensionURL();
   await testTestPageStatesRenderIsolatedMockDetails();
