@@ -86,6 +86,7 @@ function createBackground(nativeStub) {
     "  checkMonitoredMRs,",
     "  extractMRStateFromResponseText,",
     "  resolveState,",
+    "  captureAssignedJira,",
     "  synchronizeMRForTab,",
     "  fetchMRState,",
     "  setFetchStub(stub) { globalThis.fetch = stub; },",
@@ -390,6 +391,29 @@ async function testAutomaticMergeMonitoring() {
   assert.equal(writes[0].payload.mrState, "merged");
 }
 
+async function testAssignedJiraCapture() {
+  const url = "http://jira.zstack.io/browse/TEST-123";
+  const writes = [];
+  const background = createBackground(async message => {
+    if (message.type === "getPluginSettings") return { ok: true, protocolVersion: 3, supportsAssignedJiraCapture: true };
+    writes.push(message);
+    return { ok: true, action: "unchanged" };
+  });
+  const sender = { url, tab: { id: 5, url } };
+  const fields = { ownership: "mine", issueKey: "TEST-123", jiraURL: url, jiraStatus: "重新打开" };
+  background.setTabStub(async () => ({ url }));
+  for (const ownership of ["other", "unknown"]) await background.captureAssignedJira(sender, { ...fields, ownership });
+  await background.captureAssignedJira(sender, { ...fields, issueKey: "TEST-234" });
+  await background.captureAssignedJira({ ...sender, url: url + "4" }, fields);
+  assert.equal(writes.length, 0);
+  await background.captureAssignedJira(sender, fields);
+  assert.equal(writes[0].type, "captureAssignedJira");
+  assert.equal(writes[0].payload.jiraStatus, "重新打开");
+  background.setTabStub(async () => ({ url: url + "4" }));
+  await background.captureAssignedJira(sender, fields);
+  assert.equal(writes.length, 1);
+}
+
 async function testAutomaticMonitorRejectsUnverifiedResponses() {
   const url = "http://gitlab.zstack.io/g/p/-/merge_requests/123";
   const background = createBackground(nativeStubFor({ exists: true }));
@@ -436,6 +460,7 @@ async function testListLookupIsLimitedToConfiguredJiraAndBatched() {
 }
 
 async function run() {
+  await testAssignedJiraCapture();
   await testListLookupIsLimitedToConfiguredJiraAndBatched();
   await testAutomaticMonitorRejectsUnverifiedResponses();
   await testAutomaticMRTransitionsAndGuards();

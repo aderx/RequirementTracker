@@ -47,6 +47,8 @@ private func dispatch(request: [String: Any], writer: RequirementDatabaseWriter)
         return try writer.updateRequirementStatus(payload: requiredPayload(from: request))
     case "upsertRequirement", "upsertJiraRequirement":
         return try writer.upsertJiraRequirement(payload: requiredPayload(from: request))
+    case "captureAssignedJira":
+        return try writer.upsertJiraRequirement(payload: requiredPayload(from: request), assignedVisit: true)
     case "attachMergeRequest":
         return try writer.attachMergeRequest(payload: requiredPayload(from: request))
     case "syncMRStatus":
@@ -82,6 +84,7 @@ private struct RequirementDatabaseWriter {
             "host": hostName,
             "protocolVersion": RequirementNativeHostProtocol.currentVersion,
             "supportsAutomaticMRStatus": true,
+            "supportsAssignedJiraCapture": true,
             "supportsBatchInspection": true,
             "settings": [
                 "jiraBaseURL": settings.jiraBaseURL,
@@ -270,28 +273,50 @@ private struct RequirementDatabaseWriter {
         return response
     }
 
-    func upsertJiraRequirement(payload: [String: Any]) throws -> [String: Any] {
+    func upsertJiraRequirement(payload: [String: Any], assignedVisit: Bool = false) throws -> [String: Any] {
+        if assignedVisit && stringValue(payload["ownership"]) != "mine" {
+            return ["ok": true, "action": "ignored"]
+        }
         let issueKey = try issueKey(from: payload)
         let formatter = ISO8601DateFormatter()
         let nowDate = Date()
         let now = formatter.string(from: nowDate)
         let capturedAt = stringValue(payload["capturedAt"]) ?? now
         let normalizedJiraURL = jiraURL(from: payload, issueKey: issueKey)
-        let startDevelopment = boolValue(payload["startDevelopment"]) ?? false
-        let targetStatus = try targetStatusForJira(from: payload, startDevelopment: startDevelopment)
-        let reopen = boolValue(payload["reopen"]) ?? false
+        let reopen: Bool
+        let targetStatus: RequirementHostStatus?
+        if assignedVisit {
+            let status = stringValue(payload["jiraStatus"])?.lowercased() ?? ""
+            reopen = ["重新打开", "已重新打开", "reopened", "re-opened"].contains(status)
+            targetStatus = reopen ? .active : nil
+        } else {
+            reopen = boolValue(payload["reopen"]) ?? false
+            targetStatus = try targetStatusForJira(from: payload, startDevelopment: boolValue(payload["startDevelopment"]) ?? false)
+        }
 
         var records = try loadRecords()
-        let index = records.firstIndex { matchesIssueKey($0, issueKey: issueKey) }
+        let matches = records.indices.filter { matchesIssueKey(records[$0], issueKey: issueKey) }
+        if assignedVisit && matches.count > 1 { return ["ok": true, "action": "ignored"] }
 
         let action: String
         var didStart = false
         var statusUpdated = false
-        if let index {
-            records[index]["jiraKey"] = issueKey
-            records[index]["jiraURL"] = normalizedJiraURL
-            records[index]["updatedAt"] = now
-            applyJiraFields(from: payload, to: &records[index], capturedAt: capturedAt)
+        if let index = matches.first {
+            if assignedVisit {
+                guard reopen, currentStatus(of: records[index]) != .active else {
+                    return ["ok": true, "action": "unchanged"]
+                }
+                // 上一轮的 MR 仍可在总览打开，其合并结果只属于上一轮开发。
+                if let previousMR = mergeRequests(in: records[index]).latest {
+                    records[index]["mrBeforeJiraReopen"] = previousMR
+                    clearMRTrackingFields(in: &records[index])
+                }
+            } else {
+                records[index]["jiraKey"] = issueKey
+                records[index]["jiraURL"] = normalizedJiraURL
+                records[index]["updatedAt"] = now
+                applyJiraFields(from: payload, to: &records[index], capturedAt: capturedAt)
+            }
             if let targetStatus {
                 if reopen {
                     statusUpdated = reopenRequirement(targetStatus, record: &records[index], date: now)
@@ -408,53 +433,56 @@ private struct RequirementDatabaseWriter {
         )
     }
 
-    // 自动推进仅更新已记录且关联明确的需求；人工暂停/停止和历史 MR 不参与。
+    // 新 MR 追加到已有需求；只有本轮最新 MR 可以推进正在处理的需求。
     func syncMRStatus(payload: [String: Any]) throws -> [String: Any] {
         let mrURL = RequirementParser.normalizedURL(try requiredString(payload["mrURL"], field: "mrURL"))
         let settings = try loadToolConfiguration().pluginSettings.normalized
         guard let url = URL(string: mrURL),
               ["http", "https"].contains(url.scheme ?? ""),
               settings.validMRHosts.contains(url.host?.lowercased() ?? ""),
-              url.path.range(of: #"/-/merge_requests/\d+$"#, options: .regularExpression) != nil,
-              let state = stringValue(payload["mrState"]), ["open", "merged"].contains(state)
+              url.path.range(of: #"/-/merge_requests/\d+$"#, options: .regularExpression) != nil
         else { return ["ok": true, "action": "ignored"] }
 
         var records = try loadRecords()
         let bound = records.indices.filter { mergeRequests(in: records[$0]).allURLs.contains(mrURL) }
+        let key = stringValue(payload["issueKey"])?.uppercased()
         let candidates: [Int]
         if !bound.isEmpty {
             candidates = bound
-        } else if boolValue(payload["allowInitialBinding"]) == true,
-                  let key = stringValue(payload["issueKey"]) {
-            candidates = records.indices.filter {
-                matchesIssueKey(records[$0], issueKey: key) && mergeRequests(in: records[$0]).allURLs.isEmpty
-            }
+        } else if boolValue(payload["allowInitialBinding"]) == true, let key {
+            candidates = records.indices.filter { matchesIssueKey(records[$0], issueKey: key) }
         } else {
             candidates = []
         }
         guard candidates.count == 1, let index = candidates.first else {
             return ["ok": true, "action": "ignored"]
         }
+        if let key, !matchesIssueKey(records[index], issueKey: key) { return ["ok": true, "action": "ignored"] }
         let current = currentStatus(of: records[index])
-        let collection = mergeRequests(in: records[index])
-        guard current != .paused, current != .stopped, current != .merged,
-              collection.latest == nil || collection.latest == mrURL else {
+        var collection = mergeRequests(in: records[index])
+        guard bound.isEmpty || (collection.latest == mrURL && stringValue(records[index]["mrBeforeJiraReopen"]) != mrURL) else {
             return ["ok": true, "action": "ignored"]
         }
 
-        let target: RequirementHostStatus = state == "merged" ? .merged : .tested
-        var didBind = false
-        if collection.latest == nil {
-            var updated = collection
-            didBind = updated.record(mrURL)
-            apply(mergeRequests: updated, to: &records[index])
+        let now = Date()
+        let formatter = ISO8601DateFormatter()
+        let didBind = collection.record(mrURL)
+        if didBind {
+            apply(mergeRequests: collection, to: &records[index])
             resetMRTrackingForNewMR(in: &records[index])
+            records[index]["updatedAt"] = formatter.string(from: now)
         }
-        let changed = applyTargetStatus(target, to: &records[index], startDate: Date(), formatter: ISO8601DateFormatter())
+        let target = ["open": RequirementHostStatus.tested, "merged": .merged][stringValue(payload["mrState"]) ?? ""]
+        var changed = false
+        if let target, ![.paused, .stopped, .merged].contains(current) {
+            changed = applyTargetStatus(target, to: &records[index], startDate: now, formatter: formatter)
+        } else if !didBind {
+            return ["ok": true, "action": "ignored"]
+        }
         guard changed || didBind else { return ["ok": true, "action": "unchanged"] }
         return try persist(records: records, action: "autoMRStatus",
             issueKey: issueKey(from: records[index]), mrURL: mrURL,
-            statusUpdated: changed, targetStatus: target.rawValue)
+            statusUpdated: changed, targetStatus: changed ? target?.rawValue : nil)
     }
 
     func listAutomaticMRMonitors() throws -> [String: Any] {
@@ -462,7 +490,8 @@ private struct RequirementDatabaseWriter {
             let status = currentStatus(of: record)
             guard status != .paused, status != .stopped, status != .merged,
                   let key = stringValue(record["jiraKey"]),
-                  let mrURL = mergeRequests(in: record).latest else { return nil }
+                  let mrURL = mergeRequests(in: record).latest,
+                  mrURL != stringValue(record["mrBeforeJiraReopen"]) else { return nil }
             return ["issueKey": key, "mrURL": mrURL, "automatic": true]
         }
         return ["ok": true, "monitors": monitors]
@@ -574,7 +603,8 @@ private struct RequirementDatabaseWriter {
             object: hostName,
             userInfo: [
                 "action": action,
-                "issueKey": issueKey
+                "issueKey": issueKey,
+                "databasePath": dataFileURL.path
             ],
             deliverImmediately: true
         )
@@ -795,7 +825,7 @@ private struct RequirementDatabaseWriter {
         return true
     }
 
-    // 重新开发只在明确点击回退按钮时发生，原 MR 地址及状态历史继续保留。
+    // 重开沿用同一条需求，保留前一轮记录，只在时间线末尾追加新状态。
     private func reopenRequirement(
         _ target: RequirementHostStatus,
         record: inout [String: Any],
@@ -864,6 +894,7 @@ private struct RequirementDatabaseWriter {
     }
 
     private func resetMRTrackingForNewMR(in record: inout [String: Any]) {
+        record.removeValue(forKey: "mrBeforeJiraReopen")
         clearMRTrackingFields(in: &record)
         if currentStatus(of: record) != .merged {
             record["mrTrackingStatus"] = "created"

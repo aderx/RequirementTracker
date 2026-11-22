@@ -38,6 +38,47 @@
     return true;
   });
 
+  // Jira 详情可能分批渲染。仅在工单、经办人归属或工作流状态变化时采集一次。
+  if (typeof MutationObserver !== "undefined" && document.documentElement
+      && issueKeyFromJiraDetailURL(location.href)) {
+    let lastVisit = "";
+    let timer;
+    const scheduleVisit = () => {
+      if (timer) return;
+      timer = setTimeout(() => {
+        timer = null;
+        const pageURL = normalizedURL(location.href);
+        const issueKey = issueKeyFromJiraDetailURL(pageURL);
+        const keyField = document.querySelector("#key-val");
+        const renderedKey = keyField?.dataset?.issueKey || keyField?.textContent.trim()
+          || document.querySelector("meta[name='ajs-issue-key']")?.content;
+        const ownership = extractPageOwnership("jira");
+        const jiraStatus = textFromSelector("#status-val .jira-issue-status-lozenge")
+          || textFromSelector("#status-val") || textFromSelector("[data-field-id='status']");
+        if (!issueKey || (renderedKey && renderedKey.toUpperCase() !== issueKey)
+            || ownership !== "mine" || !extractTitle()) {
+          lastVisit = "";
+          return;
+        }
+        const signature = JSON.stringify([pageURL, jiraStatus]);
+        if (lastVisit === signature) return;
+        lastVisit = signature;
+        const payload = { ...extractJiraRequirement(issueKey, pageURL), ownership, jiraStatus };
+        chrome.runtime.sendMessage({ type: "CAPTURE_ASSIGNED_JIRA", payload }).then(response => {
+          if (!response?.ok && lastVisit === signature) lastVisit = "";
+        }).catch(() => { if (lastVisit === signature) lastVisit = ""; });
+      }, 150);
+    };
+    new MutationObserver(scheduleVisit).observe(document.documentElement, {
+      subtree: true, childList: true, characterData: true, attributes: true,
+      attributeFilter: ["rel", "data-username", "data-issue-key", "content", "href"]
+    });
+    window.addEventListener("pageshow", event => {
+      if (event.persisted) { lastVisit = ""; scheduleVisit(); }
+    });
+    scheduleVisit();
+  }
+
   // GitLab 合并后可能只更新页面局部；仅在 MR 身份或状态改变时通知后台。
   if (typeof MutationObserver !== "undefined" && document.documentElement
       && /\/-\/merge_requests\/\d+/.test(location.pathname || "")) {
@@ -96,6 +137,7 @@
         ]),
         identityFromSelectors([
           "#header-details-user-fullname",
+          "meta[name='ajs-remote-user']",
           "[data-testid='user-menu--trigger']",
           "[data-testid='user-menu-toggle']",
           "meta[name='current-user-id']",
@@ -137,7 +179,7 @@
       addIdentityTokens(identity, element);
       const descendants = typeof element.querySelectorAll === "function"
         ? Array.from(element.querySelectorAll(
-          "[data-user-id], [data-username], [data-user], [data-login], [data-account-id], [data-user-key], a[href], img[alt]"
+          "[data-user-id], [data-username], [data-user], [data-login], [data-account-id], [data-user-key], .user-hover[rel], a[href], img[alt]"
         ))
         : [];
       descendants.forEach((candidate) => addIdentityTokens(identity, candidate));
@@ -167,6 +209,11 @@
         identity.strong.add(`${kind}:${token}`);
         identity.weak.add(token);
       }
+    }
+
+    if (element.matches?.(".user-hover[rel]")) {
+      const username = normalizeIdentityToken(attribute("rel"));
+      if (username) identity.strong.add(`username:${username}`);
     }
 
     const content = normalizeIdentityToken(attribute("content"));
