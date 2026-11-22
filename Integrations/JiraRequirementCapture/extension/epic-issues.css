@@ -1,0 +1,176 @@
+.rt-epic-controls {
+  --rt-ink: var(--ds-text, #172b4d);
+  --rt-muted: var(--ds-text-subtle, #52627b);
+  --rt-blue: var(--ds-text-selected, #0c57b7);
+  --rt-focus: var(--ds-border-focused, #0c66e4);
+  container: rt-epic / inline-size;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 8px 10px;
+  margin: 4px 0 10px;
+  color: var(--rt-ink);
+  background: var(--ds-surface-sunken, #f7f8fa);
+  border: 1px solid var(--ds-border, #dfe4eb);
+  border-radius: 8px;
+  font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif;
+}
+
+.rt-epic-filter-group,
+.rt-epic-actions {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.rt-epic-filter-group { flex-wrap: wrap; gap: 6px; }
+.rt-epic-actions { justify-content: flex-end; gap: 3px; margin-inline-start: auto; }
+
+.rt-epic-controls svg {
+  flex: none;
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+
+.rt-epic-filter { min-width: 0; max-width: 100%; }
+.rt-epic-filter-toggle,
+.rt-epic-action {
+  appearance: none;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  margin: 0;
+  padding: 0 9px;
+  color: var(--rt-muted);
+  font: inherit;
+  box-shadow: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.rt-epic-filter-toggle {
+  max-width: 100%;
+  border: 1px solid var(--ds-border, #ccdae8);
+  border-radius: 6px;
+  background: var(--ds-background-accent-blue-subtlest, #eef3f9);
+}
+.rt-epic-filter-toggle strong {
+  min-width: 0;
+  max-width: 10em;
+  overflow: hidden;
+  color: var(--rt-ink);
+  font-weight: 600;
+  text-overflow: ellipsis;
+}
+.rt-epic-filter-toggle::after {
+  content: "";
+  flex: none;
+  width: 5px;
+  height: 5px;
+  margin-inline: 2px 1px;
+  border: solid currentColor;
+  border-width: 0 1.5px 1.5px 0;
+  transform: translateY(-1px) rotate(45deg);
+}
+.rt-epic-filter:has(:popover-open) .rt-epic-filter-toggle::after { transform: translateY(1px) rotate(225deg); }
+.rt-epic-filter-toggle:hover { border-color: #8da7c5; }
+.rt-epic-filter-toggle.is-active {
+  color: var(--rt-blue);
+  background: var(--ds-background-accent-blue-subtler, #deebff);
+  border-color: var(--ds-border-selected, #78a8eb);
+}
+.rt-epic-filter-toggle.is-active strong { color: inherit; }
+.rt-epic-more {
+  padding: 0 4px;
+  border-radius: 4px;
+  background: var(--ds-background-accent-blue-subtle, #c6dcff);
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.rt-epic-options {
+  position: fixed;
+  inset: auto;
+  position-area: bottom span-right;
+  position-try-fallbacks: flip-block, flip-inline, flip-block flip-inline;
+  justify-self: start;
+  box-sizing: border-box;
+  width: max-content;
+  min-width: min(160px, 90vw);
+  max-width: min(280px, 90vw);
+  max-height: min(280px, 60dvh);
+  overflow: auto;
+  overscroll-behavior: contain;
+  margin: 4px 0;
+  padding: 4px;
+  border: 1px solid var(--ds-border, #d4dce6);
+  border-radius: 7px;
+  box-shadow: 0 4px 14px #091e4226;
+  color: var(--rt-ink);
+  background: var(--ds-surface-overlay, white);
+  font: inherit;
+}
+.rt-epic-options label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  margin: 0;
+  padding: 0 8px;
+  border-radius: 4px;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+.rt-epic-options label:first-child {
+  margin-bottom: 3px;
+  padding-bottom: 3px;
+  border-bottom: 1px solid var(--ds-border, #dfe4eb);
+  border-radius: 0;
+}
+.rt-epic-options label:hover,
+.rt-epic-options label:focus-within { background: var(--ds-background-neutral-hovered, #edf1f6); }
+.rt-epic-options input {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--rt-blue);
+}
+
+.rt-epic-action { padding-inline: 7px; border: 0; border-radius: 5px; background: transparent; }
+.rt-epic-action:hover { background: var(--ds-background-neutral-hovered, #e7ecf2); }
+.rt-epic-action[aria-pressed="true"] { color: var(--rt-blue); background: var(--ds-background-selected, #e5eeff); }
+.rt-epic-action[aria-pressed="true"] svg { transform: scaleY(-1); }
+.rt-epic-controls button:focus-visible,
+.rt-epic-options input:focus-visible { outline: 2px solid var(--rt-focus); outline-offset: 2px; }
+
+.rt-epic-controls [role="status"] {
+  padding-inline-start: 11px;
+  margin-inline-start: 5px;
+  border-inline-start: 1px solid var(--ds-border, #d4dce6);
+  color: var(--rt-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.rt-epic-controls [role="status"]::after { content: " 项"; }
+
+@container rt-epic (max-width: 660px) {
+  .rt-epic-actions { flex-basis: 100%; }
+  .rt-epic-filter-toggle strong { max-width: min(10em, 36cqi); }
+}
+
+.rt-epic-toolbar[hidden],
+#ghx-issues-in-epic-table tr.rt-epic-excluded {
+  display: none !important;
+}

@@ -158,6 +158,15 @@ function testUnprefixedJiraTextDoesNotMatchTitleFallback() {
 }
 
 function testJiraOwnershipUsesAssigneeAndCurrentUsername() {
+  const assignee = identityElement("同名用户", { rel: "account-a" });
+  assignee.matches = selector => selector === ".user-hover[rel]";
+  const field = element("同名用户", { querySelectorAll: () => [assignee] });
+  for (const [username, expected] of [["account-a", "mine"], ["account-b", "other"]]) {
+    assert.equal(extractOwnership("jira", {
+      "#assignee-val": field,
+      "meta[name='ajs-remote-user']": identityElement("", { name: "ajs-remote-user", content: username })
+    }), expected);
+  }
   assert.equal(extractOwnership("jira", {
     "#assignee-val": identityElement("徐福", { "data-username": "xfu" }),
     "#header-details-user-fullname": identityElement("徐福", { "data-username": "xfu" })

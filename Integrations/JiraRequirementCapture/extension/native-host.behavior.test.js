@@ -377,10 +377,63 @@ function testManualActionsAndBatchInspection() {
   }
 }
 
+function testAssignedVisitsAndAdditionalMRs() {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "requirement-visit-"));
+  const dataFile = path.join(directory, "requirements.sqlite");
+  const issueKey = "TEST-123";
+  const send = (type, fields = {}) => sendNativeMessage(dataFile, { type, payload: { issueKey, ...fields } });
+  const visit = (jiraStatus, extra = {}) => send("captureAssignedJira", { ownership: "mine", jiraStatus, ...extra });
+  const mr = id => `http://gitlab.zstack.io/g/p/-/merge_requests/${id}`;
+  const bind = (id, mrState) => send("syncMRStatus", { mrURL: mr(id), mrState, allowInitialBinding: true });
+  const record = () => readRecords(dataFile)[0];
+  try {
+    for (const ownership of ["unknown", "other"]) assert.equal(visit("重新打开", { ownership }).action, "ignored");
+    assert.equal(readRecords(dataFile).length, 0);
+    assert.equal(visit("开放", { title: "原始标题" }).action, "created");
+    const first = record();
+    assert.equal(first.stage, "pending");
+    assert.equal(visit("处理中", { title: "不同的标题" }).action, "unchanged");
+    assert.deepEqual(record(), first);
+
+    assert.equal(bind(1, "merged").statusUpdated, true);
+    const merged = record();
+    assert.equal(visit("重新打开").statusUpdated, true);
+    const reopened = record();
+    assert.deepEqual(reopened.statusHistory.slice(0, -1), merged.statusHistory);
+    assert.equal(reopened.statusHistory.at(-1).status, "active");
+    assert.equal(reopened.id, merged.id);
+    assert.equal(reopened.mrURL, mr(1));
+    assert.equal(reopened.isMerged, false);
+    assert.equal(visit("Reopened").action, "unchanged");
+    assert.equal(send("listAutomaticMRMonitors").monitors.length, 0);
+    assert.equal(bind(1, "merged").action, "ignored");
+    assert.deepEqual(record(), reopened);
+
+    assert.equal(bind(2, "open").statusUpdated, true);
+    const second = record();
+    assert.deepEqual([second.mrURL, ...second.mrHistory], [mr(2), mr(1)]);
+    assert.deepEqual(second.statusHistory.slice(0, reopened.statusHistory.length), reopened.statusHistory);
+    assert.equal(bind(2, "open").action, "unchanged");
+    assert.equal(bind(1, "merged").action, "ignored");
+    assert.deepEqual(record(), second);
+    assert.equal(bind(2, "merged").statusUpdated, true);
+    assert.equal(bind(3, "closed").statusUpdated, false);
+    assert.equal(record().isMerged, true);
+    assert.deepEqual([record().mrURL, ...record().mrHistory], [mr(3), mr(2), mr(1)]);
+
+    const newIssue = "TEST-124";
+    assert.equal(visit("重新打开", { issueKey: newIssue }).started, true);
+    assert.deepEqual(readRecords(dataFile)[1].statusHistory.map(event => event.status), ["pending", "active"]);
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+}
+
 try {
   run();
   testAutomaticStatusPersistence();
   testManualActionsAndBatchInspection();
+  testAssignedVisitsAndAdditionalMRs();
   console.log("native-host.behavior.test.js passed");
 } catch (error) {
   console.error(error);

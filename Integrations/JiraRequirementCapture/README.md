@@ -28,13 +28,15 @@ Chrome/Edge unpacked extension and Native Messaging host for capturing the curre
 7. Pin the extension to the browser toolbar.
 8. Open a Jira issue page or GitLab MR page and click the extension icon once.
 
-## Automatic MR status (1.19.0)
+## Automatic Jira and MR capture (2.2.0)
 
-- Opening an MR already bound to a recorded requirement advances it to `已自测`. A merged MR advances it to `已合并`.
-- For the first MR binding, the page must clearly belong to the signed-in user and identify exactly one existing requirement in its title/description. Existing MR bindings take precedence. New requirements are never created automatically.
-- Paused/stopped requirements and historical MRs are excluded; repeat visits do not append duplicate history or change timestamps. A different MR must be bound manually before it can advance an existing MR association.
+- Visiting a Jira detail page assigned to the signed-in user creates a pending local requirement. For a reopened issue, the visit starts development and appends an active event. Repeated visits while already active preserve the timeline. MR links from the previous development round stay available in the overview.
+- An MR created by the signed-in user can link to a unique existing local requirement identified by its title or description. Each new URL becomes the latest MR and the overview retains earlier links.
+- The current open MR advances eligible requirements to `已自测`. A merged MR advances them to `已合并`. Paused, stopped and merged requirements can receive new links while retaining their status. Previous-round and historical links stay outside automatic progression.
 - GitLab page updates trigger synchronization without opening the popup. While Chrome runs, the existing 15-minute alarm also checks the latest MR of recorded, active requirements. Background automatic merge checks require a structured GitLab response; login redirects, network errors and unknown responses leave data unchanged.
 - Both the extension and Native Host must be updated. During development, load the extension from the development app's `Contents/Resources/JiraRequirementCaptureExtension`, then set its extension ID and install Native Host from that development app's plugin settings. Reload existing MR tabs after updating the extension.
+
+On an Epic detail page, the toolbar above **Epic中的问题** lets you select multiple issue types, statuses and assignees from the rendered rows. A row must match one selected value in each active filter. **全部** clears that filter, and **重置** clears all filters and restores Jira's original order. Each Epic has its own tab-session settings. Refresh reloads the page and restores the scroll position. Opening the extension popup also adds the toolbar to an already loaded Epic, including while offline.
 
 ## Status test page
 

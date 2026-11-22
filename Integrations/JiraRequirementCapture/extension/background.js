@@ -25,6 +25,7 @@ let cachedSettings = null;
 let cachedSettingsAt = 0;
 let cachedHostCompatible = false;
 let supportsAutomaticMRStatus = false;
+let supportsAssignedJiraCapture = false;
 let supportsBatchInspection = false;
 let automaticWriteQueue = Promise.resolve();
 const tabSynchronizations = new Map();
@@ -73,6 +74,13 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 chrome.runtime.onMessage.addListener(handleRuntimeMessage);
 
 function handleRuntimeMessage(message, sender, sendResponse) {
+  if (message?.type === "CAPTURE_ASSIGNED_JIRA") {
+    captureAssignedJira(sender, message.payload)
+      .then(sendResponse)
+      .catch(() => sendResponse({ ok: false }));
+    return true;
+  }
+
   if (message?.type === "LOOKUP_REQUIREMENT_LIST") {
     inspectJiraList(message.issueKeys, sender.tab?.url || "")
       .then(sendResponse)
@@ -170,11 +178,29 @@ async function updateBadgeForTab(tabId, url) {
   }
 }
 
-// 后台、页面加载和局部更新共用入口；自动写入串行执行，重复事件不追加时间线。
-function writeAutomaticStatus(payload) {
-  const result = automaticWriteQueue.then(() => sendNativeMessage({ type: "syncMRStatus", payload }));
+// 页面访问和后台监听的本地写入按到达顺序执行。
+function queueAutomaticWrite(type, payload) {
+  const result = automaticWriteQueue.then(() => sendNativeMessage({ type, payload }));
   automaticWriteQueue = result.catch(() => {});
   return result;
+}
+
+async function captureAssignedJira(sender, payload) {
+  const tabId = sender.tab?.id;
+  const url = normalizedURL(sender.url || sender.tab?.url);
+  if (!Number.isInteger(tabId) || payload?.ownership !== "mine"
+      || normalizedURL(payload.jiraURL) !== url || await detectPageType(url) !== "jira"
+      || !supportsAssignedJiraCapture) return { ok: true, action: "ignored" };
+  const issueKey = new URL(url).pathname.split("/").filter(Boolean).pop().toUpperCase();
+  if (payload.issueKey !== issueKey || normalizedURL((await chrome.tabs.get(tabId))?.url) !== url) {
+    return { ok: true, action: "ignored" };
+  }
+  const response = await queueAutomaticWrite("captureAssignedJira", payload);
+  if (response?.dataFilePath) {
+    refreshJiraLists();
+    if (normalizedURL((await chrome.tabs.get(tabId))?.url) === url) await updateBadgeForTab(tabId, url);
+  }
+  return response;
 }
 
 function synchronizeMRForTab(tabId, url) {
@@ -203,11 +229,12 @@ async function synchronizeMRPage(tabId, url) {
     if (!requirement?.ok || !requirement.exists) return;
   }
   const mrState = context.mrState || await fetchMRState(mrURL, true);
-  if (!["open", "merged"].includes(mrState)) return;
+  if (binding.exists && !["open", "merged"].includes(mrState)) return;
   // 异步识别期间可能已跳转到另一个 MR，旧页面结果不写回。
   const currentTab = await chrome.tabs.get(tabId);
   if (!currentTab?.url || canonicalPageURL(currentTab.url) !== mrURL) return;
-  await writeAutomaticStatus({ mrURL, issueKey, mrState, allowInitialBinding: !binding.exists });
+  const result = await queueAutomaticWrite("syncMRStatus", { mrURL, issueKey, mrState, allowInitialBinding: !binding.exists });
+  if (result?.dataFilePath) refreshJiraLists();
 }
 
 async function resolveState(url, tabId) {
@@ -296,7 +323,7 @@ async function checkMonitoredMRs() {
     if (await fetchMRState(mrURL, monitor.automatic === true) !== "merged") continue;
     try {
       if (monitor.automatic === true) {
-        await writeAutomaticStatus({ issueKey, mrURL, mrState: "merged" });
+        await queueAutomaticWrite("syncMRStatus", { issueKey, mrURL, mrState: "merged" });
       } else {
         await sendNativeMessage({ type: "markMRMergeMonitorMerged", payload: { issueKey, mrURL } });
       }
@@ -441,6 +468,7 @@ async function loadSettings() {
     if (response?.ok) {
       cachedHostCompatible = Number(response.protocolVersion || 0) >= REQUIRED_NATIVE_HOST_PROTOCOL_VERSION;
       supportsAutomaticMRStatus = cachedHostCompatible && response.supportsAutomaticMRStatus === true;
+      supportsAssignedJiraCapture = cachedHostCompatible && response.supportsAssignedJiraCapture === true;
       supportsBatchInspection = cachedHostCompatible && response.supportsBatchInspection === true;
       cachedSettings = { ...FALLBACK_SETTINGS, ...(response.settings || {}) };
       cachedSettingsAt = now;
@@ -452,6 +480,7 @@ async function loadSettings() {
 
   cachedHostCompatible = false;
   supportsAutomaticMRStatus = false;
+  supportsAssignedJiraCapture = false;
   supportsBatchInspection = false;
   cachedSettings = cachedSettings || FALLBACK_SETTINGS;
   cachedSettingsAt = now;

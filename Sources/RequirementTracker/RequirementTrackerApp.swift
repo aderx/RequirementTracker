@@ -20,12 +20,17 @@ struct RequirementTrackerApp: App {
     }
 
     var body: some Scene {
-        Settings {
-            RequirementSettingsView()
-                .environmentObject(appDelegate.settingsStore)
+        // 较早系统从状态栏显式创建设置窗口；支持启动策略的系统使用原生 Settings 场景。
+        if #available(macOS 15.0, *) {
+            Settings {
+                RequirementSettingsView()
+                    .environmentObject(appDelegate.settingsStore)
+            }
+            .windowToolbarStyle(.unifiedCompact)
+            .defaultSize(width: 1040, height: 700)
+            .defaultLaunchBehavior(.suppressed)
+            .restorationBehavior(.disabled)
         }
-        .windowToolbarStyle(.unifiedCompact)
-        .defaultSize(width: 1040, height: 700)
     }
 }
 
@@ -44,6 +49,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var settingsWindowController: NSWindowController?
     private var openSettingsScene: (() -> Void)?
     private let panelWidth = RequirementPanelMetrics.width
+
+    func applicationShouldOpenUntitledFile(_ sender: NSApplication) -> Bool { false }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool { false }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApplication.shared.applicationIconImage = Self.sharedAppIcon
@@ -83,7 +92,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         .environmentObject(settingsStore)
         .environmentObject(scriptLauncher)
         .background {
-            if #available(macOS 14.0, *) {
+            if #available(macOS 15.0, *) {
                 SettingsSceneActionReader { [weak self] action in
                     self?.openSettingsScene = action
                 }
@@ -311,7 +320,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 .environmentObject(settingsStore)
         )
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 860, height: 640),
+            contentRect: NSRect(x: 0, y: 0, width: 1040, height: 700),
             styleMask: [.titled, .closable, .resizable],
             backing: .buffered,
             defer: false
@@ -323,7 +332,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window.isMovableByWindowBackground = false
         window.isReleasedWhenClosed = false
         window.delegate = self
-        window.contentMinSize = NSSize(width: 820, height: 580)
+        window.isRestorable = false
+        window.contentMinSize = NSSize(width: 960, height: 640)
         window.contentViewController = hostingController
         centerOnMainScreen(window)
 
@@ -443,7 +453,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private static var appVersion: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
-            ?? "2.1.0"
+            ?? "2.2.0"
     }
 
     private static var githubURL: String? {

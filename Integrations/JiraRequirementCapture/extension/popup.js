@@ -192,6 +192,11 @@ async function run() {
   }
 
   try {
+    // 内网页面可能暂时无法重新加载，直接为当前已打开的 Epic 补上本地工具栏。
+    if (result?.pageType === "jira" && /^epic$/i.test(result.payload?.type || "")) {
+      await chrome.scripting.insertCSS({ target: { tabId: tab.id }, files: ["epic-issues.css"] });
+      await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ["epic-issues.js"] });
+    }
     // 插件更新不会自动注入已经打开的列表页，允许直接补上标记而无需刷新 Jira。
     if (result?.pageType === "jira-list" && !settingsResult.hostError) {
       await chrome.scripting.insertCSS({ target: { tabId: tab.id }, files: ["jira-list.css"] });
